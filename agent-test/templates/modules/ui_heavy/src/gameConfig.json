@@ -1,0 +1,175 @@
+{
+  "screenSize": {
+    "width": {
+      "value": 1024,
+      "type": "number",
+      "description": "Game width in pixels"
+    },
+    "height": {
+      "value": 768,
+      "type": "number",
+      "description": "Game height in pixels"
+    }
+  },
+  "debugConfig": {
+    "debug": {
+      "value": false,
+      "type": "boolean",
+      "description": "Enable debug mode"
+    },
+    "skipDialogue": {
+      "value": false,
+      "type": "boolean",
+      "description": "Skip dialogue (debug)"
+    }
+  },
+  "renderConfig": {
+    "pixelArt": {
+      "value": true,
+      "type": "boolean",
+      "description": "Enable pixel art rendering"
+    }
+  },
+  "gameplayConfig": {
+    "textSpeed": {
+      "value": 30,
+      "type": "number",
+      "description": "Typewriter speed (ms per character)"
+    },
+    "autoAdvanceDelay": {
+      "value": 0,
+      "type": "number",
+      "description": "Auto-advance delay (0 = manual)"
+    },
+    "defaultMusicVolume": {
+      "value": 0.3,
+      "type": "number",
+      "description": "Music volume (0-1)"
+    },
+    "defaultSFXVolume": {
+      "value": 0.5,
+      "type": "number",
+      "description": "SFX volume (0-1)"
+    }
+  },
+  "battleConfig": {
+    "playerMaxHP": {
+      "value": 100,
+      "type": "number",
+      "description": "Player starting max HP"
+    },
+    "enemyMaxHP": {
+      "value": 80,
+      "type": "number",
+      "description": "Enemy starting max HP"
+    },
+    "handSize": {
+      "value": 3,
+      "type": "number",
+      "description": "Cards drawn per turn"
+    },
+    "quizTimeLimit": {
+      "value": 0,
+      "type": "number",
+      "description": "Quiz time limit in seconds (0 = none)"
+    },
+    "comboTiers": {
+      "value": [
+        { "minStreak": 0, "multiplier": 1.0, "label": "" },
+        { "minStreak": 2, "multiplier": 1.2, "label": "GOOD" },
+        { "minStreak": 4, "multiplier": 1.5, "label": "GREAT" },
+        { "minStreak": 6, "multiplier": 2.0, "label": "PERFECT" }
+      ],
+      "type": "array",
+      "description": "Combo multiplier tiers"
+    }
+  },
+  "dialogueConfig": {
+    "boxWidth": {
+      "value": 900,
+      "type": "number",
+      "description": "Dialogue box width"
+    },
+    "boxHeight": {
+      "value": 150,
+      "type": "number",
+      "description": "Dialogue box height"
+    },
+    "boxY": {
+      "value": 650,
+      "type": "number",
+      "description": "Dialogue box Y position"
+    },
+    "backgroundAlpha": {
+      "value": 0.85,
+      "type": "number",
+      "description": "Dialogue box background opacity"
+    }
+  },
+  "audioConfig": {
+    "backgroundMusicKey": {
+      "value": "",
+      "type": "string",
+      "description": "Default background music key"
+    },
+    "clickSFXKey": {
+      "value": "",
+      "type": "string",
+      "description": "Button click sound key"
+    }
+  },
+  "characterSelectConfig": {
+    "enabled": {
+      "value": false,
+      "type": "boolean",
+      "description": "Enable character select"
+    },
+    "maxColumns": {
+      "value": 4,
+      "type": "number",
+      "description": "Grid columns"
+    },
+    "cardWidth": {
+      "value": 180,
+      "type": "number",
+      "description": "Character card width"
+    },
+    "cardHeight": {
+      "value": 240,
+      "type": "number",
+      "description": "Character card height"
+    }
+  },
+  "dualPlayerConfig": {
+    "enabled": {
+      "value": false,
+      "type": "boolean",
+      "description": "Enable 2-player mode"
+    },
+    "mode": {
+      "value": "BUZZER_RACE",
+      "type": "string",
+      "description": "PVP mode type"
+    },
+    "scoreToWin": {
+      "value": 10,
+      "type": "number",
+      "description": "Score needed to win"
+    },
+    "correctPoints": {
+      "value": 1,
+      "type": "number",
+      "description": "Points for correct answer"
+    },
+    "wrongPenalty": {
+      "value": 0,
+      "type": "number",
+      "description": "Points deducted for wrong answer"
+    },
+    "buzzerTimeLimit": {
+      "value": 10000,
+      "type": "number",
+      "description": "Buzzer time limit (ms)"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "template-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Template Skill evolution module — evolves a meta template M0 into specialized template families through post-task experience accumulation.",
+  "scripts": {
+    "init": "tsx scripts/init.ts",
+    "evolve": "tsx scripts/evolve.ts",
+    "status": "tsx scripts/status.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "~5.8.3"
+  }
+}

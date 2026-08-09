@@ -1,0 +1,6 @@
+.runtime-deps/
+release/
+release-next/
+build/icon.icns
+build/icon.png
+build/icon.iconset/

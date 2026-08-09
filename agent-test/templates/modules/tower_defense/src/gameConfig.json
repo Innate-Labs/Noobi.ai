@@ -1,0 +1,55 @@
+{
+  "screenSize": {
+    "width": {
+      "value": 1152,
+      "type": "number",
+      "description": "Game width in pixels"
+    },
+    "height": {
+      "value": 768,
+      "type": "number",
+      "description": "Game height in pixels"
+    }
+  },
+  "debugConfig": {
+    "debug": {
+      "value": false,
+      "type": "boolean",
+      "description": "Enable debug mode"
+    }
+  },
+  "renderConfig": {
+    "pixelArt": {
+      "value": true,
+      "type": "boolean",
+      "description": "Enable pixel art rendering"
+    }
+  },
+  "towerDefenseConfig": {
+    "startingGold": {
+      "value": 100,
+      "type": "number",
+      "description": "Gold player starts with"
+    },
+    "startingLives": {
+      "value": 20,
+      "type": "number",
+      "description": "Lives before game over"
+    },
+    "cellSize": {
+      "value": 64,
+      "type": "number",
+      "description": "Grid cell size in pixels"
+    },
+    "timeBetweenWaves": {
+      "value": 5000,
+      "type": "number",
+      "description": "Delay (ms) between waves"
+    },
+    "sellRefundRate": {
+      "value": 0.7,
+      "type": "number",
+      "description": "Fraction of cost refunded when selling tower"
+    }
+  }
+}

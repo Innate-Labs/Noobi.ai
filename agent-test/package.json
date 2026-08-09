@@ -1,0 +1,45 @@
+{
+  "name": "agent-test",
+  "version": "1.0.0",
+  "description": "OpenGame Agent Testing Suite",
+  "type": "module",
+  "scripts": {
+    "test": "tsx scripts/test.ts",
+    "build": "echo 'Agent test uses tsx - no build needed'"
+  },
+  "keywords": [
+    "opengame",
+    "agent",
+    "test"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@google/genai": "1.30.0",
+    "@imgly/background-removal-node": "^1.4.5",
+    "@opengame/opengame-core": "*",
+    "@opengame/sdk": "*"
+  },
+  "devDependencies": {
+    "@opengame/opengame-test-utils": "*",
+    "@types/diff": "^7.0.2",
+    "@types/fast-levenshtein": "^0.0.4",
+    "@types/node": "^20.19.30",
+    "@types/picomatch": "^4.0.1",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.0",
+    "diff": "^7.0.0",
+    "dotenv": "^17.1.0",
+    "glob": "^10.5.0",
+    "nodemon": "^3.0.0",
+    "phaser": "^3.90.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.3.1",
+    "vitest": "^3.1.1"
+  },
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  }
+}

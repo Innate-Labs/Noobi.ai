@@ -1,0 +1,5 @@
+{
+  "name": "gameagent-audio-regenerator",
+  "private": true,
+  "main": "main.cjs"
+}

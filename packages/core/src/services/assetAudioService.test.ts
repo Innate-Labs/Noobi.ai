@@ -1,0 +1,245 @@
+/**
+ * @license
+ * Copyright 2025 OpenGame Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  AudioRenderService,
+  ElevenLabsAudioService,
+  GoogleLyriaAudioService,
+  MiniMaxAudioService,
+  MurekaAudioService,
+  StabilityAudioService,
+} from './assetAudioService.js';
+import type {
+  AudioModelConfig,
+  AudioRequest,
+} from '../tools/generate-assets-types.js';
+
+const ASCENDING_ABC = `X:1
+T:Ascending
+M:4/4
+L:1/8
+Q:1/4=160
+K:C
+C D E F G A B c |]`;
+
+const DESCENDING_ABC = `X:1
+T:Descending
+M:4/4
+L:1/8
+Q:1/4=90
+K:Am
+c B A G F E D C |]`;
+
+describe('AudioRenderService built-in ABC synthesis', () => {
+  it('preserves different ABC melodies when symusic is unavailable', async () => {
+    const service = new AudioRenderService('/definitely/missing/python');
+
+    const ascending = await service.generateFromABC(ASCENDING_ABC, 'bgm', 1);
+    const descending = await service.generateFromABC(DESCENDING_ABC, 'bgm', 1);
+
+    expect(ascending.subarray(0, 4).toString()).toBe('RIFF');
+    expect(ascending.length).toBe(44 + 44100 * 2);
+    expect(ascending.equals(descending)).toBe(false);
+  });
+
+  it('is deterministic for the same notation', async () => {
+    const service = new AudioRenderService('/definitely/missing/python');
+
+    const first = await service.generateFromABC(ASCENDING_ABC, 'sfx', 0.25);
+    const second = await service.generateFromABC(ASCENDING_ABC, 'sfx', 0.25);
+
+    expect(first.equals(second)).toBe(true);
+  });
+});
+
+const BGM_REQUEST: AudioRequest = {
+  type: 'audio',
+  key: 'battle_theme',
+  description: 'Energetic orchestral battle music',
+  audioType: 'bgm',
+  duration: 12,
+  genre: 'orchestral',
+  tempo: 'fast',
+};
+
+function audioConfig(
+  modelType: AudioModelConfig['modelType'],
+  baseUrl: string,
+  modelNameChat: string,
+): AudioModelConfig {
+  return {
+    apiKey: 'test-secret',
+    baseUrl,
+    modelType,
+    modelNameChat,
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('professional direct audio providers', () => {
+  it('generates instrumental music with ElevenLabs', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(Buffer.from('eleven-music'), {
+        status: 200,
+        headers: { 'content-type': 'audio/mpeg' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new ElevenLabsAudioService(
+      audioConfig('elevenlabs', 'https://api.elevenlabs.io', 'music_v2'),
+    );
+    const result = await service.generateAudio(BGM_REQUEST);
+
+    expect(result.extension).toBe('mp3');
+    expect(result.buffer.toString()).toBe('eleven-music');
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/music?'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      model_id: 'music_v2',
+      force_instrumental: true,
+      music_length_ms: 12000,
+    });
+  });
+
+  it('routes ElevenLabs sound effects to the dedicated SFX endpoint', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(Buffer.from('sfx'), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new ElevenLabsAudioService(
+      audioConfig('elevenlabs', 'https://api.elevenlabs.io/v1', 'music_v2'),
+    );
+
+    await service.generateAudio({
+      ...BGM_REQUEST,
+      key: 'click',
+      audioType: 'sfx',
+      duration: 0.2,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/v1/sound-generation?');
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      model_id: 'eleven_text_to_sound_v2',
+      duration_seconds: 0.5,
+    });
+  });
+
+  it('decodes MiniMax hex audio and declines SFX requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        data: {
+          audio: Buffer.from('minimax-music').toString('hex'),
+          status: 2,
+        },
+        base_resp: { status_code: 0, status_msg: 'success' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new MiniMaxAudioService(
+      audioConfig('minimax', 'https://api.minimaxi.com', 'music-2.6-free'),
+    );
+
+    const music = await service.generateAudio(BGM_REQUEST);
+    const sfx = await service.generateAudio({
+      ...BGM_REQUEST,
+      audioType: 'sfx',
+    });
+
+    expect(music?.buffer.toString()).toBe('minimax-music');
+    expect(sfx).toBeNull();
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      model: 'music-2.6-free',
+      is_instrumental: true,
+      output_format: 'hex',
+    });
+  });
+
+  it('polls Stable Audio and returns the generated bytes', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ id: 'stable-task' }, { status: 202 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from('stable-audio'), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new StabilityAudioService(
+      audioConfig('stability', 'https://api.stability.ai', 'stable-audio-3'),
+    );
+
+    const result = await service.generateAudio(BGM_REQUEST);
+
+    expect(result.buffer.toString()).toBe('stable-audio');
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      '/v2beta/audio/stable-audio/text-to-audio',
+    );
+    expect(fetchMock.mock.calls[1][0]).toContain(
+      '/v2beta/audio/results/stable-task',
+    );
+  });
+
+  it('decodes Google Lyria WAV responses', async () => {
+    const encoded = Buffer.from('lyria-wav').toString('base64');
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        predictions: [{ audioContent: encoded, mimeType: 'audio/wav' }],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new GoogleLyriaAudioService(
+      audioConfig(
+        'google-lyria',
+        'https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models',
+        'lyria-002',
+      ),
+    );
+
+    const result = await service.generateAudio(BGM_REQUEST);
+
+    expect(result?.extension).toBe('wav');
+    expect(result?.buffer.toString()).toBe('lyria-wav');
+    expect(fetchMock.mock.calls[0][0]).toContain('/lyria-002:predict');
+  });
+
+  it('polls Mureka instrumental tasks and downloads the result', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: 'mureka-task' }))
+      .mockResolvedValueOnce(
+        Response.json({
+          status: 'succeeded',
+          choices: [{ wav_url: 'https://cdn.example.test/music.wav' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from('mureka-wav'), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const service = new MurekaAudioService(
+      audioConfig('mureka', 'https://api.mureka.ai', 'mureka-9'),
+    );
+
+    const result = await service.generateAudio(BGM_REQUEST);
+
+    expect(result?.extension).toBe('wav');
+    expect(result?.buffer.toString()).toBe('mureka-wav');
+    expect(fetchMock.mock.calls[0][0]).toContain('/v1/instrumental/generate');
+    expect(fetchMock.mock.calls[1][0]).toContain(
+      '/v1/instrumental/query/mureka-task',
+    );
+  });
+});

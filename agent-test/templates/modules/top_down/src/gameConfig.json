@@ -1,0 +1,83 @@
+{
+  "screenSize": {
+    "width": {
+      "value": 1152,
+      "type": "number",
+      "description": "Game width in pixels"
+    },
+    "height": {
+      "value": 768,
+      "type": "number",
+      "description": "Game height in pixels"
+    }
+  },
+  "debugConfig": {
+    "debug": {
+      "value": false,
+      "type": "boolean",
+      "description": "Enable debug mode"
+    }
+  },
+  "renderConfig": {
+    "pixelArt": {
+      "value": true,
+      "type": "boolean",
+      "description": "Enable pixel art rendering"
+    }
+  },
+  "playerConfig": {
+    "maxHealth": {
+      "value": 100,
+      "type": "number",
+      "description": "Player max health"
+    },
+    "walkSpeed": {
+      "value": 200,
+      "type": "number",
+      "description": "Player walk speed"
+    },
+    "attackDamage": {
+      "value": 25,
+      "type": "number",
+      "description": "Player attack damage"
+    },
+    "hurtingDuration": {
+      "value": 100,
+      "type": "number",
+      "description": "Hurt animation duration (ms)"
+    },
+    "invulnerableTime": {
+      "value": 1000,
+      "type": "number",
+      "description": "Invulnerability after hit (ms)"
+    },
+    "dashSpeed": {
+      "value": 500,
+      "type": "number",
+      "description": "Dash speed"
+    },
+    "dashDuration": {
+      "value": 200,
+      "type": "number",
+      "description": "Dash duration (ms)"
+    },
+    "dashCooldown": {
+      "value": 1000,
+      "type": "number",
+      "description": "Dash cooldown (ms)"
+    }
+  },
+  "enemyConfig": {
+    "maxHealth": {
+      "value": 50,
+      "type": "number",
+      "description": "Enemy max health"
+    },
+    "walkSpeed": {
+      "value": 80,
+      "type": "number",
+      "description": "Enemy walk speed"
+    },
+    "damage": { "value": 15, "type": "number", "description": "Enemy damage" }
+  }
+}

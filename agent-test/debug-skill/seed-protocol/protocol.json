@@ -1,0 +1,304 @@
+{
+  "version": 0,
+  "createdAt": "2026-04-19T00:00:00.000Z",
+  "updatedAt": "2026-04-19T00:00:00.000Z",
+  "seedProtocolPath": "seed-protocol",
+  "entries": [
+    {
+      "id": "seed-reactive-001",
+      "kind": "reactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "TS2307",
+        "messagePattern": "Cannot find module '(.+)'",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Import path is incorrect — wrong number of ../ levels or file moved to a different directory.",
+      "tags": ["import", "path"],
+      "fix": {
+        "type": "edit",
+        "description": "Count ../ levels from the importing file to the target file and correct the relative path.",
+        "patch": "Verify file exists at the resolved path; adjust ../ depth to match actual directory structure."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-reactive-002",
+      "kind": "reactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "TS2339",
+        "messagePattern": "Property '(.+)' does not exist on type '(.+)'",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Accessing a property or method not defined on the class/interface. Often caused by typo in property name or missing declaration in base class.",
+      "tags": ["typescript", "property", "type-mismatch"],
+      "fix": {
+        "type": "edit",
+        "description": "Check the class definition for the correct property name. Add the property if missing, or fix the typo.",
+        "patch": "Open the type/class definition, verify available properties, and correct the access or add the missing declaration."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-reactive-003",
+      "kind": "reactive",
+      "signature": {
+        "stage": "runtime",
+        "errorCode": "TypeError",
+        "messagePattern": "Cannot read propert(y|ies) of undefined",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Object accessed before initialization. Common in Phaser create() where an object is used before being constructed.",
+      "tags": ["runtime", "initialization-order", "undefined"],
+      "fix": {
+        "type": "edit",
+        "description": "Reorder creation statements so that the object is initialized before it is accessed.",
+        "patch": "Move the construction/assignment statement above the first usage in create() or the relevant lifecycle method."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-reactive-004",
+      "kind": "reactive",
+      "signature": {
+        "stage": "runtime",
+        "errorCode": "TextureNotFound",
+        "messagePattern": "Texture '(.+)' not found",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Texture key used in code does not match the key registered in asset-pack.json. Often a spelling difference or missing frame number suffix.",
+      "tags": ["asset", "texture", "key-mismatch"],
+      "fix": {
+        "type": "edit",
+        "description": "Compare the texture key in code with asset-pack.json and use the exact key from the asset registry.",
+        "patch": "Open asset-pack.json, find the correct key, and replace the mismatched key in the source file."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-reactive-005",
+      "kind": "reactive",
+      "signature": {
+        "stage": "runtime",
+        "errorCode": "AnimationNotFound",
+        "messagePattern": "Animation '(.+)' (doesn't exist|not found)",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Animation key referenced in code does not exist in animations.json. Key may have been renamed or never created.",
+      "tags": ["asset", "animation", "key-mismatch"],
+      "fix": {
+        "type": "edit",
+        "description": "Cross-reference with animations.json to find the correct key, then update the code.",
+        "patch": "Open animations.json, verify the animation key exists, and correct the reference in the source file."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-reactive-006",
+      "kind": "reactive",
+      "signature": {
+        "stage": "runtime",
+        "errorCode": "SceneNotFound",
+        "messagePattern": "Scene '(.+)' not found",
+        "fileContext": "src/main.ts"
+      },
+      "rootCause": "Scene class not registered in main.ts Phaser config. Scene.start() targets a key that was never added via game.scene.add().",
+      "tags": ["scene", "registration", "wiring"],
+      "fix": {
+        "type": "edit",
+        "description": "Import the scene class in main.ts and add it to the Phaser game config's scene list.",
+        "patch": "Add `import { XScene } from './scenes/XScene';` and `game.scene.add('XScene', XScene);` in main.ts."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-reactive-007",
+      "kind": "reactive",
+      "signature": {
+        "stage": "runtime",
+        "errorCode": "RangeError",
+        "messagePattern": "Maximum call stack size exceeded",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Infinite recursion, typically from a method calling itself without a proper base case, or circular scene transitions.",
+      "tags": ["runtime", "recursion", "infinite-loop"],
+      "fix": {
+        "type": "edit",
+        "description": "Add a base case to recursive calls, or break the circular dependency in scene/method calls.",
+        "patch": "Trace the call stack to identify the recursive loop and add a termination condition."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-proactive-001",
+      "kind": "proactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "ASSET_KEY_CONSISTENCY",
+        "messagePattern": "Asset key '(.+)' used in code but not found in asset-pack.json",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Code references texture/audio keys that do not exist in the asset registry. Caught by scanning code for string literals and cross-referencing with asset-pack.json.",
+      "tags": ["proactive", "asset", "consistency"],
+      "fix": {
+        "type": "edit",
+        "description": "Either add the missing key to asset-pack.json or correct the key in source code.",
+        "patch": "Grep all string literals used with this.add.image/sprite/audio, compare against asset-pack.json keys."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-proactive-002",
+      "kind": "proactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "CONFIG_FIELD_CONSISTENCY",
+        "messagePattern": "Config field '(.+)' accessed in code but not defined in gameConfig.json",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Code accesses a gameConfig field that was never defined. Often caused by GDD→config copy errors or renamed fields.",
+      "tags": ["proactive", "config", "consistency"],
+      "fix": {
+        "type": "config",
+        "description": "Add the missing field to gameConfig.json with the correct value wrapper format.",
+        "patch": "Grep code for gameConfig field accesses, compare with gameConfig.json top-level keys."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-proactive-003",
+      "kind": "proactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "SCENE_REGISTRATION_CONSISTENCY",
+        "messagePattern": "Scene key '(.+)' used in scene\\.start\\(\\) but not registered in main\\.ts",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "scene.start() or scene.launch() targets a scene key that is not registered in main.ts. Will fail at runtime with 'Scene not found'.",
+      "tags": ["proactive", "scene", "registration", "wiring"],
+      "fix": {
+        "type": "edit",
+        "description": "Register the missing scene in main.ts and ensure LevelManager.LEVEL_ORDER includes it if it's a game level.",
+        "patch": "Grep all scene.start/launch calls, compare target keys against main.ts scene registrations."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-proactive-004",
+      "kind": "proactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "ANIMATION_KEY_CONSISTENCY",
+        "messagePattern": "Animation key '(.+)' referenced in code but not defined in animations.json",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "Code plays an animation by key that doesn't exist in animations.json. Three-layer check: asset-pack.json → animations.json → code animKeys.",
+      "tags": ["proactive", "animation", "asset", "consistency"],
+      "fix": {
+        "type": "edit",
+        "description": "Verify the three-layer chain: asset frames exist → animation defined → code key matches.",
+        "patch": "Check asset-pack.json has frames, animations.json has the animation entry, and code uses the exact key."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-proactive-005",
+      "kind": "proactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "IMPORT_TYPE_KEYWORD",
+        "messagePattern": "Interface '(.+)' imported without 'type' keyword",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "TypeScript interfaces/types must be imported with the `type` keyword under verbatimModuleSyntax. Missing `type` causes build errors.",
+      "tags": ["proactive", "import", "typescript"],
+      "fix": {
+        "type": "edit",
+        "description": "Add `type` keyword to interface/type imports: `import { type X }` instead of `import { X }`.",
+        "patch": "Scan imports, identify which imported names are interfaces/types, and add the `type` keyword."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-proactive-006",
+      "kind": "proactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "OVERRIDE_VISIBILITY",
+        "messagePattern": "Override method '(.+)' narrows visibility from (.+) to (.+)",
+        "fileContext": "src/**/*.ts"
+      },
+      "rootCause": "TypeScript does not allow narrowing method visibility in overrides (e.g., public→protected). This is a common mistake when copying template code.",
+      "tags": ["proactive", "typescript", "override", "visibility"],
+      "fix": {
+        "type": "edit",
+        "description": "Match or widen the visibility of the overriding method to match the base class.",
+        "patch": "Check base class method visibility and ensure the override uses the same or wider access modifier."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    },
+    {
+      "id": "seed-proactive-007",
+      "kind": "proactive",
+      "signature": {
+        "stage": "build",
+        "errorCode": "LEVEL_ORDER_MISMATCH",
+        "messagePattern": "LEVEL_ORDER\\[0\\] is '(.+)' but first game scene is '(.+)'",
+        "fileContext": "src/LevelManager.ts"
+      },
+      "rootCause": "LevelManager.LEVEL_ORDER[0] still has the default template value instead of the actual first game scene key.",
+      "tags": ["proactive", "scene", "level-manager", "wiring"],
+      "fix": {
+        "type": "edit",
+        "description": "Update LEVEL_ORDER[0] in LevelManager.ts to match the actual first game scene key.",
+        "patch": "Set LEVEL_ORDER to the scene keys defined in main.ts scene registrations."
+      },
+      "occurrences": 0,
+      "contributingProjects": [],
+      "createdAt": "2026-04-19T00:00:00.000Z",
+      "lastMatchedAt": "2026-04-19T00:00:00.000Z"
+    }
+  ],
+  "rules": [],
+  "evolutionLog": []
+}

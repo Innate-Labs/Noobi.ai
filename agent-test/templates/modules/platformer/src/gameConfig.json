@@ -1,0 +1,110 @@
+{
+  "screenSize": {
+    "width": {
+      "value": 1152,
+      "type": "number",
+      "description": "Game width in pixels"
+    },
+    "height": {
+      "value": 768,
+      "type": "number",
+      "description": "Game height in pixels"
+    }
+  },
+  "debugConfig": {
+    "debug": {
+      "value": false,
+      "type": "boolean",
+      "description": "Enable debug mode"
+    }
+  },
+  "renderConfig": {
+    "pixelArt": {
+      "value": true,
+      "type": "boolean",
+      "description": "Enable pixel art rendering"
+    }
+  },
+  "playerConfig": {
+    "maxHealth": {
+      "value": 100,
+      "type": "number",
+      "description": "Player max health"
+    },
+    "walkSpeed": {
+      "value": 200,
+      "type": "number",
+      "description": "Player walk speed"
+    },
+    "jumpPower": {
+      "value": 620,
+      "type": "number",
+      "description": "Player jump power"
+    },
+    "gravityY": {
+      "value": 1200,
+      "type": "number",
+      "description": "Gravity Y value"
+    },
+    "attackDamage": {
+      "value": 25,
+      "type": "number",
+      "description": "Player attack damage"
+    },
+    "hurtingDuration": {
+      "value": 100,
+      "type": "number",
+      "description": "Hurt animation duration (ms)"
+    },
+    "invulnerableTime": {
+      "value": 1000,
+      "type": "number",
+      "description": "Invulnerability after hit (ms)"
+    }
+  },
+  "ultimateConfig": {
+    "cooldown": {
+      "value": 8000,
+      "type": "number",
+      "description": "Ultimate cooldown (ms)"
+    },
+    "damage": {
+      "value": 100,
+      "type": "number",
+      "description": "Ultimate damage"
+    }
+  },
+  "characterConfig": {
+    "defaultCharacter": {
+      "value": "Player",
+      "type": "string",
+      "description": "Default character name"
+    }
+  },
+  "enemyConfig": {
+    "maxHealth": {
+      "value": 50,
+      "type": "number",
+      "description": "Enemy max health"
+    },
+    "walkSpeed": {
+      "value": 80,
+      "type": "number",
+      "description": "Enemy walk speed"
+    },
+    "damage": { "value": 20, "type": "number", "description": "Enemy damage" }
+  },
+  "bossConfig": {
+    "maxHealth": {
+      "value": 200,
+      "type": "number",
+      "description": "Boss max health"
+    },
+    "damage": { "value": 35, "type": "number", "description": "Boss damage" },
+    "speed": {
+      "value": 120,
+      "type": "number",
+      "description": "Boss movement speed"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "debug-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Debug Skill evolution module — maintains a living debugging protocol P that accumulates (signature, cause, fix) entries through observed build/test/runtime outcomes.",
+  "scripts": {
+    "init": "tsx scripts/init.ts",
+    "debug": "tsx scripts/debug.ts",
+    "evolve": "tsx scripts/evolve.ts",
+    "status": "tsx scripts/status.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.8.3"
+  }
+}

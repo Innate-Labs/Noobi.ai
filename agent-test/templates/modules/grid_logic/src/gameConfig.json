@@ -1,0 +1,70 @@
+{
+  "screenSize": {
+    "width": {
+      "value": 1152,
+      "type": "number",
+      "description": "Game screen width in pixels"
+    },
+    "height": {
+      "value": 768,
+      "type": "number",
+      "description": "Game screen height in pixels"
+    }
+  },
+  "debugConfig": {
+    "showGrid": {
+      "value": false,
+      "type": "boolean",
+      "description": "Show debug grid overlay"
+    },
+    "showCellTypes": {
+      "value": false,
+      "type": "boolean",
+      "description": "Show cell type colors"
+    },
+    "showEntityIds": {
+      "value": false,
+      "type": "boolean",
+      "description": "Show entity IDs on grid"
+    }
+  },
+  "renderConfig": {
+    "pixelArt": {
+      "value": true,
+      "type": "boolean",
+      "description": "Use pixel art rendering (no anti-aliasing)"
+    }
+  },
+  "gridConfig": {
+    "cellSize": {
+      "value": 64,
+      "type": "number",
+      "description": "Grid cell size in pixels"
+    },
+    "gridWidth": {
+      "value": 10,
+      "type": "number",
+      "description": "Grid width in cells"
+    },
+    "gridHeight": {
+      "value": 10,
+      "type": "number",
+      "description": "Grid height in cells"
+    },
+    "maxMoves": {
+      "value": -1,
+      "type": "number",
+      "description": "Maximum moves allowed (-1 = unlimited)"
+    },
+    "animationSpeed": {
+      "value": 200,
+      "type": "number",
+      "description": "Default grid movement animation duration in ms"
+    },
+    "inputDebounceMs": {
+      "value": 150,
+      "type": "number",
+      "description": "Minimum time between keyboard inputs in ms"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Debug Skill Seed Protocol (P0)",
+  "description": "The initial protocol derived by structuring the hand-written debug_protocol.md into machine-readable (signature, cause, fix) entries. Analogous to Template Skill's meta-template M0.",
+  "source": "../docs/debug_protocol.md",
+  "version": "0.1.0",
+  "entryCategories": {
+    "proactive": "Pre-execution validations — checks run BEFORE build/test/dev to catch known inconsistency classes early.",
+    "reactive": "Diagnosis entries — matched AFTER a failure occurs to provide root cause and verified fix."
+  },
+  "evolutionPoints": [
+    "New failure patterns encountered during debug sessions are appended as reactive entries.",
+    "Repeated patterns (>= GENERALIZATION_THRESHOLD occurrences) are generalized into ProtocolRules.",
+    "Proactive entries can be promoted to ProtocolRules with automated validation checks."
+  ]
+}

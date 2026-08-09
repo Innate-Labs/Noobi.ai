@@ -1,0 +1,85 @@
+{
+  "name": "Meta Template M0",
+  "version": "1.0.0",
+  "description": "A minimal, game-agnostic project skeleton that defines the universal structure required for a playable Phaser game. Does not assume any genre, physics regime, or gameplay mechanic.",
+  "core": {
+    "description": "Universal project foundation from templates/core/",
+    "provides": [
+      "Build toolchain (Vite + TypeScript + Tailwind)",
+      "Phaser initialization (main.ts + gameConfig.json)",
+      "Scene flow (Preloader → TitleScreen → Levels → UI overlays)",
+      "Level management (LevelManager.ts)",
+      "Generic FSM (StateMachine.ts)",
+      "Shared utilities (initScale, safeAddSound, addCollider, addOverlap, initUIDom)"
+    ],
+    "scenes": [
+      "Preloader",
+      "TitleScreen",
+      "UIScene",
+      "PauseUIScene",
+      "VictoryUIScene",
+      "GameOverUIScene",
+      "GameCompleteUIScene"
+    ]
+  },
+  "extension": {
+    "description": "Minimal extension interfaces for game-type specialization",
+    "files": {
+      "BaseGameScene.ts": {
+        "type": "base_class",
+        "purpose": "Scene lifecycle skeleton with Template Method pattern",
+        "abstractMethods": ["setupWorld", "createEntities"],
+        "hooks": ["onPreCreate", "onPostCreate", "onPreUpdate", "onPostUpdate"],
+        "utilities": ["onLevelComplete", "onGameOver"]
+      },
+      "BaseEntity.ts": {
+        "type": "base_class",
+        "purpose": "Minimal entity base with lifecycle hooks",
+        "hooks": ["onUpdate", "onDamageTaken", "onDeath"]
+      },
+      "_TemplateScene.ts": {
+        "type": "copy_template",
+        "purpose": "COPY to create new game scenes"
+      },
+      "_TemplateEntity.ts": {
+        "type": "copy_template",
+        "purpose": "COPY to create new entity types"
+      }
+    }
+  },
+  "doesNotAssume": [
+    "Physics regime (gravity, grid, path, none)",
+    "Perspective (side view, top-down, isometric)",
+    "Entity types (player, enemy, tower, card)",
+    "Behavior systems (patrol, chase, movement)",
+    "Domain systems (BoardManager, WaveManager, DialogueManager)",
+    "Input scheme (keyboard, mouse, touch)"
+  ],
+  "extensionPoints": [
+    {
+      "name": "setupWorld",
+      "description": "World construction — tilemap, grid, arena, UI panels",
+      "location": "BaseGameScene.ts"
+    },
+    {
+      "name": "createEntities",
+      "description": "Entity creation — player, enemies, NPCs, towers, cards",
+      "location": "BaseGameScene.ts"
+    },
+    {
+      "name": "gameConfig.json",
+      "description": "Game-specific config fields added via { value: X } wrapper format",
+      "location": "core/src/gameConfig.json"
+    },
+    {
+      "name": "LevelManager.LEVEL_ORDER",
+      "description": "Level scene keys for progression",
+      "location": "core/src/LevelManager.ts"
+    },
+    {
+      "name": "main.ts scene registration",
+      "description": "Import and register game scenes",
+      "location": "core/src/main.ts"
+    }
+  ]
+}

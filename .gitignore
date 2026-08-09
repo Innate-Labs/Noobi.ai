@@ -1,0 +1,76 @@
+# API keys and secrets
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials*.json
+service-account*.json
+
+# gemini-cli settings
+# We want to keep the .gemini in the root of the repo and ignore any .gemini
+# in subdirectories. In our root .gemini we want to allow for version control
+# for subcommands.
+**/.gemini/
+!/.gemini/
+.gemini/*
+!.gemini/config.yaml
+!.gemini/commands/
+
+# Clipboard captures can contain local or customer data.
+**/.gemini-clipboard/
+
+# Dependency directory
+node_modules
+bower_components
+
+# Editors
+.idea
+*.iml
+.cursor
+.qoder
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# TypeScript build info files
+*.tsbuildinfo
+
+# Ignore built ts files
+dist
+
+# Docker folder to help skip auth refreshes
+.docker
+
+bundle
+
+# Test report files
+junit.xml
+packages/*/coverage/
+
+# Generated files
+packages/cli/src/generated/
+packages/core/src/generated/
+.integration-tests/
+
+# Qwen Code Configs
+.qwen/
+logs/
+# GHA credentials
+gha-creds-*.json
+
+# Log files
+patch_output.log
+*.log
+
+# docs build
+docs-site/.next
+# content is a symlink to ../docs
+docs-site/content
+
+# guidance files
+guidance.md
