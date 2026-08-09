@@ -1,16 +1,190 @@
-# Noobi.ai
+<div align="center">
+  <h1>Noobi.ai</h1>
+  <p><strong>把一个游戏想法，变成可运行、可继续迭代的本地项目。</strong></p>
+  <p>
+    面向 macOS 的本地优先 AI 游戏制作客户端。让 Agent 在可见的工作区中规划、
+    编码、调用工具、运行验证，并通过插件连接 Skills、MCP 与游戏引擎。
+  </p>
+  <p>
+    <a href="#快速开始">快速开始</a>
+    ·
+    <a href="#产品架构">产品架构</a>
+    ·
+    <a href="docs/gameagent/DESKTOP_GUIDE.md">使用文档</a>
+    ·
+    <a href="https://github.com/Innate-Labs/Noobi.ai/issues">问题反馈</a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-1b1d18" alt="macOS Apple Silicon" />
+    <img src="https://img.shields.io/badge/Electron-Desktop-47848f" alt="Electron Desktop" />
+    <img src="https://img.shields.io/badge/Agent-Skills%20%2B%20MCP-d69a2d" alt="Agent Skills and MCP" />
+    <img src="https://img.shields.io/badge/license-Apache--2.0-5e936f" alt="Apache-2.0 license" />
+  </p>
+</div>
 
-Noobi.ai 是基于 OpenGame 源码能力构建的桌面版 AI 游戏制作工作台。它保留原项目的 Agent 循环、Function Call、GDD、模板、素材、Tilemap、Memory、会话恢复与构建验证能力，并增加：
+<div align="center">
+  <img src="docs/images/noobi-ai-hero.png" alt="Noobi.ai IP 形象在 AI 游戏制作工作台中把创意组装成可玩游戏" width="100%" />
+</div>
 
-- Electron 桌面工作台与中文游戏制作提示词。
-- 项目、制作阶段、工具调用、文件和游戏预览的可视化管理。
-- Skills 与 MCP 管理：浏览经过来源/许可证审阅的游戏制作精选库，或从本地、GitHub 安装用户级/项目级 Skill（支持仓库子目录、分支与 Tag）；配置 STDIO、Streamable HTTP 与 SSE Server。
-- DeepSeek / OpenAI Compatible 主模型，以及独立 reasoning、image、video、audio Provider 配置。
-- API Key 系统安全存储；密钥不会进入 renderer、项目文件或日志。
-- 每个回合独立 Agent 进程，支持停止、崩溃隔离和显式 session 恢复。
-- 针对大工具结果的 IPC 截断，避免超长会话 structured clone 导致内存耗尽。
+## 产品业务：Noobi.ai 解决什么问题
 
-## 启动桌面版
+游戏原型制作横跨策划文档、素材服务、代码编辑器、终端、浏览器与游戏引擎。普通 AI 对话可以给出代码片段，却很难持续理解一个真实工程，更难让创作者看清它改了什么、调用了什么，以及失败后如何继续。
+
+Noobi.ai 把这些环节组织成一条可观察、可停止、可恢复的本地制作流程：
+
+| 传统痛点                         | Noobi.ai 的处理方式                                                  |
+| -------------------------------- | -------------------------------------------------------------------- |
+| 创意散落在聊天、文档和多个工具里 | 以本地项目为中心保存 Prompt、GDD、代码、素材与构建结果               |
+| Agent 工作像黑盒，出错后难定位   | 展示制作阶段、实时事件、Function Calling、文件变化与错误             |
+| 每次都要重新搭工程、写提示词     | 通过游戏模板、项目级 / 用户级 Skill 复用专业工作流                   |
+| AI 只能“建议”，不能连接真实工具  | 通过 MCP 把已配置的 Unity、Godot、Unreal、Blender 等工具暴露给 Agent |
+| 模型、密钥和本机依赖分散管理     | 在设置中统一管理 Provider、测速、Token 统计、开发者诊断与依赖        |
+| 中断一次就要从头开始             | 保留项目文件与 Session，可停止、恢复并继续迭代                       |
+
+Noobi.ai 面向独立游戏开发者、游戏策划、技术美术和小型制作团队。它的目标是缩短“想法 → 首个可玩版本 → 持续迭代”的路径，而不是替代创意判断、代码审查或最终质量把关。
+
+## 从想法到可玩版本
+
+<div align="center">
+  <img src="docs/images/noobi-ai-workflow.png" alt="Noobi.ai 从创意、规划、制作、验证到试玩的产品工作流" width="100%" />
+</div>
+
+1. **描述创意**：选择本地目录，用自然语言说明玩法、视角、主题与美术方向。
+2. **形成计划**：Agent 识别项目类型，生成或更新 GDD，拆解制作阶段与任务。
+3. **制作工程**：Agent 创建文件、实现玩法、组织素材，并按需加载 Skill 或调用 MCP 工具。
+4. **运行验证**：执行构建与测试，把结果、错误和工具调用实时回传到客户端。
+5. **试玩迭代**：查看本地预览和文件，继续给出修改要求；已有工程与 Session 会被保留。
+
+## 核心能力
+
+| 业务模块              | 当前能力                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| **AI 游戏制作工作台** | 项目、制作阶段、事件流、文件浏览与 Web 游戏预览集中在一个桌面客户端                           |
+| **可观察 Agent**      | 支持停止、会话恢复、崩溃隔离、无输出监控，以及脱敏后的 Function Calling 查看                  |
+| **插件中心**          | 将 Skills 与 MCP 合并为插件能力；提供精选目录，也支持从本地或 GitHub 安装 Skill               |
+| **模型与素材服务**    | 配置主 Agent、reasoning、image、video、audio Provider，并进行基础连接测速                     |
+| **调用与成本诊断**    | 展示主 Agent 实际工作调用、延迟与 Token 统计；用于本机诊断，不替代供应商账单                  |
+| **开发者模式**        | 查看项目 Prompt、Function Calling 和当前单任务调度状态                                        |
+| **依赖管理**          | 检测并按白名单安装或更新 Node / npx、uvx、Godot、Blender、Unity Hub；Unity Editor 由 Hub 管理 |
+| **本地与安全**        | 工程保存在用户选择的目录；API Key 与 MCP Secret 使用 macOS 系统安全存储                       |
+
+## 插件与游戏引擎
+
+Skill 与 MCP 承担不同职责：
+
+- **Skill** 是 Agent 按需加载的专业说明和工作方法。安装 Skill 不等于已经连接编辑器。
+- **MCP** 是实际工具通道。保存配置后，Noobi.ai 会在**下一次 Agent 启动**时连接 Server、发现工具并提供给 Agent。
+- **依赖管理**只负责检测、安装、更新或打开宿主软件；它本身不是 Agent 控制通道。
+
+| 目标            | 当前接入方式     | 使用前提                                               |
+| --------------- | ---------------- | ------------------------------------------------------ |
+| Phaser Web 游戏 | 内置生产流程     | Node.js 与项目依赖可用                                 |
+| Unity           | 推荐 Skill + MCP | Unity Hub / Editor、对应 Package 或 Editor 侧 MCP 服务 |
+| Godot           | 推荐 Skill + MCP | Godot、Node / npx 与对应 MCP 服务                      |
+| Unreal Engine   | 推荐 Skill + MCP | Unreal Editor、对应插件与正在运行的 MCP 服务           |
+| Blender         | 推荐 MCP         | Blender 与对应 add-on / MCP Server                     |
+
+> 第三方 Skill 与 MCP 可能执行代码、访问编辑器或接收配置的凭据。只应安装和启用可信来源，并在交付前审查生成代码、素材授权与构建结果。
+
+## 产品架构
+
+```mermaid
+flowchart LR
+  User["游戏创作者"] --> UI
+
+  subgraph Desktop["Noobi.ai Desktop"]
+    UI["React 工作台<br/>项目 · Pipeline · Events · Inspector"]
+    Settings["设置中心<br/>API · 开发者 · 依赖"]
+    Plugins["插件中心<br/>Skills + MCP"]
+    Bridge["Preload 白名单桥接"]
+    Main["Electron Main<br/>IPC 控制面"]
+    Projects["Project Manager<br/>项目文件 · Prompt · Preview"]
+    Runner["Agent Runner<br/>全局单一 Active Run"]
+    Stores["本地状态<br/>Session · Events · Usage · Secrets"]
+
+    UI --- Settings
+    UI --- Plugins
+    UI <--> Bridge
+    Bridge <--> Main
+    Main --> Projects
+    Main --> Runner
+    Main --> Stores
+  end
+
+  Projects <--> Workspace["本地项目工作区<br/>GDD · Code · Assets · Build"]
+  Runner --> Runtime["Bundled Agent Runtime<br/>Model Loop + Tool Registry"]
+  Runtime <--> Providers["模型与素材 Provider<br/>Main · Reasoning · Image · Video · Audio"]
+  Runtime --> Builtins["内置工具<br/>文件 · Shell · Web · Assets"]
+  Runtime --> Skills["Skills<br/>按需加载专业工作流"]
+  Runtime --> MCP["MCP Client<br/>stdio · HTTP · SSE"]
+  MCP -.-> Unity["Unity"]
+  MCP -.-> Godot["Godot"]
+  MCP -.-> Unreal["Unreal"]
+  MCP -.-> Blender["Blender"]
+  Runtime --> Workspace
+  Runner -->|"实时事件"| UI
+```
+
+虚线表示需要额外安装和配置的外部工具。Renderer 无法直接读取密钥；敏感配置由主进程解密后，通过独立通道只交给本轮 Agent Runtime。
+
+## 产品 Agent 结构
+
+```mermaid
+flowchart TD
+  Request["用户启动一个 Agent 回合"] --> Guard{"当前已有任务？"}
+  Guard -->|"是"| Reject["拒绝第二个任务<br/>当前没有后台等待队列"]
+  Guard -->|"否"| Load["加载项目、Provider、Skills 与 MCP 配置"]
+  Load --> Spawn["启动独立 CLI Child Process<br/>可选恢复 Session"]
+  Spawn --> Agent["主 Agent<br/>System Prompt + Memory + User Prompt"]
+  Agent --> Model["主模型流式推理"]
+  Model --> Decision{"需要调用工具？"}
+  Decision -->|"否"| Final["输出结果并保存 Session"]
+  Decision -->|"是"| Scheduler["Tool Scheduler<br/>按顺序执行 Function Calls"]
+
+  Scheduler --> Builtin["内置工具<br/>文件 · Shell · Web · 素材"]
+  Scheduler --> Skill["Skill Tool<br/>返回 SKILL.md 指令"]
+  Scheduler --> McpTool["MCP Tool<br/>调用外部 Server"]
+  Scheduler --> Task["Task Tool<br/>阻塞式子 Agent"]
+
+  Builtin --> Result["Tool Result"]
+  Skill --> Result
+  McpTool --> External["Unity / Godot / Unreal / Blender 等"]
+  External --> Result
+  Task --> Subagent["子 Agent Runtime<br/>不可递归委派"]
+  Subagent --> Result
+  Result --> Model
+
+  Model -.-> Stream["实时事件流"]
+  Scheduler -.-> Stream
+  Stream --> UI2["客户端可视化"]
+  Stream --> EventStore["脱敏事件持久化"]
+  Final --> Usage["主 Agent 用量统计"]
+  Stop["用户停止 / 无输出超时"] --> Terminate["终止 Child Process<br/>保留项目与 Session"]
+  Terminate --> Final
+```
+
+当前桌面调度器一次只运行一个 Agent 任务；同一轮中的多个 Function Call 也会顺序执行。Task 子 Agent 会等待完成，不等同于后台并行的多 Agent 集群。MCP Server 的启动发现可以并行进行，单个 Server 失败不会阻断其他 Server。
+
+## 能力边界
+
+> Noobi.ai 是自动化开发工具，不是“一键生成商业成品”的无代码平台。
+
+- 当前内置、验证最完整的生产流程面向 **2D Phaser Web 游戏**；Unity、Godot、Unreal 与 Blender 依赖外部插件、MCP Server 和正确运行的本机环境。
+- 内置预览要求项目存在 <code>dist/index.html</code>；引擎项目需要在对应编辑器中运行。
+- 图像、视频、音频和模型调用依赖用户自己的 API、网络、额度与供应商能力，费用由服务商收取。
+- Token 与延迟统计当前覆盖 Provider 连接测试和主 Agent 最终结果，不等同于供应商账单，也尚未逐项记录所有内部素材请求。
+- Agent 可以在项目目录写文件并运行命令。建议使用 Git 或其他方式备份，并在发布前完成代码、许可证与素材来源审查。
+- 当前没有云同步、多人协作或内置自动更新；公开构建仍需 Apple Developer ID 签名与公证。
+
+## 快速开始
+
+### 环境要求
+
+- macOS（当前构建流程主要在 Apple Silicon 上验证）
+- Node.js 20 或更高版本
+- npm 与 Git
+
+### 从源码启动
 
 ```bash
 git clone https://github.com/Innate-Labs/Noobi.ai.git
@@ -20,329 +194,76 @@ npm run bundle
 npm run desktop
 ```
 
-仅构建桌面界面：
+首次使用：
 
-```bash
-npm run desktop:build
-```
+1. 打开“设置 → API 管理”，配置主 Agent 的 Provider、Model、Base URL 与 API Key。
+2. 新建项目，选择本地目录并输入游戏创意。
+3. 启动 Agent，在工作台中观察阶段、工具调用、文件和预览。
+4. 如需外部引擎，在“插件”安装对应 Skill / MCP，并在“设置 → 依赖管理”补齐本机环境。
 
-生成可安装的 macOS DMG（在 Apple Silicon 机器上生成 arm64 版本）：
+### 构建 macOS 安装包
 
 ```bash
 npm run desktop:package
 ```
 
-该命令会自动构建 Agent Runtime、桌面界面和运行时依赖，完成 Runtime 冒烟测试，随后生成并挂载检查 DMG。安装包位于 `packages/desktop/release/Noobi.ai-0.2.2-arm64.dmg`。双击 DMG 后，将 `Noobi.ai` 拖入 `Applications` 即可安装。
+该命令会构建 Agent Runtime、桌面界面和运行时依赖，完成 Runtime 冒烟测试，然后生成 DMG。当前版本的产物位于：
 
-本地构建没有 Apple Developer ID 时不会获得 Apple 公证。首次打开可在 Finder 中按住 Control 点击应用并选择“打开”，或前往“系统设置 → 隐私与安全性”确认打开。面向其他用户无警告分发时，需要配置 `CSC_LINK`、`CSC_KEY_PASSWORD` 与 Apple 公证凭据，然后运行：
+```text
+packages/desktop/release/Noobi.ai-0.2.2-arm64.dmg
+```
+
+本地构建没有 Apple Developer ID 时不会获得 Apple 公证。首次打开可在 Finder 中按住 Control 点击应用并选择“打开”，或前往“系统设置 → 隐私与安全性”确认打开。
+
+正式签名与公证构建需要配置 Apple 签名凭据，然后运行：
 
 ```bash
 npm run desktop:package:signed
 ```
 
-仅生成未封装 `.app` 用于本机调试：
+仅生成未封装的本机调试 App：
 
 ```bash
 npm run desktop:package:app
 ```
 
-详细架构见 [`docs/gameagent/ARCHITECTURE.md`](docs/gameagent/ARCHITECTURE.md)，桌面使用说明见 [`docs/gameagent/DESKTOP_GUIDE.md`](docs/gameagent/DESKTOP_GUIDE.md)。
-API 配置与当前推荐模型见 [`docs/gameagent/API_CONFIGURATION.md`](docs/gameagent/API_CONFIGURATION.md)。
+## 开发与验证
 
-### DeepSeek Harness 与卡死恢复
+```bash
+# 桌面端类型检查与生产构建
+npm run desktop:build
 
-桌面版会监控 Agent Runtime 的模型与工具输出：连续 90 秒无输出时显示等待提示，连续 4 分钟无输出时停止本轮并保留项目文件与 session ID，可从原会话继续。单次模型请求默认限制为 3 分钟、最多重试 1 次，避免网络异常叠加成十几分钟的假死。
+# 桌面端测试
+npm test --workspace=@gameagent/desktop
 
-可在启动桌面版前通过以下环境变量覆盖默认值：
+# 全仓类型检查
+npm run typecheck
+```
+
+更多资料：
+
+- [桌面使用说明](docs/gameagent/DESKTOP_GUIDE.md)
+- [API 配置](docs/gameagent/API_CONFIGURATION.md)
+- [详细技术架构](docs/gameagent/ARCHITECTURE.md)
+
+### Agent 无输出保护
+
+桌面版监控 Agent Runtime 的模型与工具输出：连续 90 秒无输出时显示等待提示，连续 4 分钟无输出时停止本轮并保留项目文件与 Session ID，可从原会话继续。可通过环境变量调整：
 
 ```bash
 GAMEAGENT_AGENT_IDLE_TIMEOUT_MS=360000 npm run desktop
 ```
 
-> 本项目保留 OpenGame 与其上游 qwen-code 的 Apache-2.0 许可证和版权声明。以下为上游项目原始说明。
+## 上游项目与许可证
 
----
+Noobi.ai 基于 [OpenGame](https://github.com/leigest519/OpenGame) 的开源能力构建，并继续使用其上游 [qwen-code](https://github.com/QwenLM/qwen-code) 的 Agent Runtime 与 CLI 基础。本仓库保留 OpenGame、qwen-code 及其上游项目的 Apache-2.0 许可证和版权声明。
 
-<div align="center">
+- OpenGame 项目主页：[opengame-project-page.com](https://www.opengame-project-page.com/)
+- OpenGame 论文：[arXiv:2604.18394](https://arxiv.org/abs/2604.18394)
+- 完整许可：[LICENSE](LICENSE)
 
-# OpenGame: Open Agentic Coding for Games
+Noobi.ai、其 IP 形象与新增桌面产品设计由 Innate Labs 维护。第三方引擎、Skill、MCP 与品牌名称归各自权利人所有；本项目与这些品牌之间不存在默认背书关系。
 
-Yilei Jiang, Jinyuan Hu, Qianyin Xiao, Yaozhi Zheng, Ruize Ma, Kaituo Feng,<br>
-Jiaming Han, Tianshuo Peng, Kaixuan Fan, Manyuan Zhang, Xiangyu Yue\*
+## 参与贡献
 
-_CUHK MMLab_<br>
-`yljiang@link.cuhk.edu.hk`, `xyyue@ie.cuhk.edu.hk`<br>
-_\*Corresponding author_
-
-<br>
-
-[![Project Page](https://img.shields.io/badge/Project-Page-blue.svg)](https://www.opengame-project-page.com/)
-[![arXiv](https://img.shields.io/badge/arXiv-b31b1b.svg)](https://arxiv.org/abs/2604.18394)
-[![Hugging Face Paper](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Paper-yellow)](https://huggingface.co/papers/2604.18394)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org/)
-
-**An open-source agentic framework for end-to-end web game creation from a prompt.**
-
-</div>
-
-<div align="center">
-  <img src="assets/opengame_teaser.png" alt="OpenGame Teaser" width="100%">
-</div>
-
-## Abstract
-
-> Game development sits at the intersection of creative design and intricate software engineering, demanding the joint orchestration of game engines, real-time loops, and tightly coupled state across many files. While Large Language Models (LLMs) and code agents now solve isolated programming tasks with ease, they consistently stumble when asked to produce a fully playable game from a high-level design, collapsing under cross-file inconsistencies, broken scene wiring, and logical incoherence. We bridge this gap with **OpenGame**, the first open-source agentic framework explicitly designed for end-to-end web game creation. At its core lies **Game Skill**, a reusable, evolving capability composed of a _Template Skill_ that grows a library of project skeletons from experience and a _Debug Skill_ that maintains a living protocol of verified fixes—together enabling the agent to scaffold stable architectures and systematically repair integration errors rather than patch isolated syntax bugs. Powering this framework is **GameCoder-27B**, a code LLM specialized for game engine mastery through a three-stage pipeline of continual pre-training, supervised fine-tuning, and execution-grounded reinforcement learning. Since verifying interactive playability is fundamentally harder than checking static code, we further introduce **OpenGame-Bench**, an evaluation pipeline that scores agentic game generation along Build Health, Visual Usability, and Intent Alignment via headless browser execution and VLM judging. Across 150 diverse game prompts, OpenGame establishes a new state-of-the-art. We hope OpenGame pushes code agents beyond discrete software engineering problems and toward building complex, interactive real-world applications.
-
-## 📢 News
-
-- **[2026-04-21]** 🚀 We have officially released the **OpenGame** framework! You can now access our [Project Page](https://www.opengame-project-page.com/), read the [arXiv Paper](https://arxiv.org/abs/2604.18394), and start generating your own web games end-to-end.
-
-## Playable Demos
-
-A curated gallery of web games generated end-to-end by OpenGame from a single prompt. Hover any tile to preview the gameplay; click through for the live build or the full source archive used by the agent.
-
-<table align="center" width="100%">
-  <tr>
-    <td align="center" valign="top" width="50%">
-      <p align="center"><b><font size="4">Marvel Avengers: Infinity Strike</font></b></p>
-      <video src="https://github.com/user-attachments/assets/5c8d1ef9-48cb-4916-abd2-fc201e478306"
-             poster="assets/posters/marvel.png"
-             width="100%" loop muted autoplay playsinline preload="metadata">
-      </video>
-      <div align="left" style="padding: 0 15px;">
-        <p><b>Prompt:</b> <i>"Build an epic side-scrolling action platformer starring the Avengers. I want to select between Iron Man (lasers & flight), Thor (hammer melee & lightning), or Hulk (smash attacks) to fight through 3 distinct levels: a ruined City, a SHIELD Helicarrier, and finally Titan. Each hero needs a basic attack, a special skill, and a screen-clearing Ultimate move. The final boss must be Thanos using Infinity Stone powers. The art style should be hardcore 90s Capcom arcade pixel art, not cute/chibi."</i></p>
-        <p><b>Intro:</b> Choose your superhero. Clear stages with epic beatdowns and crush the mastermind.<br/>选择你的超级英雄，清除关卡并击败Boss。</p>
-      </div>
-      <p align="center">
-        <a href="https://www.opengame-project-page.com/#demo"><b>▶&nbsp;&nbsp;Live Demo</b></a>
-        &nbsp;&nbsp;·&nbsp;&nbsp;
-        <a href="https://github.com/leigest519/OpenGame/raw/main/assets/downloads/demo_platformer_marvel.zip"><b>↓&nbsp;&nbsp;Source</b></a>
-      </p>
-      <br/>
-    </td>
-    <td align="center" valign="top" width="50%">
-      <p align="center"><b><font size="4">Harry Potter: Arithmancy Academy</font></b></p>
-      <video src="https://github.com/user-attachments/assets/d70015c5-e2f2-4c5d-b842-8d97f95cd765"
-             poster="assets/posters/harryPotter.png"
-             width="100%" loop muted autoplay playsinline preload="metadata">
-      </video>
-      <div align="left" style="padding: 0 15px;">
-        <p><b>Prompt:</b> <i>"Create a turn-based card battle game set in a pixel art Hogwarts. I want to play as a wizard student dueling a rival in the Dueling Club. The twist is that magic requires knowledge: to cast spell cards like 'Expelliarmus' or 'Stupefy', I must answer trivia questions (Math/Science) correctly. Include a 'Magic Resonance' combo system where getting consecutive right answers boosts my spell damage. The style should be atmospheric Gothic fantasy pixel art with parchment-style UI and magical particle effects."</i></p>
-        <p><b>Intro:</b> Cast spell cards by answering trivia correctly. Chain combos for bonus damage.<br/>正确答题释放魔法卡牌，连续答对触发魔力共振连击。</p>
-      </div>
-      <p align="center">
-        <a href="https://www.opengame-project-page.com/#demo"><b>▶&nbsp;&nbsp;Live Demo</b></a>
-        &nbsp;&nbsp;·&nbsp;&nbsp;
-        <a href="https://github.com/leigest519/OpenGame/raw/main/assets/downloads/demo_uiHeavy_harryPotter.zip"><b>↓&nbsp;&nbsp;Source</b></a>
-      </p>
-      <br/>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" valign="top" width="50%">
-      <p align="center"><b><font size="4">K.O.F: Celestial Showdown</font></b></p>
-      <video src="https://github.com/user-attachments/assets/35fb22d9-2378-416d-8656-ef3c965a2d36"
-             poster="assets/posters/kombat.png"
-             width="100%" loop muted autoplay playsinline preload="metadata">
-      </video>
-      <div align="left" style="padding: 0 15px;">
-        <p><b>Prompt:</b> <i>"Make a local 2-player quiz fighting game that looks and feels like a classic 90s SNK retro arcade fighter (like The King of Fighters). Instead of punching, players fight by racing to hit a 'Buzzer Key' to answer physics questions. If you answer fast and correctly, you deal damage; if you're wrong, you take self-damage. The setting is a grand fighting tournament stage located in a majestic 'Heavenly Court' (Chinese celestial realm), complete with ancient jade gates, floating auspicious clouds, and golden traditional motifs. Include dramatic health bars, screen shake on hits, and a 'K.O.' sequence. Visuals should be highly detailed 16-bit pixel art, typical of 90s arcade cabinets."</i></p>
-        <p><b>Intro:</b> Two players race to buzz in and answer physics questions. Right answers deal damage; wrong answers backfire.<br/>双人抢答物理题，答对造成伤害，答错反噬自身。</p>
-      </div>
-      <p align="center">
-        <a href="https://www.opengame-project-page.com/#demo"><b>▶&nbsp;&nbsp;Live Demo</b></a>
-        &nbsp;&nbsp;·&nbsp;&nbsp;
-        <a href="https://github.com/leigest519/OpenGame/raw/main/assets/downloads/demo_uiHeavy_kombat.zip"><b>↓&nbsp;&nbsp;Source</b></a>
-      </p>
-      <br/>
-    </td>
-    <td align="center" valign="top" width="50%">
-      <p align="center"><b><font size="4">Hajimi Defense: The Tuna Crisis</font></b></p>
-      <video src="https://github.com/user-attachments/assets/06287b6f-4da0-49a5-8cf7-ef5de4bc45e3"
-             poster="assets/posters/hajimi.png"
-             width="100%" loop muted autoplay playsinline preload="metadata">
-      </video>
-      <div align="left" style="padding: 0 15px;">
-        <p><b>Prompt:</b> <i>"Make a hilarious tower defense game called 'Hajimi Defense' where cute cats defend a 'Golden Tuna Can' from an invasion of household pests (Cucumbers and Vacuums). The towers should be funny cat memes: a spitting Tabby, a sniper Siamese, and a fat orange cat that throws buns for AOE damage. Include a mechanic where players can click to break obstacles (like boxes) to free up building space. The art style should be hand-drawn, pastel, and super cute (Kawaii)."</i></p>
-        <p><b>Intro:</b> Deploy cat towers to defend the Golden Tuna Can from waves of household invaders.<br/>部署猫猫炮塔，保卫金枪鱼罐头抵御入侵者。</p>
-      </div>
-      <p align="center">
-        <a href="https://www.opengame-project-page.com/#demo"><b>▶&nbsp;&nbsp;Live Demo</b></a>
-        &nbsp;&nbsp;·&nbsp;&nbsp;
-        <a href="https://github.com/leigest519/OpenGame/raw/main/assets/downloads/demo_towerDefense_hajimi.zip"><b>↓&nbsp;&nbsp;Source</b></a>
-      </p>
-      <br/>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" valign="top" width="50%">
-      <p align="center"><b><font size="4">StarWars: Mandalorian Protocol</font></b></p>
-      <video src="https://github.com/user-attachments/assets/3dd63ca5-447c-45fc-b06b-a6dbec0a6b16"
-             poster="assets/posters/starWars.png"
-             width="100%" loop muted autoplay playsinline preload="metadata">
-      </video>
-      <div align="left" style="padding: 0 15px;">
-        <p><b>Prompt:</b> <i>"Create a high-intensity top-down action RPG shooter set in the Star Wars universe. Play as The Mandalorian fighting through an Imperial Base to rescue Grogu. The gameplay should be a Twin-Stick Shooter style where I can use a Blaster (ranged), a Beskar Spear (melee), and a Jetpack Dash to dodge. Include Stormtrooper enemies and a tactical depth system where characters can walk behind crates and walls. The visuals should be metallic sci-fi pixel art."</i></p>
-        <p><b>Intro:</b> Fight through the Imperial Base as the Mandalorian. Shoot, slash, and dash to rescue Grogu.<br/>扮演曼达洛人突入帝国基地，射击、喷射闪避，营救古古。</p>
-      </div>
-      <p align="center">
-        <a href="https://www.opengame-project-page.com/#demo"><b>▶&nbsp;&nbsp;Live Demo</b></a>
-        &nbsp;&nbsp;·&nbsp;&nbsp;
-        <a href="https://github.com/leigest519/OpenGame/raw/main/assets/downloads/demo_topDown_starWars.zip"><b>↓&nbsp;&nbsp;Source</b></a>
-      </p>
-      <br/>
-    </td>
-    <td align="center" valign="top" width="50%">
-      <p align="center"><b><font size="4">Squid Game: Red Light, Green Light</font></b></p>
-      <video src="https://github.com/user-attachments/assets/a9f51ac6-56b2-4bab-95dd-27e39ca612f5"
-             poster="assets/posters/squidGame.png"
-             width="100%" loop muted autoplay playsinline preload="metadata">
-      </video>
-      <div align="left" style="padding: 0 15px;">
-        <p><b>Prompt:</b> <i>"Recreate the intense 'Red Light, Green Light' scene from Squid Game as a survival reflex game. The player controls a character in a green tracksuit running across a sandy field towards a finish line. There is a Giant Robot Doll on the right; when she sings, we run; when she turns her head, we must stop instantly or get shot. Crucial visual detail: Dead bodies and blood pools should NOT disappear, they must pile up on the field to create a chaotic atmosphere. Use a gritty, realistic 16-bit pixel art style."</i></p>
-        <p><b>Intro:</b> Run when she sings, freeze when she turns. One wrong move and you're eliminated.<br/>她唱歌时跑，她转头时定住。一步走错，当场淘汰。</p>
-      </div>
-      <p align="center">
-        <a href="https://www.opengame-project-page.com/#demo"><b>▶&nbsp;&nbsp;Live Demo</b></a>
-        &nbsp;&nbsp;·&nbsp;&nbsp;
-        <a href="https://github.com/leigest519/OpenGame/raw/main/assets/downloads/demo_topDown_squidGame.zip"><b>↓&nbsp;&nbsp;Source</b></a>
-      </p>
-      <br/>
-    </td>
-  </tr>
-</table>
-
-**To run a demo locally:**
-
-```bash
-unzip demo_*.zip && cd demo_*
-npm install
-npm run dev   # opens at http://localhost:5173
-```
-
-## Installation
-
-#### Prerequisites
-
-```bash
-# Node.js 20+
-curl -qL https://www.npmjs.com/install.sh | sh
-```
-
-#### From source (recommended while we prepare the npm release)
-
-```bash
-git clone https://github.com/leigest519/OpenGame.git
-cd OpenGame
-npm install
-npm run build
-npm link
-```
-
-This exposes the `opengame` command on your `PATH`.
-
-## Quick Start
-
-OpenGame is currently driven from the command line in **headless mode** —
-you give it a one-shot prompt and it builds the game end-to-end.
-
-```bash
-# Create an empty folder for your new game
-cd agent-test
-mkdir -p games/my-game && cd games/my-game
-
-# Generate the game from a single prompt
-opengame -p "Build a Snake clone with WASD controls and a dark theme." --yolo
-```
-
-When the agent finishes, open the generated `index.html` (or run the printed
-dev-server command) in your browser to play your game.
-
-> If you prefer to create games anywhere on disk, set absolute paths instead:
->
-> ```bash
-> export GAME_TEMPLATES_DIR="/absolute/path/to/OpenGame/agent-test/templates"
-> export GAME_DOCS_DIR="/absolute/path/to/OpenGame/agent-test/docs"
-> ```
->
-> Headless runs auto-elevate the approval mode to `auto-edit` so the agent
-> can write/edit files. Shell commands stay disabled by default — pass
-> `--yolo` (or `--approval-mode yolo`) if you want the agent to also run
-> shell commands. See
-> [`docs/users/features/headless.md`](docs/users/features/headless.md) for
-> the full headless reference.
-
-#### Authentication
-
-OpenGame's agent runtime supports an OpenAI-compatible API. Set the following environment variables:
-
-```bash
-export OPENAI_API_KEY="your-api-key-here"
-export OPENAI_BASE_URL="https://api.openai.com/v1"     # optional
-export OPENAI_MODEL="gpt-4o"                            # optional, swap in GameCoder-27B when running it locally
-```
-
-#### Asset / GDD provider keys (image, video, audio, reasoning)
-
-Beyond the main agent LLM, OpenGame's asset-generation tools talk to image,
-video, and audio providers. You bring your own keys for each — OpenGame ships
-with no defaults. Each modality is configured **independently**, so you can
-mix providers (e.g. DashScope for image, Doubao for video, OpenAI for
-reasoning, and ElevenLabs or MiniMax for audio):
-
-```bash
-export OPENGAME_IMAGE_PROVIDER=tongyi         # tongyi | doubao | openai-compat
-export OPENGAME_IMAGE_API_KEY=sk-...
-export OPENGAME_AUDIO_PROVIDER=elevenlabs     # also minimax | stability | google-lyria | mureka
-export OPENGAME_AUDIO_API_KEY=your-audio-provider-key
-# ...and similarly for OPENGAME_REASONING_* and OPENGAME_VIDEO_*
-```
-
-A complete env-var reference, settings.json schema, and examples for OpenAI /
-fal.ai / OpenRouter / DashScope / Doubao plus professional audio providers live in
-[`docs/users/configuration/api-keys.md`](docs/users/configuration/api-keys.md).
-A copy-paste template is at [`.env.example`](.env.example).
-
-OpenGame prints a one-line provider-status banner at startup so you can
-confirm which modalities are wired up before the run begins.
-
-## Game Skill
-
-OpenGame's agent is bootstrapped with **Game Skill**, a reusable capability split into two parts:
-
-- **Template Skill** — picks an appropriate engine/template (canvas, Phaser, three.js, etc.) and scaffolds a stable, conventional project structure so later edits stay coherent.
-- **Debug Skill** — runs the game in a sandbox, catches integration errors, console errors, and broken interactions, and systematically resolves them until the game is playable end-to-end.
-
-Together they let the agent move from "writes plausible code" to "ships a working game."
-
-## Configuration
-
-OpenGame can be configured via `settings.json`, environment variables, and CLI flags.
-
-- **User settings**: `~/.qwen/settings.json`
-- **Project settings**: `.qwen/settings.json`
-
-> The on-disk settings directory is currently still named `.qwen` for backward compatibility with the upstream agent runtime. We plan to migrate this to `.opengame` in a future release.
-
-## GameCoder-27B
-
-`GameCoder-27B` is a Code LLM purpose-built for OpenGame. It is trained with:
-
-1. **Supervised Fine-Tuning (SFT)** on curated game-development trajectories covering engine APIs, project scaffolding, and bug-fix workflows.
-2. **Reinforcement Learning** with reward signals derived from real game playability (using OpenGame-Bench-style verifiers).
-
-## OpenGame-Bench
-
-`OpenGame-Bench` is a benchmark for evaluating agents that build interactive web games. Unlike static code-evaluation benchmarks, it dynamically launches generated games, drives them with scripted interactions, and verifies playability criteria (rendering, controls, game-loop progression, win/loss states, etc.).
-
-The evaluation pipeline will be released soon.
-
-## Acknowledgments
-
-OpenGame builds on the excellent open-source work of:
-
-- **[qwen-code](https://github.com/QwenLM/qwen-code)** — the agent runtime and CLI scaffolding that OpenGame extends with Game Skill, GameCoder-27B integration, and OpenGame-Bench tooling.
-- **[Google Gemini CLI](https://github.com/google-gemini/gemini-cli)** — the original CLI architecture that qwen-code is itself based on.
-- **[Phaser](https://github.com/phaserjs/phaser)** — the fast, free, and open-source HTML5 game framework used for game rendering and mechanics.
-
-We thank these teams and communities for making their work openly available.
+欢迎提交 [Issue](https://github.com/Innate-Labs/Noobi.ai/issues) 或 Pull Request。涉及第三方 Skill / MCP 时，请同时说明来源、许可证、运行依赖和安全边界。
