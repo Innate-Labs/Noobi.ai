@@ -1,4 +1,5 @@
 <div align="center">
+  <img src="docs/images/noobi-ai-app-icon.png" alt="Noobi.ai App 图标" width="112" />
   <h1>Noobi.ai</h1>
   <p><strong>把一个游戏想法，变成可运行、可继续迭代的本地项目。</strong></p>
   <p>
