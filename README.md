@@ -254,15 +254,11 @@ npm run typecheck
 GAMEAGENT_AGENT_IDLE_TIMEOUT_MS=360000 npm run desktop
 ```
 
-## 上游项目与许可证
+## 许可证与品牌
 
-Noobi.ai 基于 [OpenGame](https://github.com/leigest519/OpenGame) 的开源能力构建，并继续使用其上游 [qwen-code](https://github.com/QwenLM/qwen-code) 的 Agent Runtime 与 CLI 基础。本仓库保留 OpenGame、qwen-code 及其上游项目的 Apache-2.0 许可证和版权声明。
+项目代码按 [Apache-2.0 License](LICENSE) 开放。Noobi.ai、其 IP 形象与桌面产品设计由 Innate Labs 维护。
 
-- OpenGame 项目主页：[opengame-project-page.com](https://www.opengame-project-page.com/)
-- OpenGame 论文：[arXiv:2604.18394](https://arxiv.org/abs/2604.18394)
-- 完整许可：[LICENSE](LICENSE)
-
-Noobi.ai、其 IP 形象与新增桌面产品设计由 Innate Labs 维护。第三方引擎、Skill、MCP 与品牌名称归各自权利人所有；本项目与这些品牌之间不存在默认背书关系。
+第三方引擎、Skill、MCP 与品牌名称归各自权利人所有；这些名称仅用于说明兼容性与连接能力，不代表相关品牌对 Noobi.ai 的认可或背书。
 
 ## 参与贡献
 
