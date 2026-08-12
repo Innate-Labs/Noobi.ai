@@ -17,6 +17,7 @@ import process from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath } from 'node:url';
 import {
+  AUTHENTICODE_POWERSHELL_SCRIPT,
   REQUIRED_WINDOWS_RESOURCES,
   assertAmd64PortableExecutable,
   assertAuthenticodeStatus,
@@ -26,6 +27,8 @@ import {
   createNsisInstallArguments,
   expectedWindowsArtifactName,
   inspectPortableExecutable,
+  windowsPowerShellChildEnvironment,
+  windowsPowerShellCandidates,
 } from './windows-installer-verifier.mjs';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') {
@@ -373,26 +376,14 @@ $info = $item.VersionInfo
 }
 
 async function getAuthenticodeSignature(filePath) {
-  return runPowerShellJson(
-    `
-$signature = Get-AuthenticodeSignature -LiteralPath $env:NOOBI_VERIFY_FILE
-[ordered]@{
-  Status = [string]$signature.Status
-  StatusMessage = [string]$signature.StatusMessage
-  SignerSubject = if ($null -eq $signature.SignerCertificate) { $null } else { [string]$signature.SignerCertificate.Subject }
-} | ConvertTo-Json -Compress
-`,
-    filePath,
-  );
+  return runPowerShellJson(AUTHENTICODE_POWERSHELL_SCRIPT, filePath);
 }
 
 async function runPowerShellJson(script, filePath) {
-  const powershell = path.join(
-    process.env.SystemRoot || 'C:\\Windows',
-    'System32',
-    'WindowsPowerShell',
-    'v1.0',
-    'powershell.exe',
+  const powershell = await resolvePowerShellExecutable();
+  const childEnvironment = windowsPowerShellChildEnvironment(
+    process.env,
+    powershell,
   );
   const result = await run(
     powershell,
@@ -407,7 +398,7 @@ async function runPowerShellJson(script, filePath) {
     ],
     {
       cwd: desktopRoot,
-      env: { ...process.env, NOOBI_VERIFY_FILE: filePath },
+      env: { ...childEnvironment, NOOBI_VERIFY_FILE: filePath },
       timeoutMs: 30_000,
     },
   );
@@ -419,6 +410,16 @@ async function runPowerShellJson(script, filePath) {
       { cause: error },
     );
   }
+}
+
+async function resolvePowerShellExecutable() {
+  for (const candidate of windowsPowerShellCandidates(process.env)) {
+    if (await pathExists(candidate)) return candidate;
+  }
+  throw new Error(
+    `找不到可用于验证 Windows 安装包的 PowerShell：` +
+      windowsPowerShellCandidates(process.env).join(', '),
+  );
 }
 
 function run(command, args, options = {}) {

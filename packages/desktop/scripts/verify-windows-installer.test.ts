@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUTHENTICODE_POWERSHELL_SCRIPT,
   PE_MACHINE,
   REQUIRED_WINDOWS_RESOURCES,
   assertAmd64PortableExecutable,
@@ -11,6 +12,8 @@ import {
   expectedWindowsArtifactName,
   inspectPortableExecutable,
   missingRequiredResources,
+  windowsPowerShellChildEnvironment,
+  windowsPowerShellCandidates,
 } from './windows-installer-verifier.mjs';
 
 describe('Windows 安装包验证 helper', () => {
@@ -122,6 +125,47 @@ describe('Windows 安装包验证 helper', () => {
     expect(args.at(-1)).toMatch(/^\/D=/);
     expect(() => createNsisInstallArguments('relative\\Noobi')).toThrow(
       /绝对 Windows 路径/,
+    );
+  });
+
+  it('优先使用 PowerShell 7，并保留系统 Windows PowerShell 回退', () => {
+    expect(
+      windowsPowerShellCandidates({
+        ProgramFiles: String.raw`D:\Programs`,
+        SystemRoot: String.raw`D:\Windows`,
+      }),
+    ).toEqual([
+      String.raw`D:\Programs\PowerShell\7\pwsh.exe`,
+      String.raw`D:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
+    ]);
+  });
+
+  it('仅为 Windows PowerShell 5.1 清除继承的模块搜索路径', () => {
+    const environment = { Path: 'system', PSModulePath: 'from-pwsh-7' };
+    expect(
+      windowsPowerShellChildEnvironment(
+        environment,
+        String.raw`C:\Program Files\PowerShell\7\pwsh.exe`,
+      ),
+    ).toEqual(environment);
+    expect(
+      windowsPowerShellChildEnvironment(
+        environment,
+        String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
+      ),
+    ).toEqual({ Path: 'system' });
+    expect(environment).toHaveProperty('PSModulePath', 'from-pwsh-7');
+  });
+
+  it('从当前 PowerShell 安装目录加载并限定调用安全模块', () => {
+    expect(AUTHENTICODE_POWERSHELL_SCRIPT).toContain(
+      String.raw`$PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1'`,
+    );
+    expect(AUTHENTICODE_POWERSHELL_SCRIPT).toContain(
+      'Import-Module -Name $securityModule -Force -ErrorAction Stop',
+    );
+    expect(AUTHENTICODE_POWERSHELL_SCRIPT).toContain(
+      String.raw`Microsoft.PowerShell.Security\Get-AuthenticodeSignature`,
     );
   });
 });

@@ -20,6 +20,47 @@ export const REQUIRED_WINDOWS_RESOURCES = Object.freeze([
   'game-skill/templates',
 ]);
 
+export const AUTHENTICODE_POWERSHELL_SCRIPT = String.raw`
+$securityModule = Join-Path $PSHOME 'Modules\Microsoft.PowerShell.Security\Microsoft.PowerShell.Security.psd1'
+Import-Module -Name $securityModule -Force -ErrorAction Stop
+$signature = Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $env:NOOBI_VERIFY_FILE
+[ordered]@{
+  Status = [string]$signature.Status
+  StatusMessage = [string]$signature.StatusMessage
+  SignerSubject = if ($null -eq $signature.SignerCertificate) { $null } else { [string]$signature.SignerCertificate.Subject }
+} | ConvertTo-Json -Compress
+`;
+
+export function windowsPowerShellCandidates(environment = {}) {
+  return [
+    path.win32.join(
+      environment.ProgramFiles || 'C:\\Program Files',
+      'PowerShell',
+      '7',
+      'pwsh.exe',
+    ),
+    path.win32.join(
+      environment.SystemRoot || 'C:\\Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    ),
+  ];
+}
+
+export function windowsPowerShellChildEnvironment(environment, executable) {
+  const childEnvironment = { ...environment };
+  if (path.win32.basename(executable).toLowerCase() === 'powershell.exe') {
+    for (const name of Object.keys(childEnvironment)) {
+      if (name.toLowerCase() === 'psmodulepath') {
+        delete childEnvironment[name];
+      }
+    }
+  }
+  return childEnvironment;
+}
+
 export function inspectPortableExecutable(input, label = 'PE 文件') {
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input);
   if (buffer.length < 64 || buffer[0] !== 0x4d || buffer[1] !== 0x5a) {
