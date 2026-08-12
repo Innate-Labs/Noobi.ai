@@ -69,6 +69,8 @@ const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR']);
 const PROMPT_JSON_FENCE = /(```json[^\S\r\n]*\r?\n)([\s\S]*?)(\r?\n```)/g;
 const PROMPT_PLACEHOLDER =
   /(\{(?:TEMPLATES_DIR|DOCS_DIR|PROJECT_ROOT)\})(\/?)/g;
+const PROMPT_JSON_PATH =
+  /^(\{(?:TEMPLATES_DIR|DOCS_DIR|PROJECT_ROOT)\})(?:\/(.*))?$/;
 
 type PromptPlaceholder = '{TEMPLATES_DIR}' | '{DOCS_DIR}' | '{PROJECT_ROOT}';
 
@@ -454,15 +456,21 @@ function localizeSystemPrompt(
   const localizedJson = source.replace(
     PROMPT_JSON_FENCE,
     (_match, opening: string, json: string, closing: string) => {
-      const body = replacePromptPlaceholders(json, replacements, (value) =>
-        JSON.stringify(value).slice(1, -1),
-      );
+      let parsed: unknown;
       try {
-        JSON.parse(body);
+        parsed = JSON.parse(json) as unknown;
       } catch (error) {
         throw new Error('系统提示词中的 fenced JSON 示例无效。', {
           cause: error,
         });
+      }
+      const body = JSON.stringify(
+        localizePromptJsonValue(parsed, replacements),
+        null,
+        2,
+      );
+      if (body === undefined) {
+        throw new Error('系统提示词中的 fenced JSON 示例无法序列化。');
       }
       return `${opening}${body}${closing}`;
     },
@@ -473,6 +481,38 @@ function localizeSystemPrompt(
     replacements,
     (value) => value,
   );
+}
+
+function localizePromptJsonValue(
+  value: unknown,
+  replacements: Record<PromptPlaceholder, string>,
+): unknown {
+  if (typeof value === 'string') {
+    const pathMatch = PROMPT_JSON_PATH.exec(value);
+    if (pathMatch) {
+      const placeholder = pathMatch[1] as PromptPlaceholder;
+      const suffix = pathMatch[2];
+      return suffix
+        ? path.join(
+            replacements[placeholder],
+            ...suffix.split('/').filter(Boolean),
+          )
+        : replacements[placeholder];
+    }
+    return replacePromptPlaceholders(value, replacements, (item) => item);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => localizePromptJsonValue(item, replacements));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        localizePromptJsonValue(item, replacements),
+      ]),
+    );
+  }
+  return value;
 }
 
 function replacePromptPlaceholders(
