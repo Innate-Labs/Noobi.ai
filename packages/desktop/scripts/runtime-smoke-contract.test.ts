@@ -36,7 +36,8 @@ describe('Runtime smoke observability contract', () => {
     }
     expect(smokeSource).not.toMatch(/from ['"]tiktoken['"]/);
     expect(smokeSource).toContain('tokenCount < 1');
-    expect(smokeSource).toContain("mark('complete')");
+    expect(smokeSource).toContain("'[runtime-probe] complete\\\\n'");
+    expect(smokeSource).toContain('process.exit(0)');
   });
 
   it('applies the extended bound only to the module probe and kills Windows trees', () => {

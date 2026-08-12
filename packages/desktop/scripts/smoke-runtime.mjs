@@ -190,7 +190,10 @@ if (process.platform === 'win32') {
   });
   mark('checked:windows-pty');
 }
-mark('complete');
+await new Promise((resolve) => {
+  process.stdout.write('[runtime-probe] complete\\n', resolve);
+});
+process.exit(0);
 `;
   const probePath = path.join(temporaryRuntime, 'probe.mjs');
   await writeFile(probePath, moduleProbe, 'utf8');
