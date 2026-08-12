@@ -3,10 +3,12 @@
   <h1>Noobi.ai</h1>
   <p><strong>把一个游戏想法，变成可运行、可继续迭代的本地项目。</strong></p>
   <p>
-    面向 macOS 的本地优先 AI 游戏制作客户端；Windows 11 x64 版已进入原生验收阶段。让 Agent 在可见的工作区中规划、
+    面向 macOS 的本地优先 AI 游戏制作客户端；Windows 11 x64 未签名候选版已通过原生 CI。让 Agent 在可见的工作区中规划、
     编码、调用工具、运行验证，并通过插件连接 Skills、MCP 与游戏引擎。
   </p>
   <p>
+    <a href="#下载客户端">下载客户端</a>
+    ·
     <a href="#快速开始">快速开始</a>
     ·
     <a href="#产品架构">产品架构</a>
@@ -27,6 +29,21 @@
 <div align="center">
   <img src="docs/images/noobi-ai-hero.png" alt="Noobi.ai IP 形象在 AI 游戏制作工作台中把创意组装成可玩游戏" width="100%" />
 </div>
+
+## 下载客户端
+
+| 平台                    | 下载                                                                                                                             | 状态                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Windows 11 x64**      | **[下载 Noobi.ai v0.2.2 Windows 候选版](https://github.com/Innate-Labs/Noobi.ai/actions/runs/31561503301/artifacts/9127999575)** | 未签名开发候选版；已通过 Windows x64 原生 CI 的构建、启动、安装和卸载验证 |
+| **macOS Apple Silicon** | [前往 GitHub Releases](https://github.com/Innate-Labs/Noobi.ai/releases)                                                         | 当前发行基线；正式安装包以 Releases 页面为准                              |
+
+Windows 下载内容为 `Noobi.ai-windows-x64-unsigned-dev` ZIP，解压后包含
+`Noobi.ai-0.2.2-windows-x64-setup.exe` 和对应的 `.sha256` 校验文件。GitHub Actions Artifact
+需要登录 GitHub 下载，当前保留至 **2026-11-10**；后续正式签名版本将迁移到
+[GitHub Releases](https://github.com/Innate-Labs/Noobi.ai/releases)。
+
+> Windows 候选安装包尚未进行 Authenticode 代码签名，系统可能显示“未知发布者”或
+> SmartScreen 提示。它适合测试，不是正式发行版；请勿关闭 Windows 安全保护。
 
 ## 产品业务：Noobi.ai 解决什么问题
 
@@ -183,8 +200,8 @@ flowchart TD
 ### 安装版与候选目标
 
 - macOS Apple Silicon
-- Windows 11 x64 候选版（原生验收通过前不作为正式发行版；不包括 Windows on ARM、32 位
-  Windows、便携版和 Microsoft Store 版）
+- Windows 11 x64 未签名候选版（已通过原生 CI；完成代码签名和跨版本升级验收前不作为正式
+  发行版；不包括 Windows on ARM、32 位 Windows、便携版和 Microsoft Store 版）
 
 安装版包含 Noobi.ai 自身运行所需组件。Node.js、uv、Godot、Blender、Unity Hub 等是特定
 插件或游戏引擎工作流的可选本机依赖，可在“设置 → 依赖管理”中检测。
