@@ -61,8 +61,12 @@ describe('DependencyManager inspection', () => {
         }
         return [];
       },
-      readTextFile: async () =>
-        '<plist><dict><key>CFBundleShortVersionString</key><string>3.19.5</string></dict></plist>',
+      readTextFile: async (filePath) => {
+        expect(filePath).toBe(
+          '/Applications/Unity Hub.app/Contents/Info.plist',
+        );
+        return '<plist><dict><key>CFBundleShortVersionString</key><string>3.19.5</string></dict></plist>';
+      },
       runCommand,
     });
 

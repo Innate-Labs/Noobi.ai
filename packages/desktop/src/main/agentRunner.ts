@@ -1063,9 +1063,9 @@ export function withDesktopToolPaths(
       : [
           '/opt/homebrew/bin',
           '/usr/local/bin',
-          path.join(userHome, '.local', 'bin'),
-          path.join(userHome, '.cargo', 'bin'),
-          path.join(userHome, '.volta', 'bin'),
+          path.posix.join(userHome, '.local', 'bin'),
+          path.posix.join(userHome, '.cargo', 'bin'),
+          path.posix.join(userHome, '.volta', 'bin'),
           '/usr/bin',
           '/bin',
           '/usr/sbin',

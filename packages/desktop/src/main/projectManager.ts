@@ -66,6 +66,10 @@ const MIME: Record<string, string> = {
 };
 
 const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR']);
+const PROMPT_JSON_FENCE = /(```json[^\S\r\n]*\r?\n)([\s\S]*?)(\r?\n```)/g;
+const PROMPT_PLACEHOLDER = /\{(?:TEMPLATES_DIR|DOCS_DIR|PROJECT_ROOT)\}/g;
+
+type PromptPlaceholder = '{TEMPLATES_DIR}' | '{DOCS_DIR}' | '{PROJECT_ROOT}';
 
 export interface GameSkillLocations {
   promptPath: string;
@@ -151,10 +155,11 @@ export class ProjectManager {
   async prepareSystemPrompt(projectPath: string): Promise<void> {
     const projectRoot = await this.resolveProjectRoot(projectPath);
     const source = await readFile(this.locations.promptPath, 'utf8');
-    const localized = source
-      .replace(/\{TEMPLATES_DIR\}/g, this.locations.templatesDir)
-      .replace(/\{DOCS_DIR\}/g, this.locations.docsDir)
-      .replace(/\{PROJECT_ROOT\}/g, projectRoot);
+    const localized = localizeSystemPrompt(source, {
+      '{TEMPLATES_DIR}': this.locations.templatesDir,
+      '{DOCS_DIR}': this.locations.docsDir,
+      '{PROJECT_ROOT}': projectRoot,
+    });
     const qwenDir = await this.ensureDirectoryInside(projectRoot, '.qwen');
     const systemPromptPath = path.join(qwenDir, 'system.md');
     await this.assertSafeWritableFile(projectRoot, systemPromptPath);
@@ -439,6 +444,44 @@ export class ProjectManager {
       throw new Error('路径超出项目目录。');
     }
   }
+}
+
+function localizeSystemPrompt(
+  source: string,
+  replacements: Record<PromptPlaceholder, string>,
+): string {
+  const localizedJson = source.replace(
+    PROMPT_JSON_FENCE,
+    (_match, opening: string, json: string, closing: string) => {
+      const body = replacePromptPlaceholders(json, replacements, (value) =>
+        JSON.stringify(value).slice(1, -1),
+      );
+      try {
+        JSON.parse(body);
+      } catch (error) {
+        throw new Error('系统提示词中的 fenced JSON 示例无效。', {
+          cause: error,
+        });
+      }
+      return `${opening}${body}${closing}`;
+    },
+  );
+
+  return replacePromptPlaceholders(
+    localizedJson,
+    replacements,
+    (value) => value,
+  );
+}
+
+function replacePromptPlaceholders(
+  source: string,
+  replacements: Record<PromptPlaceholder, string>,
+  encode: (value: string) => string,
+): string {
+  return source.replace(PROMPT_PLACEHOLDER, (placeholder) =>
+    encode(replacements[placeholder as PromptPlaceholder]),
+  );
 }
 
 function isWindowsReservedBasename(value: string): boolean {

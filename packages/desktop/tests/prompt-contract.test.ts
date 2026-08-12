@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -260,6 +260,46 @@ describe('OpenGame prompt contract', () => {
     expect(sources.generateGdd).toContain(
       '\\`run_shell_command\\` 的 \\`is_background: true\\`',
     );
+  });
+
+  it('JSON-escapes Windows paths while keeping prose paths literal', async () => {
+    const projectRoot = await mkdtemp(
+      path.join(tmpdir(), 'gameagent prompt windows-json-'),
+    );
+    temporaryDirectories.push(projectRoot);
+    const canonicalProjectRoot = await realpath(projectRoot);
+    const promptPath = path.join(projectRoot, 'windows-path-prompt.md');
+    const templatesDir =
+      'C:\\Users\\runneradmin\\Noobi.ai\\game-skill\\templates';
+    const docsDir = 'D:\\游戏素材\\Noobi.ai\\docs';
+    await writeFile(
+      promptPath,
+      [
+        '模板目录：{TEMPLATES_DIR}',
+        '```json',
+        '{ "template_path": "{TEMPLATES_DIR}", "docs_path": "{DOCS_DIR}", "project_path": "{PROJECT_ROOT}" }',
+        '```',
+      ].join('\r\n'),
+      'utf8',
+    );
+
+    const manager = new ProjectManager(undefined as never, {
+      promptPath,
+      templatesDir,
+      docsDir,
+    });
+    await manager.prepareSystemPrompt(projectRoot);
+    const localizedPrompt = await readFile(
+      path.join(projectRoot, '.qwen', 'system.md'),
+      'utf8',
+    );
+
+    expect(parseJsonExamples(localizedPrompt)).toContainEqual({
+      template_path: templatesDir,
+      docs_path: docsDir,
+      project_path: canonicalProjectRoot,
+    });
+    expect(localizedPrompt).toContain(`模板目录：${templatesDir}`);
   });
 
   it('requires animations.json creation and one Phaser animation registration', async () => {

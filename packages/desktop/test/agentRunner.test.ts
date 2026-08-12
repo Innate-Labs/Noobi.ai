@@ -88,12 +88,16 @@ describe('desktop tool PATH', () => {
   it('adds Finder-missing tool directories without duplicating entries', () => {
     const entries = withDesktopToolPaths(
       '/usr/bin:/custom/bin:/opt/homebrew/bin',
-    ).split(path.delimiter);
+      'darwin',
+      {},
+      '/Users/tester',
+    ).split(':');
     expect(entries.slice(0, 2)).toEqual([
       '/opt/homebrew/bin',
       '/usr/local/bin',
     ]);
     expect(entries).toContain('/custom/bin');
+    expect(entries).toContain('/Users/tester/.local/bin');
     expect(
       entries.filter((entry) => entry === '/opt/homebrew/bin'),
     ).toHaveLength(1);

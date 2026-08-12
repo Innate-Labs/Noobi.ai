@@ -528,7 +528,7 @@ export class DependencyManager {
     const installations: DependencyInstallation[] = [];
     for (const version of versions) {
       if (!isSafeVersionDirectory(version)) continue;
-      const executable = path.join(
+      const executable = path.posix.join(
         editorRoot,
         version,
         'Unity.app',
@@ -720,7 +720,7 @@ export class DependencyManager {
   ): Promise<string | undefined> {
     try {
       const plist = await this.readTextFile(
-        path.join(bundlePath, 'Contents', 'Info.plist'),
+        path.posix.join(bundlePath, 'Contents', 'Info.plist'),
       );
       return (
         plistValue(plist, 'CFBundleShortVersionString') ??
@@ -759,30 +759,37 @@ export class DependencyManager {
       `/opt/homebrew/bin/${command}`,
       `/usr/local/bin/${command}`,
       `/usr/bin/${command}`,
-      path.join(this.homeDirectory, '.local', 'bin', command),
-      path.join(this.homeDirectory, '.volta', 'bin', command),
+      path.posix.join(this.homeDirectory, '.local', 'bin', command),
+      path.posix.join(this.homeDirectory, '.volta', 'bin', command),
     ];
     if (command === 'uvx') {
-      shared.push(path.join(this.homeDirectory, '.cargo', 'bin', command));
+      shared.push(
+        path.posix.join(this.homeDirectory, '.cargo', 'bin', command),
+      );
     }
     return shared;
   }
 
   private async nvmNpxCandidates(): Promise<string[]> {
-    const root = path.join(this.homeDirectory, '.nvm', 'versions', 'node');
+    const root = path.posix.join(
+      this.homeDirectory,
+      '.nvm',
+      'versions',
+      'node',
+    );
     const versions = await this.safeListDirectory(root);
     return versions
       .filter(isSafeVersionDirectory)
       .sort((left, right) =>
         right.localeCompare(left, undefined, { numeric: true }),
       )
-      .map((version) => path.join(root, version, 'bin', 'npx'));
+      .map((version) => path.posix.join(root, version, 'bin', 'npx'));
   }
 
   private godotCandidates(): string[] {
     return [
       '/Applications/Godot.app/Contents/MacOS/Godot',
-      path.join(
+      path.posix.join(
         this.homeDirectory,
         'Applications',
         'Godot.app',
@@ -798,7 +805,7 @@ export class DependencyManager {
   private blenderCandidates(): string[] {
     return [
       '/Applications/Blender.app/Contents/MacOS/Blender',
-      path.join(
+      path.posix.join(
         this.homeDirectory,
         'Applications',
         'Blender.app',
@@ -814,7 +821,7 @@ export class DependencyManager {
   private unityHubCandidates(): string[] {
     return [
       '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub',
-      path.join(
+      path.posix.join(
         this.homeDirectory,
         'Applications',
         'Unity Hub.app',
@@ -1120,7 +1127,7 @@ async function defaultReadTextFile(filePath: string): Promise<string> {
 }
 
 function appBundlePath(executable: string): string | undefined {
-  const marker = `${path.sep}Contents${path.sep}MacOS${path.sep}`;
+  const marker = '/Contents/MacOS/';
   const markerIndex = executable.indexOf(marker);
   return markerIndex >= 0 ? executable.slice(0, markerIndex) : undefined;
 }
