@@ -104,11 +104,7 @@ const runtimeManifest = assertRuntimeManifest(
     ),
   ),
 );
-const effectiveConfigPath = path.join(
-  releaseDirectory,
-  'builder-effective-config.yaml',
-);
-assertBuilderIdentity(await readFile(effectiveConfigPath, 'utf8'), {
+assertBuilderIdentity(manifest.build, {
   appId: manifest.build.appId,
   productName: manifest.build.productName,
 });

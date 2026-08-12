@@ -175,23 +175,42 @@ export function assertWindowsVersionInfo(
   return versionInfo;
 }
 
-export function assertBuilderIdentity(effectiveConfig, { appId, productName }) {
-  const values = new Map();
-  for (const line of String(effectiveConfig).split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.+?)\s*$/);
-    if (match) values.set(match[1], unquoteYamlScalar(match[2]));
-  }
-  if (values.get('appId') !== appId) {
+export function assertBuilderIdentity(builderConfig, { appId, productName }) {
+  const values = builderIdentityValues(builderConfig);
+  if (values.appId !== appId) {
     throw new Error(
-      `electron-builder appId 不匹配：${values.get('appId') || 'missing'}。`,
+      `electron-builder appId 不匹配：${values.appId || 'missing'}。`,
     );
   }
-  if (values.get('productName') !== productName) {
+  if (values.productName !== productName) {
     throw new Error(
-      `electron-builder productName 不匹配：${values.get('productName') || 'missing'}。`,
+      `electron-builder productName 不匹配：${values.productName || 'missing'}。`,
     );
   }
   return values;
+}
+
+function builderIdentityValues(builderConfig) {
+  if (
+    builderConfig &&
+    typeof builderConfig === 'object' &&
+    !Array.isArray(builderConfig)
+  ) {
+    return {
+      appId: String(builderConfig.appId || '').trim(),
+      productName: String(builderConfig.productName || '').trim(),
+    };
+  }
+
+  const values = new Map();
+  for (const line of String(builderConfig).split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.+?)\s*$/);
+    if (match) values.set(match[1], unquoteYamlScalar(match[2]));
+  }
+  return {
+    appId: values.get('appId') || '',
+    productName: values.get('productName') || '',
+  };
 }
 
 export function expectedWindowsArtifactName(productName, version) {

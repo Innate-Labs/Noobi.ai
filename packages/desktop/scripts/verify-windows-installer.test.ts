@@ -94,8 +94,14 @@ describe('Windows 安装包验证 helper', () => {
       assertBuilderIdentity(
         'appId: com.gameagent.desktop\nproductName: Noobi.ai\n',
         { appId: 'com.gameagent.desktop', productName: 'Noobi.ai' },
-      ).get('appId'),
+      ).appId,
     ).toBe('com.gameagent.desktop');
+    expect(
+      assertBuilderIdentity(
+        { appId: 'com.gameagent.desktop', productName: 'Noobi.ai' },
+        { appId: 'com.gameagent.desktop', productName: 'Noobi.ai' },
+      ).productName,
+    ).toBe('Noobi.ai');
   });
 
   it('生成稳定的 Windows x64 setup 文件名', () => {
