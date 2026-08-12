@@ -66,6 +66,13 @@ const MIME: Record<string, string> = {
 };
 
 const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR']);
+const PROMPT_JSON_FENCE = /(```json[^\S\r\n]*\r?\n)([\s\S]*?)(\r?\n```)/g;
+const PROMPT_PLACEHOLDER =
+  /(\{(?:TEMPLATES_DIR|DOCS_DIR|PROJECT_ROOT)\})(\/?)/g;
+const PROMPT_JSON_PATH =
+  /^(\{(?:TEMPLATES_DIR|DOCS_DIR|PROJECT_ROOT)\})(?:\/(.*))?$/;
+
+type PromptPlaceholder = '{TEMPLATES_DIR}' | '{DOCS_DIR}' | '{PROJECT_ROOT}';
 
 export interface GameSkillLocations {
   promptPath: string;
@@ -91,11 +98,18 @@ export class ProjectManager {
     const folderName = name
       .normalize('NFKC')
       .replace(/[\\/:*?"<>|]/g, '-')
+      .replace(/\p{Cc}/gu, '-')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-      .slice(0, 80);
-    if (!folderName || folderName === '.' || folderName === '..') {
+      .slice(0, 80)
+      .replace(/[. ]+$/g, '');
+    if (
+      !folderName ||
+      folderName === '.' ||
+      folderName === '..' ||
+      isWindowsReservedBasename(folderName)
+    ) {
       throw new Error('项目名称无法生成安全的目录名，请更换名称。');
     }
 
@@ -144,10 +158,11 @@ export class ProjectManager {
   async prepareSystemPrompt(projectPath: string): Promise<void> {
     const projectRoot = await this.resolveProjectRoot(projectPath);
     const source = await readFile(this.locations.promptPath, 'utf8');
-    const localized = source
-      .replace(/\{TEMPLATES_DIR\}/g, this.locations.templatesDir)
-      .replace(/\{DOCS_DIR\}/g, this.locations.docsDir)
-      .replace(/\{PROJECT_ROOT\}/g, projectRoot);
+    const localized = localizeSystemPrompt(source, {
+      '{TEMPLATES_DIR}': this.locations.templatesDir,
+      '{DOCS_DIR}': this.locations.docsDir,
+      '{PROJECT_ROOT}': projectRoot,
+    });
     const qwenDir = await this.ensureDirectoryInside(projectRoot, '.qwen');
     const systemPromptPath = path.join(qwenDir, 'system.md');
     await this.assertSafeWritableFile(projectRoot, systemPromptPath);
@@ -432,6 +447,94 @@ export class ProjectManager {
       throw new Error('路径超出项目目录。');
     }
   }
+}
+
+function localizeSystemPrompt(
+  source: string,
+  replacements: Record<PromptPlaceholder, string>,
+): string {
+  const localizedJson = source.replace(
+    PROMPT_JSON_FENCE,
+    (_match, opening: string, json: string, closing: string) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(json) as unknown;
+      } catch (error) {
+        throw new Error('系统提示词中的 fenced JSON 示例无效。', {
+          cause: error,
+        });
+      }
+      const body = JSON.stringify(
+        localizePromptJsonValue(parsed, replacements),
+        null,
+        2,
+      );
+      if (body === undefined) {
+        throw new Error('系统提示词中的 fenced JSON 示例无法序列化。');
+      }
+      return `${opening}${body}${closing}`;
+    },
+  );
+
+  return replacePromptPlaceholders(
+    localizedJson,
+    replacements,
+    (value) => value,
+  );
+}
+
+function localizePromptJsonValue(
+  value: unknown,
+  replacements: Record<PromptPlaceholder, string>,
+): unknown {
+  if (typeof value === 'string') {
+    const pathMatch = PROMPT_JSON_PATH.exec(value);
+    if (pathMatch) {
+      const placeholder = pathMatch[1] as PromptPlaceholder;
+      const suffix = pathMatch[2];
+      return suffix
+        ? path.join(
+            replacements[placeholder],
+            ...suffix.split('/').filter(Boolean),
+          )
+        : replacements[placeholder];
+    }
+    return replacePromptPlaceholders(value, replacements, (item) => item);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => localizePromptJsonValue(item, replacements));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        localizePromptJsonValue(item, replacements),
+      ]),
+    );
+  }
+  return value;
+}
+
+function replacePromptPlaceholders(
+  source: string,
+  replacements: Record<PromptPlaceholder, string>,
+  encode: (value: string) => string,
+): string {
+  return source.replace(
+    PROMPT_PLACEHOLDER,
+    (_match, placeholder: PromptPlaceholder, trailingSlash: string) => {
+      const value = replacements[placeholder];
+      const localizedPath = trailingSlash
+        ? `${value.replace(/[\\/]+$/, '')}${path.sep}`
+        : value;
+      return encode(localizedPath);
+    },
+  );
+}
+
+function isWindowsReservedBasename(value: string): boolean {
+  const stem = value.split('.')[0]?.toUpperCase() ?? '';
+  return /^(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/.test(stem);
 }
 
 function isHtmlNavigation(request: IncomingMessage): boolean {

@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  safeStorage,
   shell,
   type IpcMainInvokeEvent,
 } from 'electron';
@@ -19,6 +20,7 @@ import { collectMcpSecrets, validateMcpServers } from './mcpConfig.js';
 import { testProviderConnection as probeProviderConnection } from './providerConnection.js';
 import { ApiUsageStore, usageFromProviderProbe } from './apiUsageStore.js';
 import { DependencyManager } from './dependencyManager.js';
+import { inspectDesktopPlatform } from './platformSupport.js';
 import type {
   AppSettings,
   CreateProjectInput,
@@ -33,9 +35,14 @@ import type {
 } from '../shared/types.js';
 
 const productName = 'Noobi.ai';
-// Keep the internal Electron identity stable: macOS safeStorage encryption is
-// tied to that identity, so changing it would make existing API keys unreadable.
+const applicationId = 'com.gameagent.desktop';
+const packagedSmokeTest =
+  app.isPackaged && process.argv.includes('--noobi-smoke-test');
+// Keep the internal Electron identity stable: operating-system credential
+// encryption and installer upgrades are tied to it. Changing it would make
+// existing API keys or application state unavailable.
 // User-facing branding is applied through the window, menu and package metadata.
+if (process.platform === 'win32') app.setAppUserModelId(applicationId);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const developmentAppIcon = path.join(app.getAppPath(), 'build', 'icon.png');
@@ -161,8 +168,12 @@ async function createWindow(): Promise<void> {
     backgroundColor: '#11120f',
     title: productName,
     icon: app.isPackaged ? undefined : developmentAppIcon,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    trafficLightPosition: { x: 18, y: 18 },
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 18, y: 18 },
+        }
+      : {}),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -188,7 +199,14 @@ async function createWindow(): Promise<void> {
     event.preventDefault();
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => {
+    if (packagedSmokeTest) {
+      console.log('NOOBI_PACKAGED_SMOKE_READY');
+      app.exit(0);
+      return;
+    }
+    mainWindow?.show();
+  });
 
   if (developmentUrl) await mainWindow.loadURL(developmentUrl);
   else await mainWindow.loadFile(rendererFile);
@@ -444,8 +462,7 @@ function registerIpc(): void {
         type: 'warning',
         title: `${input.action === 'install' ? '安装' : '更新'} ${dependency.name}`,
         message: `确认${input.action === 'install' ? '安装' : '更新'} ${dependency.name}？`,
-        detail:
-          'Noobi.ai 只会执行内置白名单中的 Homebrew 命令；过程可能持续数分钟。',
+        detail: `Noobi.ai 只会执行内置白名单中的${dependency.management === 'winget' ? ' WinGet' : ' Homebrew'} 命令；过程可能持续数分钟。`,
         buttons: ['取消', input.action === 'install' ? '开始安装' : '开始更新'],
         defaultId: 0,
         cancelId: 0,
@@ -609,6 +626,30 @@ app
     installApplicationMenu();
     if (process.platform === 'darwin' && !app.isPackaged && app.dock) {
       app.dock.setIcon(developmentAppIcon);
+    }
+    const platformSupport = inspectDesktopPlatform(
+      process.platform,
+      process.arch,
+      undefined,
+      process.env,
+      app.runningUnderARM64Translation,
+    );
+    if (!platformSupport.supported) {
+      dialog.showErrorBox(
+        '当前系统不受支持',
+        platformSupport.message ?? '当前系统无法运行此版本的 Noobi.ai。',
+      );
+      app.quit();
+      return;
+    }
+    if (packagedSmokeTest) {
+      if (!safeStorage.isEncryptionAvailable()) {
+        throw new Error('系统安全存储不可用。');
+      }
+      const encrypted = safeStorage.encryptString('noobi-smoke-sentinel');
+      if (safeStorage.decryptString(encrypted) !== 'noobi-smoke-sentinel') {
+        throw new Error('系统安全存储往返验证失败。');
+      }
     }
     const paths = resolvePaths();
     store = new StateStore();

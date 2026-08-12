@@ -1,10 +1,10 @@
 {
   "name": "@opengame/opengame-core",
   "version": "0.6.0",
-  "description": "OpenGame core: agent runtime, tools, and Game Skill primitives.",
+  "description": "Noobi.ai core: agent runtime, tools, and game-production primitives.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/leigest519/OpenGame.git"
+    "url": "git+https://github.com/Innate-Labs/Noobi.ai.git"
   },
   "type": "module",
   "main": "dist/index.js",

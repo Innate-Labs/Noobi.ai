@@ -415,7 +415,7 @@ export function SettingsDialog({
             })}
             <div className="settings-nav-note">
               <ShieldCheck size={15} />
-              <span>密钥由 macOS 安全存储加密，开发者视图不显示凭据。</span>
+              <span>密钥由系统安全存储加密，开发者视图不显示凭据。</span>
             </div>
           </nav>
 
@@ -1360,6 +1360,7 @@ function DependencyRow({
         <small title={dependency.path}>
           {dependency.version || dependency.detail || '未检测到版本'}
           {dependency.path ? ` · ${dependency.path}` : ''}
+          {` · ${dependencyManagementLabel(dependency.management)}`}
         </small>
       </div>
       <div className="dependency-actions">
@@ -1411,6 +1412,15 @@ function dependencyStatusLabel(status: DesktopDependency['status']): string {
   if (status === 'installed') return '已安装';
   if (status === 'unsupported') return '当前系统不支持';
   return '未安装';
+}
+
+function dependencyManagementLabel(
+  management: DesktopDependency['management'],
+): string {
+  if (management === 'homebrew') return 'Homebrew 白名单';
+  if (management === 'winget') return 'WinGet 白名单';
+  if (management === 'unity-hub') return 'Unity Hub 管理';
+  return '仅检测';
 }
 
 function dependencyActionLabel(action: DependencyAction): string {

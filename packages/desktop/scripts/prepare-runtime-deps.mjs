@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 
-import {
-  cp,
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import console from 'node:console';
+import { lstat, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import {
+  copyRuntimePackageTree,
+  inspectRuntimeTree,
+} from './runtime-deps-files.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDirectory, '..');
@@ -27,6 +24,8 @@ const targetArch = process.env['GAMEAGENT_RUNTIME_ARCH'] || process.arch;
 const maxStagingBytes = Number(
   process.env['GAMEAGENT_RUNTIME_MAX_BYTES'] || 700 * 1024 * 1024,
 );
+
+assertNativeRuntimeTarget(targetPlatform, targetArch);
 
 const optionalExternalPackages = new Set([
   '@lydell/node-pty',
@@ -116,17 +115,37 @@ while (pending.length > 0) {
     relativeInstallPath,
   );
   await mkdir(path.dirname(destinationDirectory), { recursive: true });
-  await copyRuntimePackage(
+  const packageStats = await copyRuntimePackageTree(
     sourceDirectory,
     destinationDirectory,
-    manifest.name,
+    {
+      filter: (segments) => shouldCopyTargetFile(manifest.name, segments),
+    },
   );
+  if (packageStats.fileCount === 0 || packageStats.sizeBytes === 0) {
+    throw new Error(
+      `Runtime 依赖 ${manifest.name}@${manifest.version} 没有复制任何文件。`,
+    );
+  }
+  const copiedManifest = JSON.parse(
+    await readFile(path.join(destinationDirectory, 'package.json'), 'utf8'),
+  );
+  if (
+    copiedManifest.name !== manifest.name ||
+    copiedManifest.version !== manifest.version
+  ) {
+    throw new Error(
+      `Runtime 依赖 ${manifest.name}@${manifest.version} 的 staging manifest 不匹配。`,
+    );
+  }
   copiedSourceDirectories.add(sourceKey);
   copiedPackages.push({
     name: manifest.name,
     version: manifest.version,
     installPath: toPosixPath(relativeInstallPath),
     requestedBy: request.requestedBy,
+    fileCount: packageStats.fileCount,
+    sizeBytes: packageStats.sizeBytes,
   });
 
   const peerMetadata = manifest.peerDependenciesMeta || {};
@@ -173,7 +192,8 @@ await writeFile(
   'utf8',
 );
 
-const stagingBytes = await directorySize(stagingRoot);
+const stagingStats = await inspectRuntimeTree(stagingRoot);
+const stagingBytes = stagingStats.sizeBytes;
 if (!Number.isFinite(maxStagingBytes) || maxStagingBytes <= 0) {
   throw new Error('GAMEAGENT_RUNTIME_MAX_BYTES 必须是正数。');
 }
@@ -188,9 +208,13 @@ const closureManifest = {
   schemaVersion: 1,
   platform: targetPlatform,
   arch: targetArch,
+  hostPlatform: process.platform,
+  hostArch: process.arch,
+  nativeStaging: true,
   externalPackages,
   copiedPackages,
   skippedPackages,
+  fileCount: stagingStats.fileCount,
   sizeBytes: stagingBytes,
 };
 await writeFile(
@@ -206,6 +230,18 @@ if (skippedPackages.length > 0) {
   console.log(
     `已跳过 ${skippedPackages.length} 个当前平台未安装或不兼容的可选包。`,
   );
+}
+
+function assertNativeRuntimeTarget(platform, arch) {
+  if (platform !== process.platform || arch !== process.arch) {
+    throw new Error(
+      `拒绝在 ${process.platform}/${process.arch} 宿主上为 ${platform}/${arch} 准备原生 Runtime。` +
+        '请在目标平台的原生 Runner 上重新执行 npm ci 和 package:prepare。',
+    );
+  }
+  if (platform === 'win32' && arch !== 'x64') {
+    throw new Error('Noobi.ai Windows Runtime 仅支持 win32/x64。');
+  }
 }
 
 async function readEsbuildExternalPackages(configPath) {
@@ -282,20 +318,6 @@ function matchesConstraint(constraints, value) {
   return allowed.length === 0 || allowed.includes(value);
 }
 
-async function copyRuntimePackage(source, destination, packageName) {
-  await cp(source, destination, {
-    recursive: true,
-    dereference: true,
-    filter: (sourcePath) => {
-      const relativePath = path.relative(source, sourcePath);
-      if (!relativePath) return true;
-      const segments = relativePath.split(path.sep);
-      if (segments.includes('node_modules')) return false;
-      return shouldCopyTargetFile(packageName, segments);
-    },
-  });
-}
-
 function shouldCopyTargetFile(packageName, segments) {
   if (
     packageName === 'onnxruntime-node' &&
@@ -324,16 +346,6 @@ function shouldCopyTargetFile(packageName, segments) {
   }
 
   return true;
-}
-
-async function directorySize(directory) {
-  let total = 0;
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) total += await directorySize(entryPath);
-    else if (entry.isFile()) total += (await stat(entryPath)).size;
-  }
-  return total;
 }
 
 async function assertDirectory(directory, message) {

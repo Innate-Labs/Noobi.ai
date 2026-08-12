@@ -1,7 +1,7 @@
 {
   "name": "@opengame/sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for programmatic access to the OpenGame CLI",
+  "description": "TypeScript SDK for programmatic access to the Noobi.ai agent runtime",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -32,7 +32,7 @@
     "prepack": "npm run build"
   },
   "keywords": [
-    "opengame",
+    "noobi-ai",
     "game-development",
     "agent",
     "ai",
@@ -40,7 +40,7 @@
     "sdk",
     "typescript"
   ],
-  "author": "OpenGame contributors",
+  "author": "Noobi.ai contributors",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=18.0.0"
@@ -66,11 +66,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/leigest519/OpenGame.git",
+    "url": "https://github.com/Innate-Labs/Noobi.ai.git",
     "directory": "packages/sdk-typescript"
   },
   "bugs": {
-    "url": "https://github.com/leigest519/OpenGame/issues"
+    "url": "https://github.com/Innate-Labs/Noobi.ai/issues"
   },
-  "homepage": "https://github.com/leigest519/OpenGame"
+  "homepage": "https://github.com/Innate-Labs/Noobi.ai"
 }

@@ -165,6 +165,18 @@ Just content`;
       ).toThrow(SkillError);
     });
 
+    it('should parse Windows CRLF frontmatter', () => {
+      const config = manager.parseSkillContent(
+        '---\r\nname: crlf-skill\r\ndescription: Windows line endings\r\n---\r\n\r\nInstructions\r\n',
+        validSkillConfig.filePath,
+        'project',
+      );
+
+      expect(config.name).toBe('test-skill');
+      expect(config.description).toBe('A test skill');
+      expect(config.body).toContain('Instructions');
+    });
+
     it('should throw error for missing name', () => {
       const markdownWithoutName = `---
 description: A test skill

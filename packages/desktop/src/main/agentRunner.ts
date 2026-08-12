@@ -236,11 +236,12 @@ export class AgentRunner {
       };
     }
 
-    const tsx = path.join(
+    const tsxCli = path.join(
       this.options.repoRoot,
       'node_modules',
-      '.bin',
-      process.platform === 'win32' ? 'tsx.cmd' : 'tsx',
+      'tsx',
+      'dist',
+      'cli.mjs',
     );
     const sourceCli = path.join(
       this.options.repoRoot,
@@ -248,10 +249,10 @@ export class AgentRunner {
       'cli',
       'index.ts',
     );
-    if (existsSync(tsx) && existsSync(sourceCli)) {
+    if (existsSync(tsxCli) && existsSync(sourceCli)) {
       return {
-        command: tsx,
-        prefixArgs: [sourceCli],
+        command: process.env['npm_node_execpath'] || 'node',
+        prefixArgs: [tsxCli, sourceCli],
         ready: true,
         message: '使用 TypeScript 开发 Runtime',
       };
@@ -483,7 +484,12 @@ export class AgentRunner {
       });
 
       if (!credentialPipe) {
-        terminateProcessTree(child, true);
+        await terminateProcessTree(child, true).catch((error: unknown) => {
+          console.error(
+            '[Noobi.ai] Failed to stop rejected Agent process:',
+            error,
+          );
+        });
         throw new Error('无法创建 Agent 凭据通道。');
       }
       credentialPipe.end(
@@ -520,24 +526,13 @@ export class AgentRunner {
     if (!this.active || this.active.projectId !== projectId) return;
     this.active.stoppedByUser = true;
     const child = this.active.child;
-    terminateProcessTree(child, false);
-    setTimeout(() => {
-      if (child.exitCode === null) terminateProcessTree(child, true);
-    }, 5000).unref();
+    await terminateProcessTreeWithEscalation(child);
   }
 
   async shutdown(): Promise<void> {
     const active = this.active;
     if (!active) return;
     await this.stop(active.projectId);
-    if (active.child.exitCode !== null) return;
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(resolve, 6500);
-      active.child.once('close', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
   }
 
   private monitorActiveRun(projectId: string, child: ChildProcess): void {
@@ -610,10 +605,12 @@ export class AgentRunner {
       undefined,
       true,
     );
-    terminateProcessTree(child, false);
-    setTimeout(() => {
-      if (child.exitCode === null) terminateProcessTree(child, true);
-    }, 5_000).unref();
+    void terminateProcessTreeWithEscalation(child).catch((error: unknown) => {
+      console.error(
+        '[Noobi.ai] Failed to stop timed-out Agent process:',
+        error,
+      );
+    });
   }
 
   private async handleStdoutLine(
@@ -1027,33 +1024,85 @@ function withHeapLimit(existing?: string): string {
 }
 
 function getSanitizedRuntimeEnvironment(): NodeJS.ProcessEnv {
+  return sanitizeRuntimeEnvironment(process.env);
+}
+
+export function sanitizeRuntimeEnvironment(
+  source: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+  userHome: string = homedir(),
+): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {};
+  let existingPath: string | undefined;
   const sensitiveName =
     /(^|_)(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH|AUTHORIZATION|CREDENTIALS?)($|_)/i;
-  for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined && !sensitiveName.test(name)) result[name] = value;
+  for (const [name, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    const isPathKey =
+      platform === 'win32' ? name.toLowerCase() === 'path' : name === 'PATH';
+    if (isPathKey) {
+      existingPath ??= value;
+      continue;
+    }
+    if (!sensitiveName.test(name)) result[name] = value;
   }
-  result.PATH = withDesktopToolPaths(result.PATH);
+  result.PATH = withDesktopToolPaths(existingPath, platform, source, userHome);
   return result;
 }
 
-export function withDesktopToolPaths(existingPath?: string): string {
-  const userHome = homedir();
-  const preferred = [
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    path.join(userHome, '.local', 'bin'),
-    path.join(userHome, '.cargo', 'bin'),
-    path.join(userHome, '.volta', 'bin'),
-    '/usr/bin',
-    '/bin',
-    '/usr/sbin',
-    '/sbin',
-  ];
-  const entries = [...preferred, ...(existingPath?.split(path.delimiter) ?? [])]
+export function withDesktopToolPaths(
+  existingPath?: string,
+  platform: NodeJS.Platform = process.platform,
+  environment: NodeJS.ProcessEnv = process.env,
+  userHome: string = homedir(),
+): string {
+  const delimiter = platform === 'win32' ? ';' : ':';
+  const preferred =
+    platform === 'win32'
+      ? windowsToolPaths(environment, userHome)
+      : [
+          '/opt/homebrew/bin',
+          '/usr/local/bin',
+          path.posix.join(userHome, '.local', 'bin'),
+          path.posix.join(userHome, '.cargo', 'bin'),
+          path.posix.join(userHome, '.volta', 'bin'),
+          '/usr/bin',
+          '/bin',
+          '/usr/sbin',
+          '/sbin',
+        ];
+  const entries = [...preferred, ...(existingPath?.split(delimiter) ?? [])]
     .map((entry) => entry.trim())
     .filter(Boolean);
-  return [...new Set(entries)].join(path.delimiter);
+  const seen = new Set<string>();
+  return entries
+    .filter((entry) => {
+      const key = platform === 'win32' ? entry.toLowerCase() : entry;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(delimiter);
+}
+
+function windowsToolPaths(
+  environment: NodeJS.ProcessEnv,
+  userHome: string,
+): string[] {
+  const localAppData = environment['LOCALAPPDATA'];
+  const roamingAppData = environment['APPDATA'];
+  const programFiles =
+    environment['ProgramFiles'] ?? environment['PROGRAMFILES'];
+  return [
+    localAppData &&
+      path.win32.join(localAppData, 'Microsoft', 'WinGet', 'Links'),
+    roamingAppData && path.win32.join(roamingAppData, 'npm'),
+    programFiles && path.win32.join(programFiles, 'nodejs'),
+    programFiles && path.win32.join(programFiles, 'WinGet', 'Links'),
+    path.win32.join(userHome, '.local', 'bin'),
+    path.win32.join(userHome, '.cargo', 'bin'),
+    path.win32.join(userHome, '.volta', 'bin'),
+  ].filter((entry): entry is string => Boolean(entry));
 }
 
 function collectSecrets(
@@ -1080,28 +1129,137 @@ function redactSensitiveText(value: string, secrets: string[]): string {
     .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/g, '[已隐藏密钥]');
 }
 
-function terminateProcessTree(child: ChildProcess, force: boolean): void {
+export interface ProcessTreeTerminationOptions {
+  platform?: NodeJS.Platform;
+  environment?: NodeJS.ProcessEnv;
+  spawnCommand?: (
+    executable: string,
+    args: readonly string[],
+    options: {
+      stdio: 'ignore';
+      windowsHide: true;
+      shell: false;
+    },
+  ) => {
+    once(event: 'error', listener: (error: Error) => void): unknown;
+    once(event: 'close', listener: (exitCode: number | null) => void): unknown;
+  };
+}
+
+export async function terminateProcessTree(
+  child: ChildProcess,
+  force: boolean,
+  options: ProcessTreeTerminationOptions = {},
+): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
 
-  if (process.platform === 'win32') {
+  const platform = options.platform ?? process.platform;
+  if (platform === 'win32') {
     if (!child.pid) {
-      child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      if (!child.kill(force ? 'SIGKILL' : 'SIGTERM')) {
+        throw new Error('Agent 进程没有可用 PID，且直接终止失败。');
+      }
       return;
     }
     const args = ['/pid', String(child.pid), '/t'];
     if (force) args.push('/f');
-    const killer = spawn('taskkill', args, {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    killer.unref();
-    return;
+    const environment = options.environment ?? process.env;
+    const systemRoot =
+      environmentValueCaseInsensitive(environment, 'SystemRoot') ??
+      String.raw`C:\Windows`;
+    const taskkill = path.win32.join(systemRoot, 'System32', 'taskkill.exe');
+    const spawnCommand =
+      options.spawnCommand ??
+      ((executable, commandArgs, spawnOptions) =>
+        spawn(executable, [...commandArgs], spawnOptions));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const killer = spawnCommand(taskkill, args, {
+          stdio: 'ignore',
+          windowsHide: true,
+          shell: false,
+        });
+        killer.once('error', (error) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        });
+        killer.once('close', (exitCode) => {
+          if (settled) return;
+          settled = true;
+          if (exitCode === 0) resolve();
+          else reject(new Error(`taskkill 退出码：${exitCode ?? '未知'}`));
+        });
+      });
+      return;
+    } catch (error) {
+      child.kill(force ? 'SIGKILL' : 'SIGTERM');
+      throw new Error(
+        `无法确认 Windows Agent 进程树已终止：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   try {
     if (child.pid) process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM');
-    else child.kill(force ? 'SIGKILL' : 'SIGTERM');
+    else if (!child.kill(force ? 'SIGKILL' : 'SIGTERM')) {
+      throw new Error('直接终止 Agent 进程失败。');
+    }
   } catch {
-    child.kill(force ? 'SIGKILL' : 'SIGTERM');
+    if (!child.kill(force ? 'SIGKILL' : 'SIGTERM')) {
+      throw new Error('无法终止 Agent 进程。');
+    }
   }
+}
+
+async function terminateProcessTreeWithEscalation(
+  child: ChildProcess,
+): Promise<void> {
+  await terminateProcessTree(child, false);
+  if (await waitForChildExit(child, 5_000)) return;
+  await terminateProcessTree(child, true);
+  if (await waitForChildExit(child, 1_500)) return;
+  throw new Error('Agent 进程树在强制终止后仍未退出。');
+}
+
+async function waitForChildExit(
+  child: ChildProcess,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const onClose = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(true);
+    };
+    child.once('close', onClose);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      child.off('close', onClose);
+      settled = true;
+      resolve(true);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.off('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+    timer.unref();
+  });
+}
+
+function environmentValueCaseInsensitive(
+  environment: NodeJS.ProcessEnv,
+  name: string,
+): string | undefined {
+  const target = name.toLowerCase();
+  for (const [key, value] of Object.entries(environment)) {
+    if (key.toLowerCase() === target && value?.trim()) return value.trim();
+  }
+  return undefined;
 }

@@ -176,7 +176,7 @@ export interface DesktopDependency {
   version?: string;
   installations?: DependencyInstallation[];
   availableActions: DependencyAction[];
-  management: 'homebrew' | 'unity-hub' | 'manual';
+  management: 'homebrew' | 'winget' | 'unity-hub' | 'manual';
   detail?: string;
 }
 

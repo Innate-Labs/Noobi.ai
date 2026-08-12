@@ -3,10 +3,12 @@
   <h1>Noobi.ai</h1>
   <p><strong>把一个游戏想法，变成可运行、可继续迭代的本地项目。</strong></p>
   <p>
-    面向 macOS 的本地优先 AI 游戏制作客户端。让 Agent 在可见的工作区中规划、
+    面向 macOS 的本地优先 AI 游戏制作客户端；Windows 11 x64 未签名候选版已通过原生 CI。让 Agent 在可见的工作区中规划、
     编码、调用工具、运行验证，并通过插件连接 Skills、MCP 与游戏引擎。
   </p>
   <p>
+    <a href="#下载客户端">下载客户端</a>
+    ·
     <a href="#快速开始">快速开始</a>
     ·
     <a href="#产品架构">产品架构</a>
@@ -17,6 +19,7 @@
   </p>
   <p>
     <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-1b1d18" alt="macOS Apple Silicon" />
+    <img src="https://img.shields.io/badge/Windows%2011-x64%20candidate-2775ca" alt="Windows 11 x64 candidate" />
     <img src="https://img.shields.io/badge/Electron-Desktop-47848f" alt="Electron Desktop" />
     <img src="https://img.shields.io/badge/Agent-Skills%20%2B%20MCP-d69a2d" alt="Agent Skills and MCP" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-5e936f" alt="Apache-2.0 license" />
@@ -26,6 +29,21 @@
 <div align="center">
   <img src="docs/images/noobi-ai-hero.png" alt="Noobi.ai IP 形象在 AI 游戏制作工作台中把创意组装成可玩游戏" width="100%" />
 </div>
+
+## 下载客户端
+
+| 平台                    | 下载                                                                                                                             | 状态                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Windows 11 x64**      | **[下载 Noobi.ai v0.2.2 Windows 候选版](https://github.com/Innate-Labs/Noobi.ai/actions/runs/31561503301/artifacts/9127999575)** | 未签名开发候选版；已通过 Windows x64 原生 CI 的构建、启动、安装和卸载验证 |
+| **macOS Apple Silicon** | [前往 GitHub Releases](https://github.com/Innate-Labs/Noobi.ai/releases)                                                         | 当前发行基线；正式安装包以 Releases 页面为准                              |
+
+Windows 下载内容为 `Noobi.ai-windows-x64-unsigned-dev` ZIP，解压后包含
+`Noobi.ai-0.2.2-windows-x64-setup.exe` 和对应的 `.sha256` 校验文件。GitHub Actions Artifact
+需要登录 GitHub 下载，当前保留至 **2026-11-10**；后续正式签名版本将迁移到
+[GitHub Releases](https://github.com/Innate-Labs/Noobi.ai/releases)。
+
+> Windows 候选安装包尚未进行 Authenticode 代码签名，系统可能显示“未知发布者”或
+> SmartScreen 提示。它适合测试，不是正式发行版；请勿关闭 Windows 安全保护。
 
 ## 产品业务：Noobi.ai 解决什么问题
 
@@ -67,7 +85,7 @@ Noobi.ai 面向独立游戏开发者、游戏策划、技术美术和小型制�
 | **调用与成本诊断**    | 展示主 Agent 实际工作调用、延迟与 Token 统计；用于本机诊断，不替代供应商账单                  |
 | **开发者模式**        | 查看项目 Prompt、Function Calling 和当前单任务调度状态                                        |
 | **依赖管理**          | 检测并按白名单安装或更新 Node / npx、uvx、Godot、Blender、Unity Hub；Unity Editor 由 Hub 管理 |
-| **本地与安全**        | 工程保存在用户选择的目录；API Key 与 MCP Secret 使用 macOS 系统安全存储                       |
+| **本地与安全**        | 工程保存在用户选择的目录；API Key 与 MCP Secret 使用当前操作系统的安全存储                    |
 
 ## 插件与游戏引擎
 
@@ -175,13 +193,21 @@ flowchart TD
 - 图像、视频、音频和模型调用依赖用户自己的 API、网络、额度与供应商能力，费用由服务商收取。
 - Token 与延迟统计当前覆盖 Provider 连接测试和主 Agent 最终结果，不等同于供应商账单，也尚未逐项记录所有内部素材请求。
 - Agent 可以在项目目录写文件并运行命令。建议使用 Git 或其他方式备份，并在发布前完成代码、许可证与素材来源审查。
-- 当前没有云同步、多人协作或内置自动更新；公开构建仍需 Apple Developer ID 签名与公证。
+- 当前没有云同步、多人协作或内置自动更新；公开构建仍需对应平台的代码签名，macOS 还需要 Apple 公证。
 
 ## 快速开始
 
-### 环境要求
+### 安装版与候选目标
 
-- macOS（当前构建流程主要在 Apple Silicon 上验证）
+- macOS Apple Silicon
+- Windows 11 x64 未签名候选版（已通过原生 CI；完成代码签名和跨版本升级验收前不作为正式
+  发行版；不包括 Windows on ARM、32 位 Windows、便携版和 Microsoft Store 版）
+
+安装版包含 Noobi.ai 自身运行所需组件。Node.js、uv、Godot、Blender、Unity Hub 等是特定
+插件或游戏引擎工作流的可选本机依赖，可在“设置 → 依赖管理”中检测。
+
+### 从源码开发的环境要求
+
 - Node.js 20 或更高版本
 - npm 与 Git
 
@@ -202,13 +228,17 @@ npm run desktop
 3. 启动 Agent，在工作台中观察阶段、工具调用、文件和预览。
 4. 如需外部引擎，在“插件”安装对应 Skill / MCP，并在“设置 → 依赖管理”补齐本机环境。
 
-### 构建 macOS 安装包
+### 构建当前系统安装包
 
 ```bash
 npm run desktop:package
 ```
 
-该命令会构建 Agent Runtime、桌面界面和运行时依赖，完成 Runtime 冒烟测试，然后生成 DMG。当前版本的产物位于：
+该命令会根据当前宿主系统构建 Agent Runtime、桌面界面和原生依赖，完成 Runtime 冒烟测试，
+然后在 macOS 生成 DMG、在 Windows 生成 NSIS Setup EXE。原生依赖必须在目标系统构建；不要
+把 Mac 上交叉组装的 Windows 包作为正式产物。
+
+macOS 当前版本产物：
 
 ```text
 packages/desktop/release/Noobi.ai-0.2.2-arm64.dmg
@@ -221,6 +251,43 @@ packages/desktop/release/Noobi.ai-0.2.2-arm64.dmg
 ```bash
 npm run desktop:package:signed
 ```
+
+### 构建 Windows 11 x64 安装包
+
+在 Windows 11 x64 PowerShell 中运行：
+
+```powershell
+npm ci
+npm run desktop:package:win
+```
+
+开发安装包位于：
+
+```text
+packages/desktop/release/Noobi.ai-0.2.2-windows-x64-setup.exe
+```
+
+普通构建没有 Authenticode 签名，只适合内部测试，Windows 可能显示“未知发布者”或 SmartScreen
+提示。不要关闭系统保护；CI 会把开发安装包与 SHA-256 作为 `unsigned-dev` Actions Artifact
+上传。只有签名验证与 Windows 实机验收通过后，维护者才会把安装包、SHA-256 和签名状态发布到
+[GitHub Releases](https://github.com/Innate-Labs/Noobi.ai/releases)。正式构建需要配置 Windows 代码
+签名凭据，并把仓库变量 `NOOBI_WINDOWS_SIGNER` 配置为证书 Subject 中的发布者名称，然后执行：
+
+```powershell
+npm run desktop:package:win:signed
+```
+
+验证安装包、Runtime、x64 架构、启动和签名模式：
+
+```powershell
+npm run desktop:verify:win
+Get-FileHash packages/desktop/release/Noobi.ai-0.2.2-windows-x64-setup.exe -Algorithm SHA256
+Get-AuthenticodeSignature packages/desktop/release/Noobi.ai-0.2.2-windows-x64-setup.exe
+```
+
+当前版本没有内置自动更新。安装新版时重新下载并运行 Setup EXE 完成覆盖安装；安装器配置为
+保留应用数据，卸载也不以用户主动选择的游戏项目目录为目标。正式发行前仍须用 N→N+1 实机
+测试确认配置、凭据和项目均保持可用。
 
 仅生成未封装的本机调试 App：
 
@@ -246,6 +313,7 @@ npm run typecheck
 - [桌面使用说明](docs/gameagent/DESKTOP_GUIDE.md)
 - [API 配置](docs/gameagent/API_CONFIGURATION.md)
 - [详细技术架构](docs/gameagent/ARCHITECTURE.md)
+- [Spec Kit 研发流程](docs/SPECKIT.md)
 
 ### Agent 无输出保护
 

@@ -35,27 +35,12 @@
 | `tower_defense` | 固定路径 + 波次   | 敌人是否沿固定路径前进？    | Kingdom Rush、Bloons TD         |
 | `ui_heavy`      | UI 驱动 / 无物理  | 核心交互是否主要发生在 UI？ | 卡牌、视觉小说                  |
 
-2. **复制脚手架**：使用 `run_shell_command` 按顺序执行以下四步。`{archetype}` 替换为分类结果：
+2. **确认脚手架**：`classify_game_type` 会在返回分类结果前，使用受控的 Node.js 文件 API
+   自动复制核心模板、类型模块和契约文档。不要再执行 `cp`、`mkdir`、PowerShell 或 cmd
+   脚手架命令。
 
-```bash
-# Step 1: 复制核心模板（包含 .gitignore 等 dotfiles）
-cp -R "{TEMPLATES_DIR}/core/." ./
-
-# Step 2: 把类型模块增量合并到 src/
-cp -R "{TEMPLATES_DIR}/modules/{archetype}/src/." ./src/
-
-# Step 3: 复制核心文档
-mkdir -p docs/gdd
-cp "{DOCS_DIR}/gdd/core.md" docs/gdd/
-cp "{DOCS_DIR}/asset_protocol.md" "{DOCS_DIR}/debug_protocol.md" docs/
-
-# Step 4: 复制类型模块文档
-mkdir -p docs/modules/{archetype}
-cp -R "{DOCS_DIR}/modules/{archetype}/." docs/modules/{archetype}/
-```
-
-- 不要手工创建模板内部目录，模板本身已经提供。
-- 复制完成后直接进入 Phase 2；此时不要读取源码。模板源码只在 Phase 5 读取，过早读取会浪费上下文。
+- 如果工具返回脚手架错误，先向用户展示具体原因并停止后续阶段，禁止绕过目录或符号链接校验。
+- 脚手架完成后直接进入 Phase 2；此时不要读取源码。模板源码只在 Phase 5 读取，过早读取会浪费上下文。
 
 ### Phase 2：游戏设计
 

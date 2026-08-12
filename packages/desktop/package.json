@@ -18,11 +18,15 @@
     "smoke:runtime": "node scripts/smoke-runtime.mjs",
     "build:icon": "node scripts/build-icon.mjs",
     "package:prepare": "npm run bundle:runtime && npm run build && npm run build:icon && npm run prepare:runtime-deps && npm run smoke:runtime",
-    "package": "npm run package:mac",
+    "package": "node scripts/package-current-platform.mjs",
     "package:app": "npm run package:prepare && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
     "package:mac": "npm run package:prepare && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --publish never && npm run verify:mac-installer",
     "package:mac:signed": "npm run package:prepare && electron-builder --mac dmg --publish never -c.forceCodeSigning=true -c.mac.hardenedRuntime=true -c.mac.notarize=true && npm run verify:mac-installer",
-    "verify:mac-installer": "node scripts/verify-macos-installer.mjs"
+    "package:win": "npm run package:prepare && electron-builder --win nsis --x64 --publish never -c.win.signExecutable=false && npm run verify:win-installer",
+    "package:win:signed": "npm run package:prepare && electron-builder --win nsis --x64 --publish never -c.forceCodeSigning=true && npm run verify:win-installer:signed",
+    "verify:mac-installer": "node scripts/verify-macos-installer.mjs",
+    "verify:win-installer": "node scripts/verify-windows-installer.mjs",
+    "verify:win-installer:signed": "node scripts/verify-windows-installer.mjs --require-signature"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.2.0",
@@ -47,6 +51,7 @@
   "build": {
     "appId": "com.gameagent.desktop",
     "productName": "Noobi.ai",
+    "copyright": "Copyright © Innate Labs",
     "electronVersion": "43.3.0",
     "asar": true,
     "directories": {
@@ -106,6 +111,32 @@
       "target": [
         "dmg"
       ]
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "requestedExecutionLevel": "asInvoker",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "Noobi.ai-${version}-windows-${arch}-setup.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "selectPerMachineByDefault": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Noobi.ai",
+      "uninstallDisplayName": "Noobi.ai ${version}",
+      "deleteAppDataOnUninstall": false,
+      "packElevateHelper": false
     },
     "dmg": {
       "artifactName": "Noobi.ai-${version}-${arch}.${ext}",

@@ -19,6 +19,9 @@ export default tseslint.config(
     ignores: [
       'node_modules/*',
       'packages/**/dist/**',
+      'packages/**/.runtime-deps/**',
+      'packages/**/release/**',
+      'packages/**/release-next/**',
       'bundle/**',
       'package/bundle/**',
       '.integration-tests/**',
@@ -191,7 +194,11 @@ export default tseslint.config(
   },
   // extra settings for scripts that we run directly with node
   {
-    files: ['./scripts/**/*.js', 'esbuild.config.js', 'packages/*/scripts/**/*.js'],
+    files: [
+      './scripts/**/*.{js,mjs}',
+      'esbuild.config.js',
+      'packages/*/scripts/**/*.{js,mjs}',
+    ],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -208,6 +215,19 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: '^_',
         },
       ],
+    },
+  },
+  // CommonJS scripts use Node's module globals and intentionally use require().
+  {
+    files: ['./scripts/**/*.cjs', 'packages/*/scripts/**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
   // extra settings for core package scripts
