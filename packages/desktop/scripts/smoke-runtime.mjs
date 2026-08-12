@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
+import console from 'node:console';
 import { createRequire } from 'node:module';
 import {
   copyFile,
@@ -12,6 +13,8 @@ import {
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
+import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -36,6 +39,28 @@ try {
     path.join(temporaryRuntime, 'node_modules'),
     process.platform === 'win32' ? 'junction' : 'dir',
   );
+  await symlink(
+    path.join(repositoryRoot, 'dist', 'vendor'),
+    path.join(temporaryRuntime, 'vendor'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+
+  const closure = JSON.parse(
+    await readFile(
+      path.join(stagingRoot, 'runtime-deps-manifest.json'),
+      'utf8',
+    ),
+  );
+  if (
+    closure.platform !== process.platform ||
+    closure.arch !== process.arch ||
+    closure.nativeStaging !== true
+  ) {
+    throw new Error(
+      `Runtime manifest 与宿主不匹配：manifest=${closure.platform}/${closure.arch}，` +
+        `host=${process.platform}/${process.arch}。`,
+    );
+  }
 
   const moduleProbe = `
 import { createRequire } from 'node:module';
@@ -43,7 +68,7 @@ import { get_encoding } from 'tiktoken';
 import sharp from 'sharp';
 import 'onnxruntime-node';
 import '@imgly/background-removal-node';
-import '@lydell/node-pty';
+import { spawn as spawnPty } from '@lydell/node-pty';
 
 const require = createRequire(import.meta.url);
 for (const name of [
@@ -71,6 +96,36 @@ const metadata = await sharp({
 if (tokenCount < 1 || metadata.width !== 1 || metadata.height !== 1) {
   throw new Error('Runtime module probe returned invalid results.');
 }
+
+if (process.platform === 'win32') {
+  await new Promise((resolve, reject) => {
+    const terminal = spawnPty(process.env.ComSpec || 'cmd.exe', [
+      '/d',
+      '/s',
+      '/c',
+      'echo NOOBI_PTY_OK',
+    ], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 24,
+      cwd: process.cwd(),
+      env: process.env,
+    });
+    let output = '';
+    const timeout = setTimeout(() => {
+      terminal.kill();
+      reject(new Error('Windows PTY probe timed out.'));
+    }, 10_000);
+    terminal.onData((chunk) => {
+      output += chunk;
+    });
+    terminal.onExit(({ exitCode }) => {
+      clearTimeout(timeout);
+      if (exitCode === 0 && output.includes('NOOBI_PTY_OK')) resolve();
+      else reject(new Error('Windows PTY probe failed: ' + output));
+    });
+  });
+}
 console.log('runtime modules resolved');
 `;
   const probePath = path.join(temporaryRuntime, 'probe.mjs');
@@ -88,6 +143,22 @@ console.log('runtime modules resolved');
     );
   }
 
+  if (process.platform === 'win32') {
+    const bundledRipgrep = path.join(
+      temporaryRuntime,
+      'vendor',
+      'ripgrep',
+      'x64-win32',
+      'rg.exe',
+    );
+    const ripgrep = await run(bundledRipgrep, ['--version'], temporaryRuntime);
+    if (!ripgrep.stdout.startsWith('ripgrep ')) {
+      throw new Error(
+        `Windows bundled rg smoke test 输出异常：\n${ripgrep.stdout}\n${ripgrep.stderr}`,
+      );
+    }
+  }
+
   const cli = await run(
     electronExecutable,
     [...commonArguments, path.join(temporaryRuntime, 'cli.js'), '--help'],
@@ -99,12 +170,6 @@ console.log('runtime modules resolved');
     );
   }
 
-  const closure = JSON.parse(
-    await readFile(
-      path.join(stagingRoot, 'runtime-deps-manifest.json'),
-      'utf8',
-    ),
-  );
   console.log(
     `隔离 Runtime smoke test 通过：${closure.copiedPackages.length} packages，` +
       `${(closure.sizeBytes / 1024 / 1024).toFixed(1)} MB。`,

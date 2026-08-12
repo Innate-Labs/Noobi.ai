@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import console from 'node:console';
 import {
   cp,
   lstat,
@@ -11,6 +12,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +29,8 @@ const targetArch = process.env['GAMEAGENT_RUNTIME_ARCH'] || process.arch;
 const maxStagingBytes = Number(
   process.env['GAMEAGENT_RUNTIME_MAX_BYTES'] || 700 * 1024 * 1024,
 );
+
+assertNativeRuntimeTarget(targetPlatform, targetArch);
 
 const optionalExternalPackages = new Set([
   '@lydell/node-pty',
@@ -188,6 +192,9 @@ const closureManifest = {
   schemaVersion: 1,
   platform: targetPlatform,
   arch: targetArch,
+  hostPlatform: process.platform,
+  hostArch: process.arch,
+  nativeStaging: true,
   externalPackages,
   copiedPackages,
   skippedPackages,
@@ -206,6 +213,18 @@ if (skippedPackages.length > 0) {
   console.log(
     `已跳过 ${skippedPackages.length} 个当前平台未安装或不兼容的可选包。`,
   );
+}
+
+function assertNativeRuntimeTarget(platform, arch) {
+  if (platform !== process.platform || arch !== process.arch) {
+    throw new Error(
+      `拒绝在 ${process.platform}/${process.arch} 宿主上为 ${platform}/${arch} 准备原生 Runtime。` +
+        '请在目标平台的原生 Runner 上重新执行 npm ci 和 package:prepare。',
+    );
+  }
+  if (platform === 'win32' && arch !== 'x64') {
+    throw new Error('Noobi.ai Windows Runtime 仅支持 win32/x64。');
+  }
 }
 
 async function readEsbuildExternalPackages(configPath) {

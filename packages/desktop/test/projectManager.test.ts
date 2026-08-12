@@ -41,6 +41,62 @@ describe('ProjectManager project boundaries', () => {
     expect(await readdir(fixture.workspace)).toEqual([]);
   });
 
+  it.each(['CON', 'con.txt', 'COM0', 'LPT1'])(
+    'rejects the Windows-unsafe project name %s on every host',
+    async (name) => {
+      const fixture = await createFixture();
+
+      await expect(
+        fixture.manager.create({
+          name,
+          directory: fixture.workspace,
+          prompt: '制作一个测试游戏',
+        }),
+      ).rejects.toThrow('安全的目录名');
+      expect(await readdir(fixture.workspace)).toEqual([]);
+    },
+  );
+
+  it('removes Windows control characters from the project directory', async () => {
+    const fixture = await createFixture();
+    const project = await fixture.manager.create({
+      name: 'Game\u0001Name',
+      directory: fixture.workspace,
+      prompt: '制作一个测试游戏',
+    });
+
+    expect(path.basename(project.path)).toBe('Game-Name');
+  });
+
+  it.each([
+    ['Game.', 'Game'],
+    ['Game ', 'Game'],
+  ])(
+    'removes Windows-unsafe trailing punctuation from %s',
+    async (name, expected) => {
+      const fixture = await createFixture();
+
+      const project = await fixture.manager.create({
+        name,
+        directory: fixture.workspace,
+        prompt: '制作一个测试游戏',
+      });
+
+      expect(path.basename(project.path)).toBe(expected);
+    },
+  );
+
+  it('removes a trailing dot created by project-name truncation', async () => {
+    const fixture = await createFixture();
+    const project = await fixture.manager.create({
+      name: `${'A'.repeat(79)}.suffix`,
+      directory: fixture.workspace,
+      prompt: '制作一个测试游戏',
+    });
+
+    expect(path.basename(project.path)).toBe('A'.repeat(79));
+  });
+
   it('does not silently reuse a non-empty project directory', async () => {
     const fixture = await createFixture();
     const existingProject = path.join(fixture.workspace, 'Existing-Game');

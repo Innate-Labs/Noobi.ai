@@ -1,6 +1,9 @@
 **/bundle
 **/coverage
 **/dist
+**/.runtime-deps
+**/release
+**/release-next
 **/.git
 **/node_modules
 .docker

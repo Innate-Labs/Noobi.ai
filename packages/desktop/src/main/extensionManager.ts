@@ -195,7 +195,7 @@ export class ExtensionManager {
       const content = await readFile(filePath, 'utf8');
       // Match the Runtime parser exactly so the desktop never marks a Skill as
       // usable when the SkillTool would reject it later.
-      const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+      const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
       if (!match) throw new Error('SKILL.md 缺少 YAML frontmatter。');
       const name = scalar(match[1] ?? '', 'name');
       const description = scalar(match[1] ?? '', 'description');
@@ -299,11 +299,22 @@ function safeFolderName(sourceName: string, manifestName: string): string {
     .normalize('NFKC')
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 100);
-  if (!value || value === '.' || value === '..') {
+    .slice(0, 100)
+    .replace(/[. ]+$/g, '');
+  if (
+    !value ||
+    value === '.' ||
+    value === '..' ||
+    isWindowsReservedBasename(value)
+  ) {
     throw new Error('Skill 名称无法生成安全目录名。');
   }
   return value;
+}
+
+function isWindowsReservedBasename(value: string): boolean {
+  const stem = value.split('.')[0]?.toUpperCase() ?? '';
+  return /^(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/.test(stem);
 }
 
 function skillId(level: SkillLevel, folderName: string): string {

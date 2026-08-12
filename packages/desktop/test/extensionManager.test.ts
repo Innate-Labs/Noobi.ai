@@ -124,6 +124,70 @@ describe('ExtensionManager Skills', () => {
       'Tune input response, camera motion, hit feedback, and animation timing.',
     );
   });
+
+  it('accepts Windows CRLF frontmatter', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'noobi-crlf-skill-'));
+    roots.push(root);
+    const source = path.join(root, 'crlf-skill');
+    const projectPath = path.join(root, 'project');
+    await Promise.all([mkdir(source), mkdir(projectPath)]);
+    await writeFile(
+      path.join(source, 'SKILL.md'),
+      '---\r\nname: crlf-skill\r\ndescription: Windows line endings\r\n---\r\n\r\nInstructions\r\n',
+      'utf8',
+    );
+
+    const imported = await new ExtensionManager().importSkill(
+      source,
+      'project',
+      makeProject(projectPath),
+    );
+    expect(imported).toMatchObject({ name: 'crlf-skill', valid: true });
+  });
+
+  it('removes a trailing dot created by Skill folder-name truncation', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'noobi-long-skill-'));
+    roots.push(root);
+    const source = path.join(root, `${'a'.repeat(99)}.suffix`);
+    const projectPath = path.join(root, 'project');
+    await Promise.all([mkdir(source), mkdir(projectPath)]);
+    await writeFile(
+      path.join(source, 'SKILL.md'),
+      '---\nname: long-skill\ndescription: Long folder name\n---\n',
+      'utf8',
+    );
+
+    const imported = await new ExtensionManager().importSkill(
+      source,
+      'project',
+      makeProject(projectPath),
+    );
+    expect(path.basename(imported.directory)).toBe('a'.repeat(99));
+  });
+
+  it.each(['CON', 'con.reference', 'COM0'])(
+    'rejects the Windows-reserved Skill folder name %s',
+    async (folderName) => {
+      const root = await mkdtemp(path.join(tmpdir(), 'noobi-reserved-skill-'));
+      roots.push(root);
+      const source = path.join(root, folderName);
+      const projectPath = path.join(root, 'project');
+      await Promise.all([mkdir(source), mkdir(projectPath)]);
+      await writeFile(
+        path.join(source, 'SKILL.md'),
+        '---\nname: safe-manifest\ndescription: Reserved source folder\n---\n',
+        'utf8',
+      );
+
+      await expect(
+        new ExtensionManager().importSkill(
+          source,
+          'project',
+          makeProject(projectPath),
+        ),
+      ).rejects.toThrow('安全目录名');
+    },
+  );
 });
 
 describe('GitHub Skill source parsing', () => {

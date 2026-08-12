@@ -1,0 +1,121 @@
+name: 'Noobi.ai Windows Desktop'
+
+on:
+  pull_request:
+    branches:
+      - 'main'
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+    inputs:
+      signed_release:
+        description: 'Build and verify a signed Windows release candidate'
+        required: true
+        default: false
+        type: 'boolean'
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.head_ref || github.ref }}'
+  cancel-in-progress: "${{ github.ref != 'refs/heads/main' }}"
+
+permissions:
+  contents: 'read'
+
+jobs:
+  windows-desktop:
+    name: 'Windows x64 package'
+    runs-on: 'windows-latest'
+    defaults:
+      run:
+        shell: 'pwsh'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # ratchet:actions/checkout@v5
+
+      - name: 'Set up Node.js 20'
+        uses: 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020' # ratchet:actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: 'Install native Windows dependencies'
+        run: 'npm ci --prefer-offline --no-audit --progress=false'
+
+      - name: 'Typecheck desktop'
+        run: 'npm run typecheck --workspace=@gameagent/desktop'
+
+      - name: 'Test desktop'
+        run: 'npm test --workspace=@gameagent/desktop'
+
+      - name: 'Build desktop'
+        run: 'npm run build --workspace=@gameagent/desktop'
+
+      - name: 'Build and verify unsigned development installer'
+        if: "${{ !(github.event_name == 'workflow_dispatch' && inputs.signed_release) }}"
+        run: 'npm run desktop:package:win'
+
+      - name: 'Require Windows signing credentials'
+        if: "${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}"
+        env:
+          WIN_CSC_LINK: '${{ secrets.WIN_CSC_LINK }}'
+          WIN_CSC_KEY_PASSWORD: '${{ secrets.WIN_CSC_KEY_PASSWORD }}'
+          NOOBI_WINDOWS_SIGNER: '${{ vars.NOOBI_WINDOWS_SIGNER }}'
+        run: |-
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) {
+            throw 'WIN_CSC_LINK is required for a signed release build.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)) {
+            throw 'WIN_CSC_KEY_PASSWORD is required for a signed release build.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:NOOBI_WINDOWS_SIGNER)) {
+            throw 'NOOBI_WINDOWS_SIGNER is required for publisher verification.'
+          }
+
+      - name: 'Build and verify signed release installer'
+        if: "${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}"
+        env:
+          WIN_CSC_LINK: '${{ secrets.WIN_CSC_LINK }}'
+          WIN_CSC_KEY_PASSWORD: '${{ secrets.WIN_CSC_KEY_PASSWORD }}'
+          NOOBI_WINDOWS_SIGNER: '${{ vars.NOOBI_WINDOWS_SIGNER }}'
+        run: 'npm run desktop:package:win:signed'
+
+      - name: 'Run unsigned native install and uninstall smoke'
+        if: "${{ !(github.event_name == 'workflow_dispatch' && inputs.signed_release) }}"
+        run: 'npm run verify:win-installer --workspace=@gameagent/desktop -- --install-smoke'
+
+      - name: 'Run signed native install and uninstall smoke'
+        if: "${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}"
+        env:
+          NOOBI_WINDOWS_SIGNER: '${{ vars.NOOBI_WINDOWS_SIGNER }}'
+        run: 'npm run verify:win-installer:signed --workspace=@gameagent/desktop -- --install-smoke'
+
+      - name: 'Create SHA-256 checksum'
+        run: |-
+          $version = node -p "require('./packages/desktop/package.json').version"
+          $installer = Get-Item -LiteralPath "packages/desktop/release/Noobi.ai-$version-windows-x64-setup.exe"
+          $checksum = "$($installer.FullName).sha256"
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath $checksum -Value "$hash  $($installer.Name)" -Encoding ascii
+          "NOOBI_INSTALLER=$($installer.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "NOOBI_CHECKSUM=$checksum" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: 'Upload unsigned development installer'
+        if: "${{ !(github.event_name == 'workflow_dispatch' && inputs.signed_release) }}"
+        uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' # ratchet:actions/upload-artifact@v4
+        with:
+          name: 'Noobi.ai-windows-x64-unsigned-dev'
+          path: |-
+            ${{ env.NOOBI_INSTALLER }}
+            ${{ env.NOOBI_CHECKSUM }}
+          if-no-files-found: 'error'
+
+      - name: 'Upload signed release candidate'
+        if: "${{ github.event_name == 'workflow_dispatch' && inputs.signed_release }}"
+        uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' # ratchet:actions/upload-artifact@v4
+        with:
+          name: 'Noobi.ai-windows-x64-signed-release'
+          path: |-
+            ${{ env.NOOBI_INSTALLER }}
+            ${{ env.NOOBI_CHECKSUM }}
+          if-no-files-found: 'error'

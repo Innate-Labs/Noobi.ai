@@ -342,7 +342,7 @@ export function App() {
                   </button>
                 )}
                 <div className="composer-hint">
-                  ⌘ + Enter 执行 · 工具名称与协议保持英文，过程说明使用中文
+                  Ctrl/⌘ + Enter 执行 · 工具名称与协议保持英文，过程说明使用中文
                 </div>
               </div>
             </section>

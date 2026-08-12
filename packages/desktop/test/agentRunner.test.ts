@@ -1,17 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AppSettings } from '../src/shared/types.js';
 import {
+  AgentRunner,
   assetIdleTimeoutFromEnv,
   assetOutputDirFromInput,
   buildCredentialPayload,
   inspectAssetProgress,
   isRuntimeFailure,
   PendingToolTracker,
+  sanitizeRuntimeEnvironment,
+  terminateProcessTree,
   withDesktopToolPaths,
 } from '../src/main/agentRunner.js';
+import type { ChildProcess } from 'node:child_process';
 
 describe('isRuntimeFailure', () => {
   it('识别 Runtime 显式错误', () => {
@@ -93,7 +98,114 @@ describe('desktop tool PATH', () => {
       entries.filter((entry) => entry === '/opt/homebrew/bin'),
     ).toHaveLength(1);
   });
+
+  it('preserves one Windows PATH key and adds trusted user tool locations', () => {
+    const environment = sanitizeRuntimeEnvironment(
+      {
+        Path: 'C:\\Windows\\System32;C:\\Custom',
+        PATH: 'C:\\ignored-duplicate',
+        LOCALAPPDATA: 'C:\\Users\\测试 用户\\AppData\\Local',
+        APPDATA: 'C:\\Users\\测试 用户\\AppData\\Roaming',
+        ProgramFiles: 'C:\\Program Files',
+        API_KEY: 'must-not-leak',
+      },
+      'win32',
+      'C:\\Users\\测试 用户',
+    );
+
+    expect(environment).not.toHaveProperty('Path');
+    expect(environment).not.toHaveProperty('API_KEY');
+    const entries = environment.PATH?.split(';') ?? [];
+    expect(entries).toContain('C:\\Windows\\System32');
+    expect(entries).toContain(
+      'C:\\Users\\测试 用户\\AppData\\Local\\Microsoft\\WinGet\\Links',
+    );
+    expect(entries).toContain('C:\\Users\\测试 用户\\AppData\\Roaming\\npm');
+    expect(entries).not.toContain('/opt/homebrew/bin');
+  });
+
+  it('preserves the exact POSIX PATH without collapsing an unrelated Path key', () => {
+    const environment = sanitizeRuntimeEnvironment(
+      { Path: '/mixed-case-value', PATH: '/expected/bin' },
+      'darwin',
+      '/Users/tester',
+    );
+
+    expect(environment.Path).toBe('/mixed-case-value');
+    expect(environment.PATH?.split(':')).toContain('/expected/bin');
+  });
+
+  it('uses the tsx JavaScript entry instead of a Windows cmd shim', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'noobi-runtime-'));
+    try {
+      const tsxCli = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+      const sourceCli = path.join(root, 'packages', 'cli', 'index.ts');
+      await mkdir(path.dirname(tsxCli), { recursive: true });
+      await mkdir(path.dirname(sourceCli), { recursive: true });
+      await Promise.all([writeFile(tsxCli, ''), writeFile(sourceCli, '')]);
+      const runner = new AgentRunner({
+        repoRoot: root,
+      } as ConstructorParameters<typeof AgentRunner>[0]);
+
+      expect(runner.inspectRuntime()).toMatchObject({
+        prefixArgs: [tsxCli, sourceCli],
+        ready: true,
+      });
+      expect(runner.inspectRuntime().command).not.toMatch(/\.cmd$/i);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the absolute system taskkill with shell disabled', async () => {
+    const child = fakeChild(4242);
+    const spawnCommand = vi.fn(() => closingCommand(0));
+
+    await terminateProcessTree(child, true, {
+      platform: 'win32',
+      environment: { SystemRoot: String.raw`C:\Windows` },
+      spawnCommand,
+    });
+
+    expect(spawnCommand).toHaveBeenCalledWith(
+      String.raw`C:\Windows\System32\taskkill.exe`,
+      ['/pid', '4242', '/t', '/f'],
+      { stdio: 'ignore', windowsHide: true, shell: false },
+    );
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it('reports tree termination as failed when taskkill exits unsuccessfully', async () => {
+    const child = fakeChild(4242);
+
+    await expect(
+      terminateProcessTree(child, false, {
+        platform: 'win32',
+        environment: { SYSTEMROOT: String.raw`D:\Windows` },
+        spawnCommand: () => closingCommand(5),
+      }),
+    ).rejects.toThrow('无法确认 Windows Agent 进程树已终止');
+
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
 });
+
+function fakeChild(pid: number): ChildProcess {
+  const emitter = new EventEmitter() as ChildProcess;
+  Object.assign(emitter, {
+    pid,
+    exitCode: null,
+    signalCode: null,
+    kill: vi.fn(() => true),
+  });
+  return emitter;
+}
+
+function closingCommand(exitCode: number) {
+  const command = new EventEmitter();
+  queueMicrotask(() => command.emit('close', exitCode));
+  return command;
+}
 
 describe('asset generation liveness', () => {
   it('detects real file progress without reading file contents', async () => {

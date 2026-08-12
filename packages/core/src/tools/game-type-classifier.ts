@@ -2,13 +2,18 @@ import {
   BaseDeclarativeTool,
   BaseToolInvocation,
   Kind,
+  type ToolCallConfirmationDetails,
   type ToolInvocation,
+  type ToolLocation,
   type ToolResult,
 } from './tools.js';
 import { ToolErrorType } from './tool-error.js';
 import type { Config } from '../config/config.js';
 import { ToolNames, ToolDisplayNames } from './tool-names.js';
 import { resolveProviderConfig } from '../services/providerConfig.js';
+import fs from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import path from 'node:path';
 
 export interface GameTypeClassifierParams {
   /**
@@ -133,7 +138,24 @@ class GameTypeClassifierInvocation extends BaseToolInvocation<
   }
 
   getDescription(): string {
-    return `使用物理优先规则识别游戏类型。`;
+    return `识别游戏类型并在项目目录创建对应脚手架。`;
+  }
+
+  override toolLocations(): ToolLocation[] {
+    return [{ path: this.config.getTargetDir() }];
+  }
+
+  override async shouldConfirmExecute(): Promise<
+    ToolCallConfirmationDetails | false
+  > {
+    return {
+      type: 'info',
+      title: '确认创建游戏脚手架',
+      prompt:
+        `Noobi.ai 将在 ${this.config.getTargetDir()} 中复制核心模板、类型模块与契约文档。` +
+        '已有普通文件会保留，符号链接和越界路径会被拒绝。',
+      onConfirm: async () => undefined,
+    };
   }
 
   async execute(signal: AbortSignal): Promise<ToolResult> {
@@ -150,7 +172,15 @@ class GameTypeClassifierInvocation extends BaseToolInvocation<
       // Parse the JSON result
       const classification = this.parseClassification(result);
 
-      const llmContent = this.formatLLMContent(classification);
+      const scaffold = await scaffoldGameProject({
+        projectRoot: this.config.getTargetDir(),
+        templatesDir:
+          process.env.GAME_TEMPLATES_DIR || path.resolve('../../templates'),
+        docsDir: process.env.GAME_DOCS_DIR || path.resolve('../../docs'),
+        archetype: classification.archetype,
+      });
+
+      const llmContent = this.formatLLMContent(classification, scaffold);
       const displayContent = this.formatDisplayContent(classification);
 
       return {
@@ -357,11 +387,10 @@ class GameTypeClassifierInvocation extends BaseToolInvocation<
     };
   }
 
-  private formatLLMContent(result: ClassificationResult): string {
-    // Use environment variables if available, fallback to relative paths
-    const templatesDir = process.env.GAME_TEMPLATES_DIR || '../../templates';
-    const docsDir = process.env.GAME_DOCS_DIR || '../../docs';
-
+  private formatLLMContent(
+    result: ClassificationResult,
+    scaffold: GameScaffoldResult,
+  ): string {
     return `<classification>
 游戏类型：${result.archetype}
 判断理由：${result.reasoning}
@@ -375,26 +404,13 @@ class GameTypeClassifierInvocation extends BaseToolInvocation<
 <system-reminder>
 游戏类型识别完成：**${result.archetype}**
 
-## 下一步：复制工程模板（四组命令）
+## 工程脚手架已由工具完成
 
-现在执行以下命令：
+- 新复制 ${scaffold.copiedFiles} 个文件
+- 保留 ${scaffold.preservedFiles} 个已存在文件
+- 模板类型：${result.archetype}
 
-\`\`\`bash
-# Step 1: 复制核心模板（包含 dotfiles）
-cp -R "${templatesDir}/core/." ./
-
-# Step 2: 把类型模块增量合并到 src/
-cp -R "${templatesDir}/modules/${result.archetype}/src/." ./src/
-
-# Step 3: 复制核心文档
-mkdir -p docs/gdd
-cp "${docsDir}/gdd/core.md" docs/gdd/
-cp "${docsDir}/asset_protocol.md" "${docsDir}/debug_protocol.md" docs/
-
-# Step 4: 复制类型模块文档
-mkdir -p docs/modules/${result.archetype}
-cp -R "${docsDir}/modules/${result.archetype}/." docs/modules/${result.archetype}/
-\`\`\`
+脚手架使用受控的 Node.js 文件 API 完成，不需要执行 Bash、PowerShell 或 cmd 命令。
 
 ## 脚手架完成后：继续 Phase 2（生成 GDD）
 
@@ -430,8 +446,192 @@ cp -R "${docsDir}/modules/${result.archetype}/." docs/modules/${result.archetype
 **判断理由**：${result.reasoning}
 
 ---
-下一步：复制模板并继续生成 GDD。`;
+脚手架已准备，下一步继续生成 GDD。`;
   }
+}
+
+export interface GameScaffoldResult {
+  copiedFiles: number;
+  preservedFiles: number;
+}
+
+interface GameScaffoldContext {
+  createdFiles: Set<string>;
+  preservedFiles: Set<string>;
+}
+
+export async function scaffoldGameProject(input: {
+  projectRoot: string;
+  templatesDir: string;
+  docsDir: string;
+  archetype: GameArchetype;
+}): Promise<GameScaffoldResult> {
+  const projectRoot = path.resolve(input.projectRoot);
+  const templatesDir = path.resolve(input.templatesDir);
+  const docsDir = path.resolve(input.docsDir);
+  const context: GameScaffoldContext = {
+    createdFiles: new Set(),
+    preservedFiles: new Set(),
+  };
+
+  await assertDirectory(projectRoot, '项目目录不存在或类型不安全');
+  await copyDirectoryContents(
+    path.join(templatesDir, 'core'),
+    projectRoot,
+    context,
+    projectRoot,
+  );
+  await copyDirectoryContents(
+    path.join(templatesDir, 'modules', input.archetype, 'src'),
+    containedDestination(projectRoot, 'src'),
+    context,
+    projectRoot,
+  );
+  await copyOneFile(
+    path.join(docsDir, 'gdd', 'core.md'),
+    containedDestination(projectRoot, 'docs', 'gdd', 'core.md'),
+    context,
+    projectRoot,
+  );
+  await copyOneFile(
+    path.join(docsDir, 'asset_protocol.md'),
+    containedDestination(projectRoot, 'docs', 'asset_protocol.md'),
+    context,
+    projectRoot,
+  );
+  await copyOneFile(
+    path.join(docsDir, 'debug_protocol.md'),
+    containedDestination(projectRoot, 'docs', 'debug_protocol.md'),
+    context,
+    projectRoot,
+  );
+  await copyDirectoryContents(
+    path.join(docsDir, 'modules', input.archetype),
+    containedDestination(projectRoot, 'docs', 'modules', input.archetype),
+    context,
+    projectRoot,
+  );
+  return {
+    copiedFiles: context.createdFiles.size,
+    preservedFiles: context.preservedFiles.size,
+  };
+}
+
+async function copyDirectoryContents(
+  source: string,
+  destination: string,
+  context: GameScaffoldContext,
+  projectRoot: string,
+): Promise<void> {
+  await assertDirectory(source, `脚手架目录不存在或类型不安全：${source}`);
+  await ensureSafeProjectDirectory(projectRoot, destination);
+  const entries = await fs.readdir(source, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(source, entry.name);
+    const destinationPath = path.join(destination, entry.name);
+    if (entry.isSymbolicLink()) {
+      throw new Error(`脚手架不允许符号链接：${sourcePath}`);
+    }
+    if (entry.isDirectory()) {
+      await copyDirectoryContents(
+        sourcePath,
+        destinationPath,
+        context,
+        projectRoot,
+      );
+    } else if (entry.isFile()) {
+      await copyOneFile(sourcePath, destinationPath, context, projectRoot);
+    } else {
+      throw new Error(`脚手架包含不支持的文件类型：${sourcePath}`);
+    }
+  }
+}
+
+async function copyOneFile(
+  source: string,
+  destination: string,
+  context: GameScaffoldContext,
+  projectRoot: string,
+): Promise<void> {
+  const sourceInfo = await fs.lstat(source).catch(() => undefined);
+  if (!sourceInfo?.isFile() || sourceInfo.isSymbolicLink()) {
+    throw new Error(`脚手架文件不存在或类型不安全：${source}`);
+  }
+  await ensureSafeProjectDirectory(projectRoot, path.dirname(destination));
+  const destinationInfo = await fs.lstat(destination).catch(() => undefined);
+  if (destinationInfo) {
+    if (!destinationInfo.isFile() || destinationInfo.isSymbolicLink()) {
+      throw new Error(`项目中已有不安全的脚手架目标：${destination}`);
+    }
+    if (context.createdFiles.has(destination)) {
+      // The archetype module intentionally overlays files created from the
+      // core template during this same invocation. Files that existed before
+      // scaffolding began are never overwritten.
+      await fs.copyFile(source, destination);
+      return;
+    }
+    context.preservedFiles.add(destination);
+    return;
+  }
+  try {
+    await fs.copyFile(source, destination, fsConstants.COPYFILE_EXCL);
+    context.createdFiles.add(destination);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    const racedInfo = await fs.lstat(destination);
+    if (!racedInfo.isFile() || racedInfo.isSymbolicLink()) {
+      throw new Error(`项目中已有不安全的脚手架目标：${destination}`);
+    }
+    context.preservedFiles.add(destination);
+  }
+}
+
+async function ensureSafeProjectDirectory(
+  projectRoot: string,
+  directory: string,
+): Promise<void> {
+  const relative = path.relative(projectRoot, directory);
+  if (
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error('脚手架目标超出项目目录');
+  }
+  let current = projectRoot;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    try {
+      await fs.mkdir(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    const info = await fs.lstat(current);
+    if (!info.isDirectory() || info.isSymbolicLink()) {
+      throw new Error(`项目中已有不安全的脚手架目录：${current}`);
+    }
+  }
+}
+
+async function assertDirectory(
+  directory: string,
+  message: string,
+): Promise<void> {
+  const info = await fs.lstat(directory).catch(() => undefined);
+  if (!info?.isDirectory() || info.isSymbolicLink()) throw new Error(message);
+}
+
+function containedDestination(root: string, ...segments: string[]): string {
+  const destination = path.resolve(root, ...segments);
+  const relative = path.relative(root, destination);
+  if (
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error('脚手架目标超出项目目录');
+  }
+  return destination;
 }
 
 export class GameTypeClassifierTool extends BaseDeclarativeTool<
@@ -466,8 +666,8 @@ export class GameTypeClassifierTool extends BaseDeclarativeTool<
     super(
       GameTypeClassifierTool.Name,
       ToolDisplayNames.GAME_TYPE_CLASSIFIER,
-      `根据物理规则和视角识别游戏类型，而不是只看题材名称。返回 platformer、top_down、grid_logic、tower_defense 或 ui_heavy。复制模板前必须首先调用。`,
-      Kind.Think,
+      `根据物理规则和视角识别游戏类型，并把对应的固定游戏模板与文档安全地复制到项目目录。返回 platformer、top_down、grid_logic、tower_defense 或 ui_heavy。`,
+      Kind.Edit,
       {
         type: 'object',
         properties: {

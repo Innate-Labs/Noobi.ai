@@ -91,11 +91,18 @@ export class ProjectManager {
     const folderName = name
       .normalize('NFKC')
       .replace(/[\\/:*?"<>|]/g, '-')
+      .replace(/\p{Cc}/gu, '-')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-      .slice(0, 80);
-    if (!folderName || folderName === '.' || folderName === '..') {
+      .slice(0, 80)
+      .replace(/[. ]+$/g, '');
+    if (
+      !folderName ||
+      folderName === '.' ||
+      folderName === '..' ||
+      isWindowsReservedBasename(folderName)
+    ) {
       throw new Error('项目名称无法生成安全的目录名，请更换名称。');
     }
 
@@ -432,6 +439,11 @@ export class ProjectManager {
       throw new Error('路径超出项目目录。');
     }
   }
+}
+
+function isWindowsReservedBasename(value: string): boolean {
+  const stem = value.split('.')[0]?.toUpperCase() ?? '';
+  return /^(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/.test(stem);
 }
 
 function isHtmlNavigation(request: IncomingMessage): boolean {

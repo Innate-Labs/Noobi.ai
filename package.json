@@ -9,7 +9,7 @@
     "packages/*",
     "agent-test"
   ],
-  "description": "Noobi.ai: a desktop AI game-production workbench derived from OpenGame.",
+  "description": "Noobi.ai: a desktop AI game-production workbench.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Innate-Labs/Noobi.ai.git"
@@ -28,6 +28,12 @@
     "desktop:package": "npm run package --workspace=@gameagent/desktop",
     "desktop:package:app": "npm run package:app --workspace=@gameagent/desktop",
     "desktop:package:signed": "npm run package:mac:signed --workspace=@gameagent/desktop",
+    "desktop:package:win": "npm run package:win --workspace=@gameagent/desktop",
+    "desktop:package:win:signed": "npm run package:win:signed --workspace=@gameagent/desktop",
+    "desktop:verify:win": "npm run verify:win-installer --workspace=@gameagent/desktop",
+    "desktop:verify:win:signed": "npm run verify:win-installer:signed --workspace=@gameagent/desktop",
+    "desktop:verify:win-installer": "npm run verify:win-installer --workspace=@gameagent/desktop",
+    "desktop:verify:win-installer:signed": "npm run verify:win-installer:signed --workspace=@gameagent/desktop",
     "build:all": "npm run build && npm run build:sandbox",
     "build:packages": "npm run build --workspaces",
     "build:sandbox": "node scripts/build_sandbox.js",
@@ -65,7 +71,6 @@
   },
   "overrides": {
     "wrap-ansi": "9.0.2",
-    "ansi-regex": "6.2.2",
     "cliui": {
       "wrap-ansi": "7.0.0"
     }
