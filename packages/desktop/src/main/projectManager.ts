@@ -67,7 +67,8 @@ const MIME: Record<string, string> = {
 
 const NOT_FOUND_CODES = new Set(['ENOENT', 'ENOTDIR']);
 const PROMPT_JSON_FENCE = /(```json[^\S\r\n]*\r?\n)([\s\S]*?)(\r?\n```)/g;
-const PROMPT_PLACEHOLDER = /\{(?:TEMPLATES_DIR|DOCS_DIR|PROJECT_ROOT)\}/g;
+const PROMPT_PLACEHOLDER =
+  /(\{(?:TEMPLATES_DIR|DOCS_DIR|PROJECT_ROOT)\})(\/?)/g;
 
 type PromptPlaceholder = '{TEMPLATES_DIR}' | '{DOCS_DIR}' | '{PROJECT_ROOT}';
 
@@ -479,8 +480,15 @@ function replacePromptPlaceholders(
   replacements: Record<PromptPlaceholder, string>,
   encode: (value: string) => string,
 ): string {
-  return source.replace(PROMPT_PLACEHOLDER, (placeholder) =>
-    encode(replacements[placeholder as PromptPlaceholder]),
+  return source.replace(
+    PROMPT_PLACEHOLDER,
+    (_match, placeholder: PromptPlaceholder, trailingSlash: string) => {
+      const value = replacements[placeholder];
+      const localizedPath = trailingSlash
+        ? `${value.replace(/[\\/]+$/, '')}${path.sep}`
+        : value;
+      return encode(localizedPath);
+    },
   );
 }
 

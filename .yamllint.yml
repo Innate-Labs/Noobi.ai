@@ -83,6 +83,7 @@ rules:
     check-keys: true
 
 ignore:
+  - '.specify/'
   - 'thirdparty/'
   - 'third_party/'
   - 'vendor/'
