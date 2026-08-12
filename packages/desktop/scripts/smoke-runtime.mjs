@@ -7,6 +7,7 @@ import {
   copyFile,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -16,6 +17,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { clearTimeout, setTimeout } from 'node:timers';
 import { fileURLToPath } from 'node:url';
+import { isPathInside } from './runtime-deps-files.mjs';
 
 const require = createRequire(import.meta.url);
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +26,14 @@ const repositoryRoot = path.resolve(desktopRoot, '../..');
 const stagingRoot = path.join(desktopRoot, '.runtime-deps');
 const sourceCli = path.join(repositoryRoot, 'dist', 'cli.js');
 const electronExecutable = require('electron');
+const requiredRuntimePackages = [
+  'tiktoken',
+  'sharp',
+  'onnxruntime-node',
+  '@imgly/background-removal-node',
+  '@lydell/node-pty',
+  'node-pty',
+];
 const temporaryRuntime = await mkdtemp(
   path.join(os.tmpdir(), 'gameagent-runtime-smoke-'),
 );
@@ -45,6 +55,19 @@ try {
     process.platform === 'win32' ? 'junction' : 'dir',
   );
 
+  const realStagingNodeModules = await realpath(
+    path.join(stagingRoot, 'node_modules'),
+  );
+  const realTemporaryNodeModules = await realpath(
+    path.join(temporaryRuntime, 'node_modules'),
+  );
+  if (!samePath(realStagingNodeModules, realTemporaryNodeModules)) {
+    throw new Error(
+      `Runtime smoke junction 指向错误：${realTemporaryNodeModules}，` +
+        `预期 ${realStagingNodeModules}。`,
+    );
+  }
+
   const closure = JSON.parse(
     await readFile(
       path.join(stagingRoot, 'runtime-deps-manifest.json'),
@@ -61,6 +84,28 @@ try {
         `host=${process.platform}/${process.arch}。`,
     );
   }
+  if (
+    !Number.isInteger(closure.fileCount) ||
+    closure.fileCount <= 0 ||
+    !Number.isFinite(closure.sizeBytes) ||
+    closure.sizeBytes <= 0
+  ) {
+    throw new Error('Runtime manifest 没有记录真实 staging 文件。');
+  }
+  for (const packageName of requiredRuntimePackages) {
+    const packageEntry = closure.copiedPackages.find(
+      (entry) => entry.name === packageName,
+    );
+    if (
+      !packageEntry ||
+      !Number.isInteger(packageEntry.fileCount) ||
+      packageEntry.fileCount <= 0 ||
+      !Number.isFinite(packageEntry.sizeBytes) ||
+      packageEntry.sizeBytes <= 0
+    ) {
+      throw new Error(`Runtime manifest 缺少有效包：${packageName}。`);
+    }
+  }
 
   const moduleProbe = `
 import { createRequire } from 'node:module';
@@ -71,14 +116,7 @@ import '@imgly/background-removal-node';
 import { spawn as spawnPty } from '@lydell/node-pty';
 
 const require = createRequire(import.meta.url);
-for (const name of [
-  'tiktoken',
-  'sharp',
-  'onnxruntime-node',
-  '@imgly/background-removal-node',
-  '@lydell/node-pty',
-  'node-pty',
-]) {
+for (const name of ${JSON.stringify(requiredRuntimePackages)}) {
   require.resolve(name);
 }
 
@@ -131,6 +169,16 @@ console.log('runtime modules resolved');
   const probePath = path.join(temporaryRuntime, 'probe.mjs');
   await writeFile(probePath, moduleProbe, 'utf8');
 
+  const probeRequire = createRequire(probePath);
+  for (const packageName of requiredRuntimePackages) {
+    const resolvedEntry = await realpath(probeRequire.resolve(packageName));
+    if (!isPathInside(realStagingNodeModules, resolvedEntry)) {
+      throw new Error(
+        `Runtime 模块 ${packageName} 解析到了 staging 之外：${resolvedEntry}`,
+      );
+    }
+  }
+
   const commonArguments = ['--preserve-symlinks', '--preserve-symlinks-main'];
   const probe = await run(
     electronExecutable,
@@ -176,6 +224,14 @@ console.log('runtime modules resolved');
   );
 } finally {
   await rm(temporaryRuntime, { recursive: true, force: true });
+}
+
+function samePath(left, right) {
+  const normalize = (value) => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return normalize(left) === normalize(right);
 }
 
 function run(command, args, cwd) {
