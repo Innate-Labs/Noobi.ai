@@ -13,7 +13,7 @@
   <code>Electron</code> · <code>React</code> · <code>TypeScript</code> · <code>Codex App Server</code> · <code>macOS</code>
 </p>
 
-![Noobi.ai 制作工作台：制作管线、Agent Composer、目标帧率与本地游戏预览](docs/images/noobi-workbench.png)
+![Noobi.ai 鸭嘴兽吉祥物化身游戏制作 Agent，在同一条管线中编排代码、动画、3D、音频与可玩世界](docs/images/noobi-game-agent-poster.png)
 
 > Noobi.ai 把 Codex 放进一条有边界的游戏制作管线：Planner 先拆解，Implementer 在项目目录中实现，Reviewer 独立检查，宿主最后验证素材、代码引用与可运行结果。
 
