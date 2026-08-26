@@ -1146,6 +1146,13 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     true,
   ) as boolean;
   if (!healthy) throw new Error('Renderer did not reach the Noobi workbench');
+  await window.webContents.executeJavaScript(
+    `document.querySelectorAll('.brief-card footer > span').forEach((node) => {
+      node.textContent = 'LOCAL WORKSPACE / signal-garden';
+      node.removeAttribute('title');
+    })`,
+    true,
+  );
   const image = await window.webContents.capturePage();
   const output = resolve(target);
   await mkdir(dirname(output), { recursive: true });
