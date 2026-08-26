@@ -1,0 +1,20 @@
+node_modules/
+dist/
+release/
+coverage/
+*.log
+.DS_Store
+.noobi-smoke/
+
+# Local credentials and machine-specific state
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+service-account*.json
+.noobi-private/
+*.tsbuildinfo
+*.tmp

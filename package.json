@@ -1,0 +1,74 @@
+{
+  "name": "noobi-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Noobi.ai — a Codex App Server powered game creation agent",
+  "author": "Noobi.ai",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5174\" \"tsc -p tsconfig.main.json --watch --preserveWatchOutput\" \"wait-on tcp:5174 file:dist/main/main.js file:dist/main/preload.cjs && cross-env NOOBI_RENDERER_URL=http://127.0.0.1:5174 electron .\"",
+    "typecheck": "tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build": "npm run clean && npm run typecheck && npm run build:renderer && npm run build:main",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "protocol:generate": "tsx scripts/generate-codex-protocol.ts",
+    "smoke:codex": "tsx scripts/codex-smoke.ts",
+    "smoke:harness": "tsx scripts/harness-smoke.ts",
+    "smoke:media": "tsx scripts/media-smoke.ts",
+    "smoke:image": "tsx scripts/image-smoke.ts",
+    "smoke:ui": "npm run build && cross-env NOOBI_SMOKE_CAPTURE=.noobi-smoke/workbench.png electron .",
+    "verify": "npm run typecheck && npm run test && npm run build",
+    "package:mac": "npm run build && electron-builder --mac dmg --publish never"
+  },
+  "dependencies": {
+    "@openai/codex": "0.148.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.3",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "43.3.0",
+    "electron-builder": "^26.0.12",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^3.0.5",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "ai.noobi.desktop",
+    "productName": "Noobi.ai",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/@openai/codex-*/vendor/**/*"
+    ],
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "node_modules/@openai/codex/**/*",
+      "node_modules/@openai/codex-*/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "target": ["dmg"]
+    },
+    "dmg": {
+      "backgroundColor": "#11120f",
+      "title": "Noobi.ai ${version}"
+    }
+  }
+}
