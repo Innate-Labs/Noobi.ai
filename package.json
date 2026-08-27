@@ -3,8 +3,29 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Noobi.ai — a Codex App Server powered game creation agent",
+  "description": "Local-first desktop agent that turns a prompt into a reviewed, playable browser game with Codex App Server",
   "author": "Noobi.ai",
+  "homepage": "https://github.com/Innate-Labs/Noobi.ai#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Innate-Labs/Noobi.ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Innate-Labs/Noobi.ai/issues"
+  },
+  "keywords": [
+    "codex",
+    "codex-app-server",
+    "ai-agent",
+    "game-development",
+    "game-generator",
+    "electron",
+    "mcp"
+  ],
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  },
   "main": "dist/main/main.js",
   "scripts": {
     "clean": "node scripts/clean.mjs",
