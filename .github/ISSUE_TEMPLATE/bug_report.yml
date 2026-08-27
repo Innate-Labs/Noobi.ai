@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible problem in Noobi.ai
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Noobi.ai. Remove secrets and private project data before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: Paste the commit SHA or release version you tested.
+      placeholder: e.g. 0d060c5
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include macOS version, architecture, Node.js version and npm version.
+      placeholder: macOS 15.x, Apple Silicon, Node 22.x, npm 10.x
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - App startup or Codex account
+        - Agent production pipeline
+        - Preview or generated game
+        - Image, audio or 3D provider
+        - Skills or MCP
+        - Workbench UI
+        - Packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reliable sequence that triggers the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized logs
+      description: Do not include API keys, access tokens, private prompts or absolute user paths.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched for an existing issue covering this problem.
+          required: true
+        - label: I removed credentials and private project data.
+          required: true
