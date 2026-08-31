@@ -6,9 +6,15 @@ import type { CodexAppServer } from './codexAppServer.js';
 import {
   buildAudioGenerationContract,
   buildAnimationNeedsContract,
+  buildExperiencePlaytestContract,
+  buildModel3dGenerationContract,
   buildRequiredImageGenerationContract,
   buildTargetFrameRateContract,
+  buildVisualAssetCoverageContract,
+  GAME_HARNESS_TOOLSET_VERSION,
   GameHarness,
+  GameHarnessStoppedError,
+  MAX_GAME_HARNESS_REPAIR_ATTEMPTS,
   reusableImplementerThreadId,
 } from './gameHarness.js';
 
@@ -92,7 +98,18 @@ describe('game harness required ImageGen contract', () => {
       expect(turn.prompt).toContain('MUST invoke $imagegen during this run');
       expect(turn.prompt).toContain('Manifest provider/source fields are untrusted');
       expect(turn.prompt).toContain('loaded and visibly used by the running game');
+      expect(turn.prompt).toContain('<visual_asset_coverage_contract>');
+      expect(turn.prompt).toContain('role=card-art-atlas');
+      expect(turn.prompt).toContain('plain text/default controls');
       expect(turn.prompt).toContain('<animation_needs_contract>');
+      expect(turn.prompt).toContain('<experience_playtest_contract schema_version="1">');
+      expect(turn.prompt).toContain('`.noobi/playtest.json`');
+      expect(turn.prompt).toContain('artifacts/playtest/latest/report.json');
+      expect(turn.prompt).toContain('<model3d_generation_contract>');
+      expect(turn.prompt).toContain('configured 3D model API is always attempted first');
+      expect(turn.prompt).toContain('Three.js is build-time GLB authoring only');
+      expect(turn.prompt).toContain('res://public/assets/models/');
+      expect(turn.prompt).toContain('animation=true');
       expect(turn.prompt).toContain('<animation_needs_assessment generation="generate|reuse|not-needed" presentation="2d|2.5d|3d">');
       expect(turn.prompt).toContain('The Reviewer MUST verify the assessment');
       expect(turn.prompt).toContain('<target_frame_rate_contract fps="120">');
@@ -105,6 +122,241 @@ describe('game harness required ImageGen contract', () => {
       expect(turn.prompt).toContain('MiniMax Speech');
       expect(turn.prompt).toContain('procedural SFX');
     }
+  });
+
+  it('uses the same durable Implementer and Reviewer threads across multiple bounded repairs', async () => {
+    const runtime = new CapturingRuntime([
+      'Plan the game.',
+      'Initial implementation.',
+      JSON.stringify({ verdict: 'repair', summary: 'First review.', findings: ['Fix card art.'] }),
+      'Fixed card art.',
+      JSON.stringify({ verdict: 'repair', summary: 'Second review.', findings: ['Fix card motion.'] }),
+      'Fixed card motion.',
+      JSON.stringify({ verdict: 'pass', summary: 'All findings are fixed.', findings: [] }),
+    ]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    const methods: string[] = [];
+    const states: string[] = [];
+    harness.on('event', (event: { method?: string }) => {
+      if (event.method) methods.push(event.method);
+    });
+    harness.on('state', (event: { state: string }) => states.push(event.state));
+
+    const result = await harness.run({
+      projectId: 'project-multi-repair',
+      cwd: '/tmp/project-multi-repair',
+      prompt: 'Build a polished card game.',
+      imageGenerationSkill: { name: 'imagegen', path: '/tmp/imagegen/SKILL.md' },
+    });
+
+    expect(result).toMatchObject({
+      repaired: true,
+      repairAttempts: 2,
+      repair: { text: 'Fixed card motion.' },
+      review: { verdict: 'pass' },
+    });
+    expect(result.repairs.map((repair) => repair.text)).toEqual([
+      'Fixed card art.',
+      'Fixed card motion.',
+    ]);
+    expect(runtime.turns).toHaveLength(7);
+    expect([runtime.turns[1]?.threadId, runtime.turns[3]?.threadId, runtime.turns[5]?.threadId])
+      .toEqual(['thread-2', 'thread-2', 'thread-2']);
+    expect([runtime.turns[2]?.threadId, runtime.turns[4]?.threadId, runtime.turns[6]?.threadId])
+      .toEqual(['thread-3', 'thread-3', 'thread-3']);
+    expect(runtime.turns[3]?.prompt).toContain('<repair_budget attempt="1" max="3" />');
+    expect(runtime.turns[4]?.prompt).toContain('<repair_budget attempt="1" max="3" />');
+    expect(runtime.turns[5]?.prompt).toContain('<repair_budget attempt="2" max="3" />');
+    expect(runtime.turns[6]?.prompt).toContain('<repair_budget attempt="2" max="3" />');
+    expect(methods.filter((method) => method === 'harness/repair/attempt-started')).toHaveLength(2);
+    expect(methods.filter((method) => method === 'harness/repair/attempt-completed')).toHaveLength(2);
+    expect(states.at(-1)).toBe('completed');
+  });
+
+  it('stops after the bounded repair limit and never emits completed', async () => {
+    const runtime = new CapturingRuntime([
+      'Plan the game.',
+      'Initial implementation.',
+      JSON.stringify({ verdict: 'repair', summary: 'Review 1.', findings: ['Still broken.'] }),
+      'Repair attempt 1.',
+      JSON.stringify({ verdict: 'repair', summary: 'Review 2.', findings: ['Still broken.'] }),
+      'Repair attempt 2.',
+      JSON.stringify({ verdict: 'repair', summary: 'Review 3.', findings: ['Still broken.'] }),
+      'Repair attempt 3.',
+      JSON.stringify({ verdict: 'repair', summary: 'Review 4.', findings: ['Still broken.'] }),
+    ]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    const methods: string[] = [];
+    const states: string[] = [];
+    harness.on('event', (event: { method?: string }) => {
+      if (event.method) methods.push(event.method);
+    });
+    harness.on('state', (event: { state: string }) => states.push(event.state));
+
+    await expect(harness.run({
+      projectId: 'project-repair-exhausted',
+      cwd: '/tmp/project-repair-exhausted',
+      prompt: 'Build a game.',
+      imageGenerationSkill: { name: 'imagegen', path: '/tmp/imagegen/SKILL.md' },
+    })).rejects.toThrow(`Repair limit reached after ${MAX_GAME_HARNESS_REPAIR_ATTEMPTS} attempts`);
+
+    expect(runtime.turns).toHaveLength(9);
+    expect([runtime.turns[3]?.threadId, runtime.turns[5]?.threadId, runtime.turns[7]?.threadId])
+      .toEqual(['thread-2', 'thread-2', 'thread-2']);
+    expect(methods.filter((method) => method === 'harness/repair/attempt-started')).toHaveLength(3);
+    expect(methods.filter((method) => method === 'harness/repair/attempt-completed')).toHaveLength(3);
+    expect(methods.filter((method) => method === 'harness/repair/exhausted')).toHaveLength(1);
+    expect(states).not.toContain('completed');
+    expect(states.at(-1)).toBe('failed');
+  });
+
+  it('turns authoritative host delivery findings into a repair and completes only after host pass', async () => {
+    const runtime = new CapturingRuntime([
+      'Plan the game.',
+      'Initial implementation.',
+      JSON.stringify({ verdict: 'pass', summary: 'Workspace review passed.', findings: [] }),
+      'Integrated the missing card atlas.',
+      JSON.stringify({ verdict: 'pass', summary: 'Repair review passed.', findings: [] }),
+    ]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    const methods: string[] = [];
+    let hostChecks = 0;
+    let hostPassed = false;
+    let completedBeforeHostPass = false;
+    harness.on('event', (event: { method?: string }) => {
+      if (event.method) methods.push(event.method);
+      if (event.method === 'harness/host-delivery/pass') hostPassed = true;
+    });
+    harness.on('state', (event: { state: string }) => {
+      if (event.state === 'completed' && !hostPassed) completedBeforeHostPass = true;
+    });
+
+    const result = await harness.run({
+      projectId: 'project-host-delivery-repair',
+      cwd: '/tmp/project-host-delivery-repair',
+      prompt: 'Build a card game.',
+      imageGenerationSkill: { name: 'imagegen', path: '/tmp/imagegen/SKILL.md' },
+      validateHostDelivery: async () => {
+        hostChecks += 1;
+        return hostChecks === 1
+          ? { ok: false, findings: ['Card atlas is not referenced by production gameplay code.'] }
+          : { ok: true, findings: [] };
+      },
+    });
+
+    expect(hostChecks).toBe(2);
+    expect(result).toMatchObject({ repaired: true, repairAttempts: 1, review: { verdict: 'pass' } });
+    expect(runtime.turns).toHaveLength(5);
+    expect(runtime.turns[3]?.prompt).toContain('<authoritative_host_findings>');
+    expect(runtime.turns[3]?.prompt).toContain('Card atlas is not referenced by production gameplay code.');
+    expect(methods).toContain('harness/host-delivery/repair');
+    expect(methods).toContain('harness/host-delivery/pass');
+    expect(completedBeforeHostPass).toBe(false);
+  });
+
+  it('asks the Reviewer to inspect fresh host evidence before completing an initially passing workspace', async () => {
+    const runtime = new CapturingRuntime([
+      'Plan the game.',
+      'Initial implementation.',
+      JSON.stringify({ verdict: 'pass', summary: 'Workspace review passed.', findings: [] }),
+      JSON.stringify({ verdict: 'pass', summary: 'Fresh host captures match the playable journey.', findings: [] }),
+    ]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    const methods: string[] = [];
+    harness.on('event', (event: { method?: string }) => {
+      if (event.method) methods.push(event.method);
+    });
+    let hostChecks = 0;
+
+    const result = await harness.run({
+      projectId: 'project-host-evidence-review',
+      cwd: '/tmp/project-host-evidence-review',
+      prompt: 'Build a complete game.',
+      imageGenerationSkill: { name: 'imagegen', path: '/tmp/imagegen/SKILL.md' },
+      validateHostDelivery: async () => {
+        hostChecks += 1;
+        return { ok: true, findings: [] };
+      },
+    });
+
+    expect(result.review).toMatchObject({ verdict: 'pass' });
+    expect(hostChecks).toBe(1);
+    expect(runtime.turns).toHaveLength(4);
+    expect(runtime.turns[3]?.prompt).toContain('<fresh_host_evidence status="passed-pending-review">');
+    expect(runtime.turns[3]?.prompt).toContain('artifacts/playtest/latest/report.json');
+    expect(methods).toContain('harness/reviewer/host-evidence-pass');
+  });
+
+  it('re-runs host gates before post-repair review and carries pending Reviewer findings forward', async () => {
+    const runtime = new CapturingRuntime([
+      'Plan the game.',
+      'Initial implementation.',
+      JSON.stringify({ verdict: 'repair', summary: 'Controls need work.', findings: ['Fix the pause control.'] }),
+      'Repair attempt 1.',
+      'Repair attempt 2.',
+      JSON.stringify({ verdict: 'pass', summary: 'Reviewer verified both repairs.', findings: [] }),
+    ]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    let hostChecks = 0;
+
+    const result = await harness.run({
+      projectId: 'project-host-pre-review',
+      cwd: '/tmp/project-host-pre-review',
+      prompt: 'Build a game with pause and restart.',
+      imageGenerationSkill: { name: 'imagegen', path: '/tmp/imagegen/SKILL.md' },
+      validateHostDelivery: async () => {
+        hostChecks += 1;
+        return hostChecks === 1
+          ? { ok: false, findings: ['Pause probe still changes while paused.'] }
+          : { ok: true, findings: [] };
+      },
+    });
+
+    expect(result).toMatchObject({ repaired: true, repairAttempts: 2, review: { verdict: 'pass' } });
+    expect(hostChecks).toBe(2);
+    expect(runtime.turns).toHaveLength(6);
+    expect(runtime.turns[4]?.prompt).toContain('<mixed_repair_findings>');
+    expect(runtime.turns[4]?.prompt).toContain('REVIEWER_RECHECK: Fix the pause control.');
+    expect(runtime.turns[4]?.prompt).toContain('AUTHORITATIVE_HOST: Pause probe still changes while paused.');
+  });
+
+  it('aborts an active host playtest when the user stops the harness', async () => {
+    const runtime = new CapturingRuntime([
+      'Plan the game.',
+      'Initial implementation.',
+      JSON.stringify({ verdict: 'pass', summary: 'Workspace review passed.', findings: [] }),
+    ]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    let signalSeen: AbortSignal | null = null;
+    let announceHostStarted = (): void => undefined;
+    const hostStarted = new Promise<void>((resolve) => { announceHostStarted = resolve; });
+
+    const run = harness.run({
+      projectId: 'project-stop-playtest',
+      cwd: '/tmp/project-stop-playtest',
+      prompt: 'Build a game.',
+      imageGenerationSkill: { name: 'imagegen', path: '/tmp/imagegen/SKILL.md' },
+      validateHostDelivery: (signal) => new Promise((_resolve, reject) => {
+        signalSeen = signal;
+        announceHostStarted();
+        signal.addEventListener('abort', () => reject(new Error('playtest aborted')), { once: true });
+      }),
+    });
+
+    await hostStarted;
+    await expect(harness.stop('project-stop-playtest')).resolves.toBe(true);
+    expect(signalSeen?.aborted).toBe(true);
+    await expect(run).rejects.toBeInstanceOf(GameHarnessStoppedError);
+  });
+
+  it('defines one API-first 3D route whose fallback is a Godot-loadable GLB asset', () => {
+    const contract = buildModel3dGenerationContract();
+    expect(contract).toContain('configured 3D model API is always attempted first');
+    expect(contract).toContain('only when no active 3D provider is configured');
+    expect(contract).toContain('Three.js is build-time GLB authoring only');
+    expect(contract).toContain('res://public/assets/models/');
+    expect(contract).toContain('real skinned mesh with idle, walk, and run clips');
+    expect(contract).toContain('must not be silently hidden');
   });
 
   it('refreshes private host provenance before review, repair, and final re-review', async () => {
@@ -194,8 +446,48 @@ describe('game harness required ImageGen contract', () => {
     expect(prompt).toContain('at least two genuinely different usable 2D/2.5D frames');
     expect(prompt).toContain('real animation clip on an actual rigged GLB mesh');
     expect(prompt).toContain('ImageGen may supply reference art or a billboard alternative');
-    expect(prompt).toContain('visible programmatic motion or responsive feedback');
+    expect(prompt).toContain('programmatic motion/feedback plan');
+    expect(prompt).toContain('interaction_motion');
+    expect(prompt).toContain('observable deal/draw');
+    expect(prompt).toContain('one rendered frame is not animated');
+    expect(prompt).toContain('proves at least one intermediate position/scale/frame');
     expect(prompt).toContain('Return "repair" for a missing or incorrect state');
+  });
+
+  it('requires genre-aware core visual coverage beyond a single generated background', () => {
+    const prompt = buildVisualAssetCoverageContract();
+    expect(prompt).toContain('<visual_asset_coverage_contract>');
+    expect(prompt).toContain('does NOT prove that the game\'s core visual subjects are covered');
+    expect(prompt).toContain('Do not ask the user to choose a generation strategy');
+    expect(prompt).toContain('role=card-art-atlas');
+    expect(prompt).toContain('columns, rows');
+    expect(prompt).toContain('plain text on default Buttons');
+    expect(prompt).toContain('subjectId-to-path/atlas-region mapping');
+    expect(prompt).toContain('deterministic genre gate');
+  });
+
+  it('defines a safe executable experience journey and host-owned evidence contract', () => {
+    const prompt = buildExperiencePlaytestContract();
+    expect(prompt).toContain('<experience_playtest_contract schema_version="1">');
+    expect(prompt).toContain('launch/ready');
+    expect(prompt).toContain('positive progress feedback');
+    expect(prompt).toContain('pause and resume');
+    expect(prompt).toContain('`.noobi/playtest.json`');
+    expect(prompt).toContain('"start":');
+    expect(prompt).toContain('"move":');
+    expect(prompt).toContain('"primary":');
+    expect(prompt).toContain('"pause":');
+    expect(prompt).toContain('"restart":');
+    expect(prompt).toContain('{"type":"look"');
+    expect(prompt).toContain('{"type":"drag"');
+    expect(prompt).toContain('"durationMs":16..3000');
+    expect(prompt).toContain('canvas-not-blank|screen-change|text-visible|element-visible');
+    expect(prompt).toContain('Do not include JavaScript expressions, shell commands, URLs, absolute');
+    expect(prompt).toContain('Only the Noobi host owns `artifacts/playtest/`');
+    expect(prompt).toContain('artifacts/playtest/latest/report.json');
+    expect(prompt).toContain('artifacts/playtest/latest/screenshots/');
+    expect(prompt).toContain('implausibly unchanged before/after frames');
+    expect(prompt).toContain('code presence, a README claim, or an Implementer statement alone is never');
   });
 
   it('defines deterministic timing, target-tagged animation variants, and honest display limits', () => {
@@ -273,9 +565,9 @@ describe('game harness required ImageGen contract', () => {
   });
 
   it('reuses an Implementer thread only when its dynamic-tool contract version is current', () => {
-    expect(reusableImplementerThreadId('thread-current', 4)).toBe('thread-current');
-    expect(reusableImplementerThreadId('thread-old', 3)).toBeNull();
-    expect(reusableImplementerThreadId(null, 4)).toBeNull();
+    expect(reusableImplementerThreadId('thread-current', GAME_HARNESS_TOOLSET_VERSION)).toBe('thread-current');
+    expect(reusableImplementerThreadId('thread-old', GAME_HARNESS_TOOLSET_VERSION - 1)).toBeNull();
+    expect(reusableImplementerThreadId(null, GAME_HARNESS_TOOLSET_VERSION)).toBeNull();
   });
 
   it('requires the imagegen skill before starting any harness thread', async () => {

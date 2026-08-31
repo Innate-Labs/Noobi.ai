@@ -5,6 +5,7 @@ import { extname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:p
 
 const LOOPBACK_HOST = '127.0.0.1';
 const MAX_REQUEST_URL_BYTES = 16 * 1024;
+const MAX_HTML_TRANSFORM_BYTES = 4 * 1024 * 1024;
 const READ_ONLY_NOFOLLOW = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self' data: blob:",
@@ -58,6 +59,10 @@ export interface PreviewStartOptions {
   directory?: string;
   /** Allow index.html + src/public/assets when dist does not exist. Defaults true. */
   sourceFallback?: boolean;
+  /** Hide Godot's default boot logo in current and legacy Web exports. */
+  hideGodotSplash?: boolean;
+  /** Overlay fresh public media on a build. Disable for strict delivery playtests. */
+  sourceAssetOverlay?: boolean;
 }
 
 interface PreviewRegistration {
@@ -65,6 +70,8 @@ interface PreviewRegistration {
   projectRoot: string;
   contentRoot: string;
   sourceFallback: boolean;
+  hideGodotSplash: boolean;
+  sourceAssetOverlay: boolean;
   url: string;
 }
 
@@ -126,7 +133,9 @@ export class PreviewServer {
     if (
       existing?.server.listening &&
       existing.projectRoot === selected.projectRoot &&
-      existing.contentRoot === selected.contentRoot
+      existing.contentRoot === selected.contentRoot &&
+      existing.hideGodotSplash === selected.hideGodotSplash &&
+      existing.sourceAssetOverlay === selected.sourceAssetOverlay
     ) {
       return existing.url;
     }
@@ -164,6 +173,8 @@ export class PreviewServer {
         projectRoot: selected.projectRoot,
         contentRoot: selected.contentRoot,
         sourceFallback: selected.sourceFallback,
+        hideGodotSplash: selected.hideGodotSplash,
+        sourceAssetOverlay: selected.sourceAssetOverlay,
         url,
       });
       return url;
@@ -213,10 +224,18 @@ async function handleRequest(
   const requestedContentType = contentType(relativePath);
   let opened: OpenedPreviewFile | null = null;
 
+  if (selected.hideGodotSplash && relativePath === 'favicon.ico') {
+    response.statusCode = 204;
+    response.setHeader('Cache-Control', 'no-store');
+    response.end();
+    return;
+  }
+
   // Generated media lands in public/assets before a build copies it into dist.
   // Prefer that current source only for Inspector media requests; documents,
   // scripts, and styles continue to come exclusively from the selected build.
   if (
+    selected.sourceAssetOverlay &&
     !selected.sourceFallback &&
     isInspectorMediaAsset(relativePath, requestedContentType)
   ) {
@@ -250,6 +269,24 @@ async function handleRequest(
   }
 
   const { target, size, handle } = opened;
+
+  if (selected.hideGodotSplash && relativePath === 'index.html') {
+    if (size > MAX_HTML_TRANSFORM_BYTES) {
+      await handle.close();
+      sendError(response, 500, 'Preview HTML is too large');
+      return;
+    }
+    const source = await handle.readFile('utf8');
+    await handle.close();
+    const body = Buffer.from(hideGodotBrandingInHtml(source), 'utf8');
+    response.statusCode = 200;
+    response.setHeader('Accept-Ranges', 'none');
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.setHeader('Content-Length', String(body.length));
+    if (request.method === 'HEAD') response.end();
+    else response.end(body);
+    return;
+  }
 
   const range = parseRange(request.headers.range, size);
   if (range === 'invalid') {
@@ -300,6 +337,8 @@ interface SelectedContentRoot {
   projectRoot: string;
   contentRoot: string;
   sourceFallback: boolean;
+  hideGodotSplash: boolean;
+  sourceAssetOverlay: boolean;
 }
 
 interface OpenedPreviewFile {
@@ -351,7 +390,13 @@ async function selectContentRoot(
     const contentRoot = await realpath(lexical);
     assertContained(canonicalProjectRoot, contentRoot);
     await requireIndexFile(contentRoot);
-    return { projectRoot: canonicalProjectRoot, contentRoot, sourceFallback: false };
+    return {
+      projectRoot: canonicalProjectRoot,
+      contentRoot,
+      sourceFallback: false,
+      hideGodotSplash: options.hideGodotSplash === true,
+      sourceAssetOverlay: options.sourceAssetOverlay !== false,
+    };
   }
 
   const dist = join(canonicalProjectRoot, 'dist');
@@ -361,7 +406,13 @@ async function selectContentRoot(
     const contentRoot = await realpath(dist);
     assertContained(canonicalProjectRoot, contentRoot);
     await requireIndexFile(contentRoot);
-    return { projectRoot: canonicalProjectRoot, contentRoot, sourceFallback: false };
+    return {
+      projectRoot: canonicalProjectRoot,
+      contentRoot,
+      sourceFallback: false,
+      hideGodotSplash: options.hideGodotSplash === true,
+      sourceAssetOverlay: options.sourceAssetOverlay !== false,
+    };
   } catch (error) {
     if (!isMissingPath(error)) throw error;
   }
@@ -374,7 +425,31 @@ async function selectContentRoot(
     projectRoot: canonicalProjectRoot,
     contentRoot: canonicalProjectRoot,
     sourceFallback: true,
+    hideGodotSplash: options.hideGodotSplash === true,
+    sourceAssetOverlay: false,
   };
+}
+
+export function hideGodotBrandingInHtml(source: string): string {
+  const withoutStaticBranding = source
+    .replace(
+      /<img\b(?=[^>]*\bid=["']status-splash["'])[^>]*>/iu,
+      '<img id="status-splash" class="show-image--false" alt="" aria-hidden="true">',
+    )
+    .replace(/<link\b(?=[^>]*\bid=["']-gd-engine-icon["'])[^>]*>\s*/iu, '')
+    .replace(/<link\b(?=[^>]*\brel=["']apple-touch-icon["'])[^>]*\/?>\s*/iu, '');
+
+  if (withoutStaticBranding.includes('id="noobi-godot-branding-guard"')) {
+    return withoutStaticBranding;
+  }
+
+  // Godot's Web runtime injects its default favicon after the document has
+  // loaded, even when html/export_icon=false. Remove icon links synchronously
+  // at the next mutation microtask so the engine logo never reaches a paint.
+  const guard = `<script id="noobi-godot-branding-guard">(()=>{const i=e=>e instanceof HTMLLinkElement&&e.rel.split(/\\s+/).includes('icon');const p=()=>document.querySelectorAll('link[rel~="icon"]').forEach(e=>e.remove());p();new MutationObserver(r=>{for(const m of r)for(const e of m.addedNodes)i(e)&&e.remove();}).observe(document.documentElement,{childList:true,subtree:true});})();</script>`;
+  return /<\/head>/iu.test(withoutStaticBranding)
+    ? withoutStaticBranding.replace(/<\/head>/iu, `${guard}</head>`)
+    : `${guard}${withoutStaticBranding}`;
 }
 
 async function requireIndexFile(contentRoot: string): Promise<void> {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssetStore } from './assetStore.js';
 import { MediaGenerationService } from './mediaGenerationService.js';
 import { MediaProviderStore, type MediaProviderSecretCodec } from './mediaProviderStore.js';
+import { createProceduralModel3dGlb } from './proceduralModel3d.js';
 
 const roots: string[] = [];
 
@@ -14,7 +15,7 @@ afterEach(async () => {
 });
 
 describe('media generation service', () => {
-  it('represents safe built-in fallbacks when no API provider is configured', async () => {
+  it('represents safe image and audio fallbacks when no API provider is configured', async () => {
     const providerStore = {
       withActiveProvider: vi.fn(async () => null),
     };
@@ -41,12 +42,118 @@ describe('media generation service', () => {
       outcome: 'fallback',
       fallback: 'procedural-audio',
     });
-    await expect(service.generate({ project, kind: 'model3d', name: 'crate', prompt: 'Wood crate' })).resolves.toMatchObject({
-      outcome: 'fallback',
-      fallback: 'none',
-    });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(assetStore.importFiles).not.toHaveBeenCalled();
+  });
+
+  it('exports and registers a real animated Three.js GLB when no 3D provider is configured', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-threejs-fallback-'));
+    roots.push(root);
+    const providerStore = { withActiveProvider: vi.fn(async () => null) };
+    const fetchMock = vi.fn();
+    const assetStore = new AssetStore();
+    const service = new MediaGenerationService({
+      providerStore: providerStore as never,
+      assetStore,
+      fetch: fetchMock as never,
+    });
+
+    const result = await service.generate({
+      project: { id: 'project-threejs-fallback', root },
+      kind: 'model3d',
+      name: 'zombie-runner',
+      prompt: 'Low-poly zombie enemy with readable limbs',
+      options: { animation: true, textureResolution: 1024 },
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'asset',
+      asset: {
+        name: 'zombie-runner',
+        kind: 'model3d',
+        source: 'procedural',
+        mimeType: 'model/gltf-binary',
+        provider: 'Noobi:Three.js Procedural GLB',
+        metadata: {
+          route: 'threejs-fallback',
+          generator: 'threejs-procedural-v1',
+          rigged: true,
+          animated: true,
+          animations: 'idle,walk,run',
+          selfContained: true,
+        },
+      },
+      provider: {
+        id: 'builtin-threejs',
+        presetId: 'threejs-procedural',
+        route: 'threejs-fallback',
+      },
+    });
+    if (result.outcome !== 'asset') throw new Error('Expected a generated Three.js asset');
+    const bytes = await readFile(join(root, result.asset.relativePath));
+    const gltf = readGlbJson(bytes);
+    expect(gltf.meshes).toHaveLength(1);
+    expect(gltf.skins).toHaveLength(1);
+    expect(gltf.animations?.map((animation) => animation.name)).toEqual(['idle', 'walk', 'run']);
+    expect(gltf.buffers?.every((buffer) => buffer.uri === undefined)).toBe(true);
+    expect(await assetStore.list('project-threejs-fallback', root)).toContainEqual(
+      expect.objectContaining({ relativePath: result.asset.relativePath, source: 'procedural' }),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('always prefers an active 3D provider and does not hide provider errors with a fallback', async () => {
+    const fixture = await createProceduralModel3dGlb({ name: 'fixture', prompt: 'test crate' });
+    const { root, providerStore } = await configuredStore({
+      presetId: 'custom-model3d',
+      endpoint: 'https://models.example.test/generate',
+      apiKey: 'private-model-key',
+    });
+    const assetStore = new AssetStore();
+    const fetchMock = vi.fn(async () => new Response(fixture.bytes, {
+      headers: { 'content-type': 'model/gltf-binary' },
+    }));
+    const service = new MediaGenerationService({
+      providerStore,
+      assetStore,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    await expect(service.generate({
+      project: { id: 'project-provider-model', root },
+      kind: 'model3d',
+      name: 'api-model',
+      prompt: 'Generate through the active 3D provider',
+    })).resolves.toMatchObject({
+      outcome: 'asset',
+      asset: { source: 'generated', kind: 'model3d' },
+      provider: { presetId: 'custom-model3d', route: 'configured-api' },
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    const failedRoot = await mkdtemp(join(tmpdir(), 'noobi-threejs-no-silent-fallback-'));
+    roots.push(failedRoot);
+    const failedStore = new MediaProviderStore(join(failedRoot, '.noobi-private', 'providers.json'), fakeSecretCodec());
+    await failedStore.init();
+    await failedStore.upsert({
+      presetId: 'custom-model3d',
+      endpoint: 'https://models.example.test/generate',
+      apiKey: 'private-model-key',
+      setActive: true,
+    });
+    const failedAssetStore = new AssetStore();
+    const failedService = new MediaGenerationService({
+      providerStore: failedStore,
+      assetStore: failedAssetStore,
+      fetch: vi.fn(async () => new Response('provider unavailable', { status: 503 })) as unknown as typeof fetch,
+    });
+    await expect(failedService.generate({
+      project: { id: 'project-provider-error', root: failedRoot },
+      kind: 'model3d',
+      name: 'must-not-fallback',
+      prompt: 'Do not conceal a paid provider failure',
+    })).rejects.toThrow('Media provider returned HTTP 503');
+    expect(await failedAssetStore.list('project-provider-error', failedRoot)).toEqual([]);
   });
 
   it('prefers a configured OpenAI image API, decodes bounded base64 privately, and persists through AssetStore', async () => {
@@ -700,6 +807,25 @@ async function configuredStore(input: {
   await providerStore.init();
   await providerStore.upsert({ ...input, setActive: true });
   return { root, providerStore };
+}
+
+function readGlbJson(bytes: Buffer): {
+  meshes?: unknown[];
+  skins?: unknown[];
+  animations?: Array<{ name?: string }>;
+  buffers?: Array<{ uri?: string }>;
+} {
+  expect(bytes.subarray(0, 4).toString('ascii')).toBe('glTF');
+  expect(bytes.readUInt32LE(4)).toBe(2);
+  expect(bytes.readUInt32LE(8)).toBe(bytes.length);
+  const jsonLength = bytes.readUInt32LE(12);
+  expect(bytes.readUInt32LE(16)).toBe(0x4e4f534a);
+  return JSON.parse(bytes.subarray(20, 20 + jsonLength).toString('utf8')) as {
+    meshes?: unknown[];
+    skins?: unknown[];
+    animations?: Array<{ name?: string }>;
+    buffers?: Array<{ uri?: string }>;
+  };
 }
 
 function tinyPng(): Buffer {

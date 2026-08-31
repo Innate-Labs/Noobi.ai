@@ -34,19 +34,23 @@ const MAX_GENERATED_OUTPUT_FILES = 5_000;
 const MAX_GENERATED_OUTPUT_DEPTH = 4;
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 64 * 1024 * 1024;
+const MAX_MODEL3D_BYTES = 128 * 1024 * 1024;
 
 const TEXT_EXTENSIONS = new Set([
-  '.astro', '.cjs', '.css', '.htm', '.html', '.js', '.json', '.json5', '.jsx',
-  '.less', '.mjs', '.sass', '.scss', '.svelte', '.ts', '.tsx', '.vue',
+  '.astro', '.cfg', '.cjs', '.css', '.gd', '.gdshader', '.godot', '.htm', '.html',
+  '.js', '.json', '.json5', '.jsx', '.less', '.mjs', '.sass', '.scss', '.svelte',
+  '.ts', '.tscn', '.tres', '.tsx', '.vue',
 ]);
 const PRODUCTION_DIRECTORIES = [
-  'src', 'app', 'pages', 'components', 'public', 'dist', 'build', 'out',
+  'src', 'app', 'pages', 'components', 'scenes', 'scripts', 'resources',
+  'public', 'dist', 'build', 'out',
 ] as const;
-const ROOT_PRODUCTION_FILE = /^(?:app|game|index|main|style)\.[^.]+$/iu;
-const TEST_FILE = /(?:^|\.)(?:spec|test|stories)\.[^.]+$/iu;
+const ROOT_PRODUCTION_FILE = /^(?:(?:app|game|index|main|style)\.[^.]+|project\.godot)$/iu;
+const TEST_FILE = /(?:^|[._-])(?:spec|test|tests|stories)(?:[._-]|$)/iu;
 const IMAGE_PATH = /^public\/assets\/images\/[^/]+\.(?:jpe?g|png|webp)$/iu;
 const AUDIO_PATH = /^public\/assets\/audio\/[^/]+\.(?:mp3|ogg|wav)$/iu;
-const ATTESTED_MEDIA_PATH = /^public\/assets\/(?:images\/[^/]+\.(?:jpe?g|png|webp)|audio\/[^/]+\.(?:mp3|ogg|wav))$/iu;
+const MODEL3D_PATH = /^public\/assets\/models\/[^/]+\.glb$/iu;
+const ATTESTED_MEDIA_PATH = /^public\/assets\/(?:images\/[^/]+\.(?:jpe?g|png|webp)|audio\/[^/]+\.(?:mp3|ogg|wav)|models\/[^/]+\.glb)$/iu;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const PROJECT_ID = /^[a-zA-Z0-9_-]{1,128}$/u;
 
@@ -196,7 +200,7 @@ export class ImageGenerationAttestationStore {
 
     for (const match of matches) {
       const { asset } = match;
-      const referencedBy = await findProductionReference(input.root, asset.relativePath);
+      const referencedBy = await findProductionAssetReference(input.root, asset.relativePath);
       if (referencedBy) {
         return {
           ok: true,
@@ -246,7 +250,7 @@ export class ImageGenerationAttestationStore {
 
     for (const match of matches) {
       const { asset } = match;
-      const referencedBy = await findProductionReference(input.root, asset.relativePath);
+      const referencedBy = await findProductionAssetReference(input.root, asset.relativePath);
       if (referencedBy) {
         return {
           ok: true,
@@ -415,7 +419,7 @@ async function projectAssetMatches(
   }
 }
 
-async function findProductionReference(root: string, relativePath: string): Promise<string | null> {
+export async function findProductionAssetReference(root: string, relativePath: string): Promise<string | null> {
   if (!isAbsolute(root) || !ATTESTED_MEDIA_PATH.test(relativePath)) return null;
   let canonicalRoot: string;
   try {
@@ -500,7 +504,13 @@ async function findProductionReference(root: string, relativePath: string): Prom
 
 function pathReferences(relativePath: string): string[] {
   const publicUrl = relativePath.slice('public'.length);
-  return [relativePath, `/${relativePath}`, publicUrl, publicUrl.slice(1)];
+  return [
+    relativePath,
+    `/${relativePath}`,
+    publicUrl,
+    publicUrl.slice(1),
+    `res://${relativePath}`,
+  ];
 }
 
 /**
@@ -514,7 +524,14 @@ function withoutSourceComments(filePath: string, source: string): string {
   const htmlLike = ['.astro', '.htm', '.html', '.svelte', '.vue'].includes(extension);
   const slashLineComments = !['.css', '.less', '.sass', '.scss'].includes(extension);
   const withoutHtmlComments = htmlLike ? maskHtmlComments(source) : source;
-  return maskSlashComments(withoutHtmlComments, slashLineComments);
+  const withoutSlashComments = maskSlashComments(withoutHtmlComments, slashLineComments);
+  if (extension === '.gd' || extension === '.gdshader') {
+    return maskMarkerLineComments(withoutSlashComments, new Set(['#']));
+  }
+  if (extension === '.cfg' || extension === '.godot' || extension === '.tscn' || extension === '.tres') {
+    return maskMarkerLineComments(withoutSlashComments, new Set(['#', ';']));
+  }
+  return withoutSlashComments;
 }
 
 function maskHtmlComments(source: string): string {
@@ -562,6 +579,35 @@ function maskSlashComments(source: string, lineComments: boolean): string {
         break;
       }
       if (character !== '\n' && character !== '\r') output[index] = ' ';
+    }
+  }
+  return output.join('');
+}
+
+function maskMarkerLineComments(source: string, markers: ReadonlySet<string>): string {
+  const output = [...source];
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  for (let index = 0; index < output.length; index += 1) {
+    const current = output[index]!;
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (current === '\\') escaped = true;
+      else if (current === quote) quote = null;
+      continue;
+    }
+    if (current === "'" || current === '"') {
+      quote = current;
+      continue;
+    }
+    if (!markers.has(current)) continue;
+    for (; index < output.length; index += 1) {
+      const character = output[index]!;
+      if (character === '\n' || character === '\r') {
+        index -= 1;
+        break;
+      }
+      output[index] = ' ';
     }
   }
   return output.join('');
@@ -650,6 +696,7 @@ function isCurrentAudioAsset(asset: CurrentGeneratedAsset): boolean {
 function maximumBytesForMediaPath(relativePath: string): number | null {
   if (IMAGE_PATH.test(relativePath)) return MAX_IMAGE_BYTES;
   if (AUDIO_PATH.test(relativePath)) return MAX_AUDIO_BYTES;
+  if (MODEL3D_PATH.test(relativePath)) return MAX_MODEL3D_BYTES;
   return null;
 }
 

@@ -126,6 +126,47 @@ describe('ImageGenerationAttestationStore', () => {
     await expect(verify()).resolves.toMatchObject({ ok: true, referencedBy: 'index.html' });
   });
 
+  it('recognizes real Godot resource references while rejecting comment-only GDScript paths', async () => {
+    const fixture = await makeFixture();
+    const store = new ImageGenerationAttestationStore(fixture.ledger);
+    await store.init();
+    await store.record({
+      projectId: 'project-1',
+      relativePath: fixture.asset.relativePath,
+      sha256: fixture.asset.sha256,
+    });
+    await mkdir(join(fixture.root, 'scripts'), { recursive: true });
+    await mkdir(join(fixture.root, 'scenes'), { recursive: true });
+
+    const verify = () => store.verify({
+      projectId: 'project-1',
+      root: fixture.root,
+      assets: [fixture.asset],
+    });
+    await writeFile(join(fixture.root, 'scripts/main.gd'), [
+      '# unused: res://public/assets/images/hero.png',
+      'var label := "# res://public/assets/images/not-a-comment.png"',
+    ].join('\n'));
+    await expect(verify()).resolves.toEqual({
+      ok: false,
+      reason: 'missing-production-reference',
+      candidatePaths: ['public/assets/images/hero.png'],
+    });
+
+    await writeFile(
+      join(fixture.root, 'scripts/main.gd'),
+      'const HERO: Texture2D = preload("res://public/assets/images/hero.png")\n',
+    );
+    await expect(verify()).resolves.toMatchObject({ ok: true, referencedBy: 'scripts/main.gd' });
+
+    await writeFile(join(fixture.root, 'scripts/main.gd'), '# no production reference\n');
+    await writeFile(
+      join(fixture.root, 'scenes/main.tscn'),
+      '[ext_resource type="Texture2D" path="res://public/assets/images/hero.png" id="1"]\n',
+    );
+    await expect(verify()).resolves.toMatchObject({ ok: true, referencedBy: 'scenes/main.tscn' });
+  });
+
   it('fails closed when the attested file changes or is mentioned only by the public manifest', async () => {
     const fixture = await makeFixture();
     const store = new ImageGenerationAttestationStore(fixture.ledger);

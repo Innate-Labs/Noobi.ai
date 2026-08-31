@@ -5,10 +5,8 @@ import type {
   AppSettings,
   ModelOption,
   ProjectRecord,
-  TargetFrameRate,
 } from '../../shared/contracts';
 import { AssetRequirement } from './AssetRequirement';
-import { FrameRateControl } from './FrameRateControl';
 
 interface ComposerProps {
   project: ProjectRecord;
@@ -20,7 +18,6 @@ interface ComposerProps {
     prompt: string,
     model: string | null,
     effort: string | null,
-    targetFrameRate: TargetFrameRate,
   ) => Promise<void>;
   onStop: () => Promise<void>;
 }
@@ -43,7 +40,6 @@ export function Composer({
     [model, models],
   );
   const [effort, setEffort] = useState(settings.defaultEffort);
-  const [targetFrameRate, setTargetFrameRate] = useState<TargetFrameRate>(project.targetFrameRate);
   const running = project.status === 'running';
   const resumable = Boolean(project.threadId);
 
@@ -56,12 +52,10 @@ export function Composer({
         '',
     );
     setEffort(settings.defaultEffort);
-    setTargetFrameRate(project.targetFrameRate);
     setPrompt('');
   }, [
     project.id,
     project.model,
-    project.targetFrameRate,
     settings.defaultEffort,
     settings.defaultModel,
     models,
@@ -76,7 +70,7 @@ export function Composer({
 
   async function submit() {
     const nextPrompt = prompt.trim() || (project.status === 'draft' ? project.idea : '继续完成并验证当前游戏。');
-    await onRun(nextPrompt, activeModel?.model ?? null, effort || null, targetFrameRate);
+    await onRun(nextPrompt, activeModel?.model ?? null, effort || null);
     setPrompt('');
   }
 
@@ -120,12 +114,6 @@ export function Composer({
         <AssetRequirement
           variant="compact"
           imageGenerationAvailable={imageGenerationAvailable}
-        />
-        <FrameRateControl
-          compact
-          value={targetFrameRate}
-          disabled={running || disabled}
-          onChange={setTargetFrameRate}
         />
         <div className="composer-controls">
           <label>

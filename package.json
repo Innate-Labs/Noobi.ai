@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local-first desktop agent that turns a prompt into a reviewed, playable browser game with Codex App Server",
+  "description": "Local-first desktop agent that turns a prompt into a reviewed, playable Web or Godot game with Codex App Server",
   "author": "Noobi.ai",
   "homepage": "https://github.com/Innate-Labs/Noobi.ai#readme",
   "repository": {
@@ -19,6 +19,8 @@
     "ai-agent",
     "game-development",
     "game-generator",
+    "godot",
+    "threejs",
     "electron",
     "mcp"
   ],
@@ -41,25 +43,34 @@
     "smoke:harness": "tsx scripts/harness-smoke.ts",
     "smoke:media": "tsx scripts/media-smoke.ts",
     "smoke:image": "tsx scripts/image-smoke.ts",
+    "smoke:playtest": "npm run build && electron scripts/playtest-smoke-app",
+    "smoke:model3d": "tsx scripts/model3d-smoke.ts",
+    "smoke:godot": "tsx scripts/godot-smoke.ts",
     "smoke:ui": "npm run build && cross-env NOOBI_SMOKE_CAPTURE=.noobi-smoke/workbench.png electron .",
     "verify": "npm run typecheck && npm run test && npm run build",
     "package:mac": "npm run build && electron-builder --mac dmg --publish never"
   },
   "dependencies": {
+    "@fontsource/press-start-2p": "^5.3.0",
     "@openai/codex": "0.148.0",
+    "@vp-tw/cjk-web-fonts-fusion-pixel-font": "^0.0.1",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "three": "^0.185.1",
+    "three-stdlib": "^2.36.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.3",
     "@types/react-dom": "^19.0.2",
+    "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "43.3.0",
     "electron-builder": "^26.0.12",
+    "pngjs": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
@@ -76,6 +87,8 @@
     "files": [
       "dist/**/*",
       "package.json",
+      "node_modules/three/**/*",
+      "node_modules/three-stdlib/**/*",
       "node_modules/@openai/codex/**/*",
       "node_modules/@openai/codex-*/*"
     ],
@@ -85,7 +98,9 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
-      "target": ["dmg"]
+      "target": [
+        "dmg"
+      ]
     },
     "dmg": {
       "backgroundColor": "#11120f",

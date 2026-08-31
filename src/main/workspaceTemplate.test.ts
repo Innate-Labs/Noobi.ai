@@ -7,6 +7,7 @@ import {
   NOOBI_HOST_RUNTIME_POLICY_END,
   NOOBI_HOST_RUNTIME_POLICY_START,
   NOOBI_HOST_RUNTIME_POLICY_VERSION,
+  synchronizeGodotPresentationPolicy,
   synchronizeWorkspaceHostPolicy,
 } from './workspaceTemplate.js';
 
@@ -49,16 +50,51 @@ describe('createWorkspaceTemplate', () => {
       assets: [],
     });
 
+    const playtest = JSON.parse(
+      await readFile(join(root, '.noobi/playtest.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(playtest).toMatchObject({
+      schemaVersion: 1,
+      engine: 'web',
+      entrypoint: { path: 'dist/index.html', readyTimeoutMs: 15_000 },
+      actions: {
+        start: { inputs: [{ type: 'key', code: 'Enter' }] },
+        move: { inputs: [{ type: 'key', code: 'KeyD' }] },
+        primary: { inputs: [{ type: 'key', code: 'Space' }] },
+        pause: { inputs: [{ type: 'key', code: 'Escape' }] },
+        restart: { inputs: [{ type: 'key', code: 'KeyR' }] },
+      },
+      limits: { maxRunMs: 60_000, stepTimeoutMs: 8_000 },
+    });
+    expect((playtest as { journey: unknown[] }).journey).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'launch-ready', capture: '00-launch-ready.png' }),
+      expect.objectContaining({ id: 'move-player', action: 'move' }),
+      expect.objectContaining({ id: 'primary-action', action: 'primary' }),
+      expect.objectContaining({
+        id: 'pause-game',
+        action: 'pause',
+        observe: [expect.objectContaining({
+          kind: 'screen-change',
+          baselineStepId: 'primary-action',
+        })],
+      }),
+      expect.objectContaining({ id: 'restart-game', action: 'restart' }),
+    ]));
+
     const agents = await readFile(join(root, 'AGENTS.md'), 'utf8');
     expect(agents).toContain('noobi_image_generate');
     expect(agents).toContain('host-trusted generated image is required for every Noobi.ai game');
     expect(agents).toContain('Codex ImageGen fallback');
     expect(agents).toContain('visibly loaded by the running game');
+    expect(agents).toContain('core visual asset coverage table');
+    expect(agents).toContain('`role=card-art-atlas`');
+    expect(agents).toContain('plain default Button does not count');
     expect(agents).toContain('does not waive the generated-image requirement');
     expect(agents).toContain('Every Planner pass must include an explicit animation needs assessment');
     expect(agents).toContain('choose `generate`, `reuse`, or `not-needed`');
     expect(agents).toContain('Do not regenerate an already suitable animation asset');
-    expect(agents).toContain('real animation clip from a self-contained rigged GLB');
+    expect(agents).toContain('self-contained Three.js-authored GLB');
+    expect(agents).toContain('real rigged GLB clip');
     expect(agents).toContain('noobi_audio_synthesize');
     expect(agents).toContain('noobi_audio_generate');
     expect(agents).toContain('must set an explicit `purpose`');
@@ -68,7 +104,14 @@ describe('createWorkspaceTemplate', () => {
     expect(agents).toContain('`procedural-audio`');
     expect(agents).toContain('noobi_model3d_generate');
     expect(agents).toContain('self-contained GLB 2.0');
+    expect(agents).toContain('host automatically prioritizes an active 3D API');
+    expect(agents).toContain('built-in Three.js exporter');
     expect(agents).toContain('playable vertical slices');
+    expect(agents).toContain('`.noobi/playtest.json`');
+    expect(agents).toContain('all five common action mappings');
+    expect(agents).toContain('key, pointer, look, drag, and wait');
+    expect(agents).toContain('artifacts/playtest/latest/report.json');
+    expect(agents).toContain('Never write to `artifacts/playtest/`');
     expect(agents).toContain('host-selected production target is **120 FPS**');
     expect(agents).toContain('targetFps=120');
     expect(agents).toContain('does not require 120 unique bitmap poses');
@@ -89,8 +132,15 @@ describe('createWorkspaceTemplate', () => {
     expect(skill).toContain('A `purpose` of `sfx` or `ambience` intentionally returns `procedural-audio`');
     expect(skill).toContain('Never describe MiniMax as a generic gunshot, explosion');
     expect(skill).toContain('performance');
+    expect(skill).toContain('shortest complete player-experience journey');
+    expect(skill).toContain('schemaVersion 1');
+    expect(skill).toContain('start, move, primary, pause, restart');
+    expect(skill).toContain('host playtest as pending');
     expect(skill).toContain('Image generation is mandatory');
     expect(skill).toContain('A generated file that is unused does not satisfy the requirement');
+    expect(skill).toContain('Use unique `subjectId` values for separate card faces');
+    expect(skill).toContain('deal/draw, hover/focus, play/move, attack/target');
+    expect(skill).toContain('entirely in one rendered frame');
     expect(skill).toContain('never treat them as satisfying the host-generated image gate');
     expect(skill).toContain('Perform an animation needs assessment on every request');
     expect(skill).toContain('Set presentation to `2d`, `2.5d`, or `3d`');
@@ -98,7 +148,10 @@ describe('createWorkspaceTemplate', () => {
     expect(skill).toContain('hold subject design, art style, palette, lighting, scale, frame size, anchor, and view/camera angle constant');
     expect(skill).toContain('Merely moving one static image');
     expect(skill).toContain('Rotating or translating the entire mesh does not prove clip playback');
-    expect(skill).toContain('Missing or misclassified state, unproven reuse');
+    expect(skill).toContain('routes to a configured 3D API first');
+    expect(skill).toContain('Three.js fallback output is an asset');
+    expect(skill).toContain('set `animation=true`');
+    expect(skill).toContain('same-frame automated actions');
     expect(skill).toContain('Treat **120 FPS** as the host-selected production target');
     expect(skill).toContain('sourceAnimationFps');
     expect(skill).toContain('Never duplicate frames merely to claim 120 FPS');
@@ -120,12 +173,17 @@ describe('createWorkspaceTemplate', () => {
     expect(design).toContain('running rigged mesh plays a real GLB clip');
     expect(design).toContain('Selected target: **120 FPS**');
     expect(design).toContain('target-specific animation asset is tagged for 120 FPS');
+    expect(design).toContain('## Player experience journey');
+    expect(design).toContain('`.noobi/playtest.json` matches the production controls');
+    expect(design).toContain('`artifacts/playtest/latest/report.json` passes every declared step');
 
     const readme = await readFile(join(root, 'README.md'), 'utf8');
     expect(readme).toContain('Every Noobi.ai run includes an animation needs assessment');
     expect(readme).toContain('verify and reuse the existing frame set/sprite sheet');
     expect(readme).toContain('Actual rigged 3D characters use real GLB animation clips');
     expect(readme).toContain('This project targets **120 FPS**');
+    expect(readme).toContain('executable experience route in `.noobi/playtest.json`');
+    expect(readme).toContain('Noobi.ai owns the resulting `artifacts/playtest/latest/report.json`');
 
     const metadata = JSON.parse(
       await readFile(join(root, '.noobi/project.json'), 'utf8'),
@@ -137,6 +195,65 @@ describe('createWorkspaceTemplate', () => {
     expect(starter).toContain('const FIXED_STEP_SECONDS = 1 / TARGET_FRAME_RATE');
     expect(starter).toContain('const MAX_CATCH_UP_STEPS = 8');
     expect(starter).toContain('state.accumulatorSeconds %= FIXED_STEP_SECONDS');
+  });
+
+  it('keeps Three.js as an offline GLB authoring fallback for Godot workspaces', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-godot-model-route-'));
+    temporaryRoots.push(root);
+    await createWorkspaceTemplate(root, {
+      id: 'project-godot-model-route',
+      name: 'Godot Model Route',
+      idea: 'A small 3D game.',
+      createdAt: new Date().toISOString(),
+      model: null,
+      targetFrameRate: 60,
+      engine: 'godot',
+    });
+
+    const agents = await readFile(join(root, 'AGENTS.md'), 'utf8');
+    const skill = await readFile(join(root, '.codex/skills/noobi-game-builder/SKILL.md'), 'utf8');
+    expect(agents).toContain('res://public/assets/models/...');
+    expect(agents).toContain('Three.js is build-time asset authoring only');
+    expect(skill).toContain('Godot must import/instantiate that GLB');
+    expect(skill).toContain('do not install Three.js in the game workspace');
+    expect(skill).not.toContain('deliberate Godot ArrayMesh/SurfaceTool/CSG geometry');
+  });
+
+  it('migrates Godot boot branding settings safely and idempotently', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-godot-branding-policy-'));
+    temporaryRoots.push(root);
+    await writeFile(join(root, 'project.godot'), [
+      'config_version=5',
+      '',
+      '[application]',
+      '',
+      'config/name="Legacy"',
+      'boot_splash/show_image=true',
+      'custom/user_setting="preserved"',
+      '',
+      '[rendering]',
+      'renderer/rendering_method="gl_compatibility"',
+      '',
+    ].join('\r\n'), 'utf8');
+    await writeFile(join(root, 'export_presets.cfg'), [
+      '[preset.0.options]',
+      '',
+      'html/export_icon=true',
+      'html/canvas_resize_policy=2',
+      '',
+    ].join('\r\n'), 'utf8');
+
+    await expect(synchronizeGodotPresentationPolicy(root)).resolves.toBe(true);
+    const project = await readFile(join(root, 'project.godot'), 'utf8');
+    const preset = await readFile(join(root, 'export_presets.cfg'), 'utf8');
+    expect(project).toContain('boot_splash/show_image=false');
+    expect(project).toContain('custom/user_setting="preserved"');
+    expect(project).toContain('\r\n');
+    expect(preset).toContain('html/export_icon=false');
+    expect(preset).toContain('html/canvas_resize_policy=2');
+    await expect(synchronizeGodotPresentationPolicy(root)).resolves.toBe(false);
+    await expect(readFile(join(root, 'project.godot'), 'utf8')).resolves.toBe(project);
+    await expect(readFile(join(root, 'export_presets.cfg'), 'utf8')).resolves.toBe(preset);
   });
 
   it('atomically synchronizes authoritative FPS metadata and managed policy blocks without replacing user content', async () => {
@@ -314,9 +431,19 @@ function expectManagedMediaPolicy(source: string): void {
   expect(policy).toContain('`noobi_audio_generate` with `purpose=music`');
   expect(policy).toContain('exist under `public/assets/audio/`');
   expect(policy).toContain('loaded and played by production game code');
-  expect(policy).toContain('Never silently substitute Web Audio');
-  expect(policy).toContain('Programmatic audio remains valid for generic non-vocal SFX');
+  expect(policy).toContain('Never silently substitute procedural or synthesized audio');
+  expect(policy).toContain('Programmatic or synthesized audio remains valid for generic non-vocal SFX');
   expect(policy).toContain('never satisfy or replace the required-music contract');
+  expect(policy).toContain('### Core visual coverage');
+  expect(policy).toContain('`role=card-art-atlas`');
+  expect(policy).toContain('deterministic card-art coverage gate');
+  expect(policy).toContain('### Interaction-motion acceptance');
+  expect(policy).toContain('must span rendered frames');
+  expect(policy).toContain('### Experience playtest acceptance');
+  expect(policy).toContain('`.noobi/playtest.json` at schemaVersion 1');
+  expect(policy).toContain('start, move, primary, pause, and restart');
+  expect(policy).toContain('`artifacts/playtest/` is host-owned immutable evidence');
+  expect(policy).toContain('host playtest as pending');
 }
 
 function managedPolicyOf(source: string): string {

@@ -5,16 +5,21 @@ import type {
   ApprovalAnswers,
   ApprovalDecision,
   ApprovalRequest,
+  AssetPlanRecord,
   BootstrapPayload,
   CreateProjectInput,
+  EnvironmentStatusSnapshot,
   FileReadResult,
   GameAssetRecord,
+  GameplayExperienceReport,
   ExtensionSettingsSnapshot,
   LoginStartResult,
   McpServerSetting,
   MediaCapability,
   MediaProviderSetting,
   MediaProviderTestResult,
+  NoobiCrewMember,
+  NoobiPackId,
   NoobiApi,
   PromptTemplateId,
   PromptTemplateSetting,
@@ -39,8 +44,19 @@ const api: NoobiApi = {
   startLogin: () => ipcRenderer.invoke('noobi:runtime:login') as Promise<LoginStartResult>,
   logout: () => ipcRenderer.invoke('noobi:runtime:logout') as Promise<RuntimeStatus>,
   chooseDirectory: () => ipcRenderer.invoke('noobi:dialog:directory') as Promise<string | null>,
-  createProject: (input: CreateProjectInput) =>
-    ipcRenderer.invoke('noobi:project:create', input) as Promise<ProjectRecord>,
+  createProject: (input: CreateProjectInput, files: readonly unknown[] = []) => {
+    if (!Array.isArray(files) || files.length > 50) {
+      return Promise.reject(new Error('一次最多上传 50 个附件'));
+    }
+    let paths: string[];
+    try {
+      paths = files.map((file) => webUtils.getPathForFile(file as File)).filter(Boolean);
+    } catch {
+      return Promise.reject(new Error('无法读取上传文件的本地路径'));
+    }
+    if (paths.length !== files.length) return Promise.reject(new Error('上传文件缺少本地路径'));
+    return ipcRenderer.invoke('noobi:project:create', input, paths) as Promise<ProjectRecord>;
+  },
   runProject: (input: RunProjectInput) =>
     ipcRenderer.invoke('noobi:project:run', input) as Promise<ProjectRecord>,
   stopProject: (projectId: string) =>
@@ -62,12 +78,30 @@ const api: NoobiApi = {
     if (paths.length !== files.length) return Promise.reject(new Error('拖入文件缺少本地路径'));
     return ipcRenderer.invoke('noobi:project:assets:import-paths', projectId, paths) as Promise<GameAssetRecord[]>;
   },
+  retryAssetPlan: (projectId: string, planId: string) =>
+    ipcRenderer.invoke('noobi:project:asset-plan:retry', projectId, planId) as Promise<AssetPlanRecord>,
   inspectProject: (projectId: string) =>
     ipcRenderer.invoke('noobi:project:inspect', projectId) as Promise<ProjectInspectorPayload>,
+  evaluateProjectExperience: (projectId: string) =>
+    ipcRenderer.invoke('noobi:project:experience:evaluate', projectId) as Promise<GameplayExperienceReport>,
+  cancelProjectExperience: (projectId: string) =>
+    ipcRenderer.invoke('noobi:project:experience:cancel', projectId) as Promise<void>,
   readProjectFile: (projectId: string, relativePath: string) =>
     ipcRenderer.invoke('noobi:project:read', projectId, relativePath) as Promise<FileReadResult>,
+  saveProjectNoobiPack: (projectId: string, packId: NoobiPackId | null) =>
+    ipcRenderer.invoke('noobi:project:noobi-pack:save', projectId, packId) as Promise<ProjectRecord>,
+  saveProjectNoobiCrew: (projectId: string, crew: readonly NoobiCrewMember[] | null) =>
+    ipcRenderer.invoke('noobi:project:noobi-crew:save', projectId, crew) as Promise<ProjectRecord>,
   saveSettings: (patch: Partial<AppSettings>) =>
     ipcRenderer.invoke('noobi:settings:save', patch) as Promise<AppSettings>,
+  getEnvironmentStatus: () =>
+    ipcRenderer.invoke('noobi:environment:get') as Promise<EnvironmentStatusSnapshot>,
+  refreshEnvironmentStatus: () =>
+    ipcRenderer.invoke('noobi:environment:refresh') as Promise<EnvironmentStatusSnapshot>,
+  chooseGodotExecutable: () =>
+    ipcRenderer.invoke('noobi:environment:godot:choose') as Promise<string | null>,
+  saveGodotExecutable: (binaryPath: string | null) =>
+    ipcRenderer.invoke('noobi:environment:godot:save', binaryPath) as Promise<EnvironmentStatusSnapshot>,
   getExtensionSettings: () =>
     ipcRenderer.invoke('noobi:extensions:get') as Promise<ExtensionSettingsSnapshot>,
   saveMediaProvider: (input: SaveMediaProviderInput) =>
@@ -101,6 +135,8 @@ const api: NoobiApi = {
     subscribe('noobi:event:approval-closed', listener),
   onAssetsChanged: (listener: (payload: { projectId: string; assets: GameAssetRecord[] }) => void) =>
     subscribe('noobi:event:assets', listener),
+  onAssetPlansChanged: (listener: (payload: { projectId: string; assetPlans: AssetPlanRecord[] }) => void) =>
+    subscribe('noobi:event:asset-plans', listener),
 };
 
 contextBridge.exposeInMainWorld('noobi', Object.freeze(api));

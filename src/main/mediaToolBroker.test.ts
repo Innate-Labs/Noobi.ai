@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AssetPlanStore } from './assetPlanStore.js';
 import { AssetStore } from './assetStore.js';
 import {
   MEDIA_DYNAMIC_TOOLS,
@@ -15,7 +16,7 @@ import {
   MediaGenerationService,
 } from './mediaGenerationService.js';
 import { MEDIA_PROVIDER_PRESETS } from './mediaProviderStore.js';
-import type { GameAssetRecord } from '../shared/contracts.js';
+import type { AssetPlanRecord, GameAssetRecord } from '../shared/contracts.js';
 
 const roots: string[] = [];
 
@@ -25,9 +26,10 @@ afterEach(async () => {
 
 describe('media tool broker', () => {
   it('publishes bounded top-level asset and generation function tools', () => {
-    expect(MEDIA_DYNAMIC_TOOLS.map((tool) => tool.type)).toEqual(Array(6).fill('function'));
+    expect(MEDIA_DYNAMIC_TOOLS.map((tool) => tool.type)).toEqual(Array(7).fill('function'));
     expect(MEDIA_DYNAMIC_TOOLS.map((tool) => tool.name)).toEqual([
       'noobi_asset_list',
+      'noobi_asset_plan',
       'noobi_asset_register',
       'noobi_audio_synthesize',
       'noobi_image_generate',
@@ -54,6 +56,16 @@ describe('media tool broker', () => {
     expect(audioTool?.inputSchema.properties?.model).toMatchObject({
       description: expect.stringContaining('music-3.0'),
     });
+    const model3dTool = MEDIA_DYNAMIC_TOOLS.find((tool) => tool.name === 'noobi_model3d_generate');
+    expect(model3dTool?.description).toContain('configured 3D model API first');
+    expect(model3dTool?.description).toContain('Three.js');
+    expect(model3dTool?.description).toContain('final game must load the returned GLB');
+    const registerTool = MEDIA_DYNAMIC_TOOLS.find((tool) => tool.name === 'noobi_asset_register');
+    expect(registerTool?.inputSchema.properties?.role).toMatchObject({
+      enum: expect.arrayContaining(['card-art', 'card-face', 'card-art-atlas']),
+    });
+    expect(registerTool?.inputSchema.properties?.atlasColumns).toMatchObject({ minimum: 1, maximum: 64 });
+    expect(registerTool?.description).toContain('stable subjectId');
   });
 
   it('ignores non-tool requests and safely rejects malformed calls', async () => {
@@ -93,6 +105,67 @@ describe('media tool broker', () => {
     expect(raw.contentItems[0]!.text).not.toContain('sha256');
     expect(raw.contentItems[0]!.text).not.toContain('secret prompt');
     expect(raw.contentItems[0]!.text).not.toContain('/private/workspace');
+  });
+
+  it('creates and reads an expected asset through noobi_asset_plan', async () => {
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const assetPlanStore = await makePlanStore();
+    const registered = fakeAsset(42);
+    registered.relativePath = 'public/assets/images/hero.png';
+    const assetStore = {
+      registerExisting: vi.fn(async () => registered),
+      list: vi.fn(async () => [registered]),
+    } as unknown as AssetStore;
+    const broker = brokerWith({
+      responses,
+      assetStore,
+      assetPlanStore,
+      resolveProject: async () => ({ id: 'project-plan', root: '/private/workspace' }),
+    });
+
+    broker.handle(toolRequest(31, 'noobi_asset_plan', {
+      planId: 'hero_portrait',
+      name: 'Hero portrait',
+      kind: 'image',
+      prompt: 'Readable hero portrait with transparent background',
+      width: 1024,
+      height: 1024,
+      background: 'transparent',
+    }));
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    expect(readToolResponse(responses[0]!.result)).toMatchObject({
+      success: true,
+      payload: {
+        plan: {
+          planId: 'hero_portrait',
+          kind: 'image',
+          status: 'planned',
+          options: { width: 1024, height: 1024, background: 'transparent' },
+        },
+      },
+    });
+
+    broker.handle(toolRequest(32, 'noobi_asset_plan', { planId: 'hero_portrait' }));
+    await vi.waitFor(() => expect(responses).toHaveLength(2));
+    expect(readToolResponse(responses[1]!.result)).toMatchObject({
+      success: true,
+      payload: { plan: { planId: 'hero_portrait', status: 'planned' } },
+    });
+
+    broker.handle(toolRequest(33, 'noobi_asset_register', {
+      planId: 'hero_portrait',
+      relativePath: 'public/assets/images/hero.png',
+      kind: 'image',
+    }));
+    await vi.waitFor(() => expect(responses).toHaveLength(3));
+    expect(readToolResponse(responses[2]!.result)).toMatchObject({
+      success: true,
+      payload: { plan: { planId: 'hero_portrait', status: 'generated', route: 'workspace-agent' } },
+    });
+    await expect(assetPlanStore.get('project-plan', 'hero_portrait')).resolves.toMatchObject({
+      status: 'generated',
+      relativePath: registered.relativePath,
+    });
   });
 
   it('creates and registers a short procedural WAV through a dynamic call', async () => {
@@ -159,8 +232,53 @@ describe('media tool broker', () => {
     }
   });
 
+  it('records bounded visual-role metadata for a card-art atlas', async () => {
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const registered = fakeAsset(1);
+    registered.relativePath = 'public/assets/images/cards.png';
+    const assetStore = {
+      registerExisting: vi.fn(async (input: { metadata?: GameAssetRecord['metadata'] }) => ({
+        ...registered,
+        metadata: input.metadata,
+      })),
+    } as unknown as AssetStore;
+    const broker = brokerWith({
+      responses,
+      assetStore,
+      resolveProject: async () => ({ id: 'project-cards', root: '/private/workspace' }),
+    });
+
+    broker.handle(toolRequest(61, 'noobi_asset_register', {
+      relativePath: 'public/assets/images/cards.png',
+      kind: 'image',
+      role: 'card-art-atlas',
+      atlasColumns: 3,
+      atlasRows: 2,
+      subjects: 'apprentice,guardian,ranger,colossus,spark,blessing',
+    }));
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    expect(readToolResponse(responses[0]!.result)).toMatchObject({
+      success: true,
+      payload: {
+        asset: {
+          metadata: {
+            role: 'card-art-atlas',
+            columns: 3,
+            rows: 2,
+            subjects: 'apprentice,guardian,ranger,colossus,spark,blessing',
+          },
+        },
+      },
+    });
+    expect(assetStore.registerExisting).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ role: 'card-art-atlas', columns: 3, rows: 2 }),
+    }));
+  });
+
   it('returns an explicit Codex ImageGen fallback without placing binary data in JSON-RPC', async () => {
     const responses: Array<{ id: string | number; result: unknown }> = [];
+    const assetPlanStore = await makePlanStore();
+    const plansChanged = vi.fn();
     const generationService = {
       generate: vi.fn(async () => ({
         outcome: 'fallback' as const,
@@ -172,8 +290,10 @@ describe('media tool broker', () => {
     const broker = brokerWith({
       responses,
       assetStore: new AssetStore(),
+      assetPlanStore,
       generationService,
       resolveProject: async () => ({ id: 'project-image', root: '/private/workspace' }),
+      onAssetPlansChanged: plansChanged,
     });
 
     broker.handle(toolRequest(7, 'noobi_image_generate', {
@@ -192,7 +312,9 @@ describe('media tool broker', () => {
           type: 'codex-imagegen',
           reason: 'provider-not-configured',
           prompt: 'Four-frame fox run sprite sheet',
+          planId: 'image-fox_run',
         },
+        plan: { planId: 'image-fox_run', status: 'waiting-agent', route: 'codex-imagegen' },
       },
     });
     expect(JSON.stringify(response)).not.toContain('base64');
@@ -200,10 +322,17 @@ describe('media tool broker', () => {
       kind: 'image',
       options: { width: 1024, height: 1024, background: 'transparent' },
     }));
+    await expect(assetPlanStore.get('project-image', 'image-fox_run')).resolves.toMatchObject({
+      status: 'waiting-agent',
+      route: 'codex-imagegen',
+      attemptCount: 1,
+    });
+    expect(plansChanged).toHaveBeenCalled();
   });
 
   it('routes audio and 3D API generation and only returns compact public asset fields', async () => {
     const responses: Array<{ id: string | number; result: unknown }> = [];
+    const assetPlanStore = await makePlanStore();
     const generated = fakeAsset(1);
     generated.kind = 'model3d';
     generated.relativePath = 'public/assets/models/ship.glb';
@@ -222,6 +351,7 @@ describe('media tool broker', () => {
     const broker = brokerWith({
       responses,
       assetStore,
+      assetPlanStore,
       generationService,
       resolveProject: async () => ({ id: 'project-model', root: '/private/workspace' }),
       onAssetsChanged: changed,
@@ -243,11 +373,61 @@ describe('media tool broker', () => {
           relativePath: 'public/assets/models/ship.glb',
         },
         provider: { presetId: 'meshy-3d', model: 'meshy-6' },
+        plan: { planId: 'model3d-player_ship', status: 'generated', route: 'configured-api' },
       },
     });
     expect(JSON.stringify(response.payload)).not.toContain('sha256');
     expect(JSON.stringify(response.payload)).not.toContain('secret prompt');
     expect(changed).toHaveBeenCalledOnce();
+    await expect(assetPlanStore.get('project-model', 'model3d-player_ship')).resolves.toMatchObject({
+      status: 'generated',
+      assetId: generated.id,
+      relativePath: generated.relativePath,
+      route: 'configured-api',
+    });
+  });
+
+  it('returns a registered Three.js GLB through the same 3D tool when no provider exists', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-model-broker-fallback-'));
+    roots.push(root);
+    const project = { id: 'project-model-fallback', root };
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const assetStore = new AssetStore();
+    const generationService = new MediaGenerationService({
+      providerStore: { withActiveProvider: vi.fn(async () => null) } as never,
+      assetStore,
+      fetch: vi.fn() as never,
+    });
+    const broker = brokerWith({
+      responses,
+      assetStore,
+      generationService,
+      resolveProject: async () => project,
+    });
+
+    broker.handle(toolRequest(9, 'noobi_model3d_generate', {
+      name: 'zombie_runner',
+      prompt: 'Low-poly zombie enemy',
+      animation: true,
+    }));
+    await vi.waitFor(() => expect(responses).toHaveLength(1), { timeout: 5_000 });
+    const response = readToolResponse(responses[0]!.result);
+    expect(response).toMatchObject({
+      success: true,
+      payload: {
+        asset: {
+          name: 'zombie_runner',
+          kind: 'model3d',
+          source: 'procedural',
+          relativePath: expect.stringMatching(/^public\/assets\/models\/.+\.glb$/u),
+        },
+        provider: {
+          id: 'builtin-threejs',
+          presetId: 'threejs-procedural',
+          route: 'threejs-fallback',
+        },
+      },
+    });
   });
 
   it('passes explicit MiniMax audio purpose, instrumental mode, and lyrics as provider options', async () => {
@@ -413,6 +593,45 @@ describe('media tool broker', () => {
     expect(generationService.generate).not.toHaveBeenCalled();
   });
 
+  it('keeps a safe retryable placeholder when provider generation fails', async () => {
+    const root = '/private/workspace';
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const assetPlanStore = await makePlanStore();
+    const generationService = {
+      generate: vi.fn(async () => {
+        throw new MediaGenerationPublicError(
+          `MiniMax request failed inside ${root} with sk-api-secret_value_123456`,
+        );
+      }),
+    };
+    const broker = brokerWith({
+      responses,
+      assetStore: new AssetStore(),
+      assetPlanStore,
+      generationService,
+      resolveProject: async () => ({ id: 'project-plan-failure', root }),
+    });
+
+    broker.handle(toolRequest(90, 'noobi_audio_generate', {
+      name: 'battle_theme',
+      prompt: 'A tense battle theme',
+      purpose: 'music',
+    }));
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    const response = readToolResponse(responses[0]!.result);
+    expect(response).toMatchObject({ success: false });
+    expect(JSON.stringify(response)).not.toContain(root);
+    expect(JSON.stringify(response)).not.toContain('sk-api-secret_value_123456');
+    const plan = await assetPlanStore.get('project-plan-failure', 'audio-battle_theme');
+    expect(plan).toMatchObject({
+      status: 'failed',
+      attemptCount: 1,
+      error: { code: 'media-generation-failed', retryable: true },
+    });
+    expect(plan.error?.message).toContain('[workspace]');
+    expect(plan.error?.message).toContain('[redacted]');
+  });
+
   it('surfaces only trusted redacted media failures and keeps unexpected errors opaque', async () => {
     const root = '/private/workspace';
     const responses: Array<{ id: string | number; result: unknown }> = [];
@@ -522,9 +741,14 @@ describe('media tool broker', () => {
 function brokerWith(options: {
   responses: Array<{ id: string | number; result: unknown }>;
   assetStore: AssetStore;
+  assetPlanStore?: Pick<
+    AssetPlanStore,
+    'list' | 'get' | 'upsert' | 'begin' | 'waitForAgent' | 'generated' | 'fail'
+  >;
   generationService?: Pick<MediaGenerationService, 'generate'>;
   resolveProject(threadId: string): Promise<MediaToolProject | null>;
   onAssetsChanged?(projectId: string, assets: GameAssetRecord[]): void | Promise<void>;
+  onAssetPlansChanged?(projectId: string, assetPlans: AssetPlanRecord[]): void | Promise<void>;
 }): MediaToolBroker {
   const server = {
     respondToServerRequest: (id: string | number, result: unknown) => options.responses.push({ id, result }),
@@ -532,10 +756,20 @@ function brokerWith(options: {
   return new MediaToolBroker({
     server,
     assetStore: options.assetStore,
+    ...(options.assetPlanStore ? { assetPlanStore: options.assetPlanStore } : {}),
     ...(options.generationService ? { generationService: options.generationService } : {}),
     resolveProject: options.resolveProject,
     ...(options.onAssetsChanged ? { onAssetsChanged: options.onAssetsChanged } : {}),
+    ...(options.onAssetPlansChanged ? { onAssetPlansChanged: options.onAssetPlansChanged } : {}),
   });
+}
+
+async function makePlanStore(): Promise<AssetPlanStore> {
+  const root = await mkdtemp(join(tmpdir(), 'noobi-plan-broker-'));
+  roots.push(root);
+  const store = new AssetPlanStore(join(root, 'asset-plans.json'));
+  await store.init();
+  return store;
 }
 
 function toolRequest(id: number, tool: string, args: Record<string, unknown>): JsonRpcServerRequest {

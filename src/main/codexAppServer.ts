@@ -153,6 +153,8 @@ export interface StartTurnOptions {
   effort?: string | null;
   approvalPolicy?: 'untrusted' | 'on-request' | 'never';
   skills?: Array<{ name: string; path: string }>;
+  /** Host-side completion deadline; never sent to App Server. */
+  timeoutMs?: number;
 }
 
 export interface CodexAppServerOptions {
@@ -423,10 +425,14 @@ export class CodexAppServer extends EventEmitter {
     }
 
     return new Promise<TurnResult>((resolve, reject) => {
+      const timeoutMs = options.timeoutMs === undefined
+        ? TURN_TIMEOUT_MS
+        : Math.min(TURN_TIMEOUT_MS, Math.max(1_000, Math.trunc(options.timeoutMs)));
       const timer = setTimeout(() => {
         this.#turnWaiters.delete(turnId);
+        void this.interruptTurn(options.threadId, turnId).catch(() => undefined);
         reject(new Error(`Codex turn ${turnId} timed out`));
-      }, TURN_TIMEOUT_MS);
+      }, timeoutMs);
       timer.unref();
       this.#turnWaiters.set(turnId, { text: early?.text ?? '', resolve, reject, timer });
       this.#releaseRunTurnStart();

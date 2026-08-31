@@ -469,7 +469,7 @@ export function MediaApiSettings({ controller }: { controller: ExtensionSettings
         <Sparkles size={16} />
         <div>
           <strong>媒体路由与连接检查</strong>
-          <span>已启用且包含必要密钥的图像 API 优先，失败时由可用的 Codex ImageGen 接管。MiniMax 仅负责音乐、语音和人声音效；枪声、爆炸等通用 SFX 使用程序化回退。MiniMax 音频检查会发起一次极短 Speech 鉴权探测，但 Music 3.0 账户资格仍在首次实际音乐生成时确认。其他服务的实际模型可用性也在生成时确认。</span>
+          <span>图像优先使用已配置 API，否则由 Codex ImageGen 接管。3D 始终先走已配置 API；未配置时，Noobi 在宿主内用 Three.js 自动导出可由 Godot 直接导入的 GLB。MiniMax 仅负责音乐、语音和人声音效；枪声、爆炸等通用 SFX 使用程序化回退。MiniMax 音频检查会发起一次极短 Speech 鉴权探测，但 Music 3.0 账户资格仍在首次实际音乐生成时确认。其他服务的实际模型可用性也在生成时确认。</span>
         </div>
       </div>
     </section>
@@ -679,6 +679,9 @@ function ProviderModule({
       </footer>
       {value.statusMessage ? <p className="module-message">{value.statusMessage}</p> : null}
       {dirty ? <p className="module-message is-dirty">当前更改尚未保存；保存后才能检查服务。</p> : null}
+      {value.capability === 'model3d' ? (
+        <p className="module-message">未启用有效 3D API 时无需手动选择策略：系统会自动生成 Three.js 程序化 GLB；Godot 仍是最终游戏运行时。</p>
+      ) : null}
     </article>
   );
 }
