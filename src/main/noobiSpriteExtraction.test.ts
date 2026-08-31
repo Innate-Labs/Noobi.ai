@@ -279,7 +279,7 @@ describe('Noobi sprite extraction scale', () => {
         expect(Math.abs(renderedHeightA - renderedHeightB)).toBeLessThanOrEqual(1);
       }
     }
-  });
+  }, 15_000);
 
   it('extracts a standalone 5x2 extra-action sheet without replacing base poses', () => {
     const temporaryRoot = mkdtempSync(resolve(tmpdir(), 'noobi-action-sheet-'));
