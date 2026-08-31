@@ -31,8 +31,6 @@ import { formatRelative, PROJECT_STATUS_LABELS, runtimeLabel } from '../ui';
 import { ModelPicker } from './ModelPicker';
 import { RotatingIdeaInput } from './RotatingIdeaInput';
 
-const homeHero = new URL('../../../docs/images/noobi-snow-mountain-hero.png', import.meta.url).href;
-
 const IDEA_STARTERS = [
   {
     label: '平台动作',
@@ -231,8 +229,6 @@ export function HomeDashboard({
 
       <div className="home-scroll">
         <section className="home-hero" aria-labelledby="home-title">
-          <img className="home-hero-art" src={homeHero} alt="浅色像素雪山与松林景观" />
-          <div className="home-hero-wash" />
           <div className="home-hero-content">
             <span className={`home-loop-status ${runtimeReady ? 'is-ready' : 'is-attention'}`}>
               <i /> {runtimeReady ? 'LOOP MODE 已就绪' : '完成运行时设置后开始'} <ArrowRight size={13} />
