@@ -5,8 +5,8 @@
 <h1 align="center">Noobi.ai</h1>
 
 <p align="center">
-  <strong>把一句游戏创意，变成经过审查、可以游玩的浏览器游戏。</strong><br>
-  基于 Codex App Server 的本地优先桌面游戏制作 Agent。
+  <strong>把一句游戏创意，变成经过审查、可以游玩的 Web 或 Godot 游戏。</strong><br>
+  基于 Codex App Server 与 Godot 4 的本地优先桌面游戏制作 Agent。
 </p>
 
 <p align="center">
@@ -26,19 +26,20 @@
 
 ![Noobi.ai 制作工作台，包含 Agent 管线、可玩预览、素材与工程文件](docs/images/noobi-workbench.png)
 
-Noobi.ai 不让单个 Agent 在一次回合里即兴完成所有工作，而是把 Codex 放进一条有边界的游戏制作管线：只读 Planner 拆解任务，Implementer 在独立工程目录中实现，独立 Reviewer 检查真实结果，宿主再验证生成素材是否完整并被生产代码实际使用。
+Noobi.ai 不让单个 Agent 在一次回合里即兴完成所有工作，而是把 Codex 放进一条有边界的游戏制作循环：只读 Planner 拆解任务，Implementer 在独立工程目录中实现，独立 Reviewer 检查真实结果，宿主再正式构建并自动试玩。审查、构建或体验评测未通过时，会交回同一个 Implementer，最多连续修复三轮。
 
-> **当前状态：** macOS 开发者预览版。项目暂未发布已签名、公证的安装包，请从源码运行。生成结果是你自己工作区里的独立浏览器游戏工程。
+> **当前状态：** macOS 开发者预览版。项目暂未发布已签名、公证的安装包，请从源码运行。生成结果是你自己工作区里的独立 Web 或 Godot 4 游戏工程。
 
 ## 为什么选择 Noobi.ai
 
 | | 你会得到什么 |
 | --- | --- |
-| **从创意到可玩结果** | 输入自然语言创意，产出真实浏览器游戏工程，并在同一个应用里本地预览。 |
-| **经过审查的执行管线** | Planner → Implementer → 独立 Reviewer → 最多一次有界 Repair。证明不完整就保持阻塞，不伪装完成。 |
-| **真实多媒体管线** | 图片、音乐、语音、音效和 3D 可走配置的 Provider、Codex ImageGen、导入素材或明确的程序化回退。 |
+| **从创意到可玩结果** | 输入自然语言创意，由 Agent 判断使用 Web 或 Godot 4，产出真实游戏工程并在应用内本地预览。 |
+| **经过审查的制作循环** | Planner → Implementer → Reviewer → 正式构建 → 自动试玩；失败后最多进行三轮有界修复。 |
+| **自动体验评测** | 隔离的隐藏浏览器会操作主要玩法、记录截图，检查可见画面、动画连续性和运行错误。 |
+| **真实多媒体管线** | 图片、音乐、语音、音效和 3D 可走配置的 Provider、Codex ImageGen、导入素材或程序化回退；失败素材仍以可重试占位留在素材页。 |
 | **工程归用户所有** | 每个游戏都是普通本地项目，可以检查文件、继续用 Codex 修改、提交 Git，或完全脱离 Noobi.ai 使用。 |
-| **为扩展而设计** | 可增加媒体 Provider、Codex Skills、MCP Server、角色提示词、工程模板或全新的工作台 UI。 |
+| **为扩展而设计** | 可增加媒体 Provider、Codex Skills、MCP Server、角色提示词、工程模板、Godot 导出目标或全新的工作台 UI。 |
 
 ## 快速开始
 
@@ -48,6 +49,7 @@ Noobi.ai 不让单个 Agent 在一次回合里即兴完成所有工作，而是�
 - Node.js 22 LTS 与 npm
 - 可用的 ChatGPT/Codex 账户
 - 可用的图片生成路线：已配置图片 Provider 或 Codex ImageGen
+- 只有 Agent 判断需要 Godot 时，才要求 Godot 4 与版本精确匹配的 Web Export Templates
 
 ```bash
 git clone https://github.com/Innate-Labs/Noobi.ai.git
@@ -68,17 +70,19 @@ NOOBI_CODEX_BIN=/absolute/path/to/codex npm run dev
 
 ```mermaid
 flowchart LR
-    Idea["游戏创意"] --> Preflight["能力与路由预检"]
+    Idea["游戏创意 + 参考文件"] --> Preflight["能力、路由与引擎预检"]
     Preflight --> Plan["Planner<br/>只读拆解"]
     Plan --> Build["Implementer<br/>工程实现"]
     Build --> Review["Reviewer<br/>独立审查"]
     Review --> Pass{"通过？"}
-    Pass -- "否" --> Repair["一次有界修复"]
-    Repair --> ReReview["重新审查"]
-    Pass -- "是" --> Gate["宿主证明门禁"]
-    ReReview --> Gate
+    Pass -- "否" --> Repair["修复<br/>最多 3 轮"]
+    Repair --> Review
+    Pass -- "是" --> EngineBuild["Web 构建或<br/>Godot 导入、验证、导出"]
+    EngineBuild --> Playtest["隐藏浏览器自动试玩<br/>输入、截图与错误"]
+    Playtest --> Gate["宿主证明门禁"]
+    Gate -. "可修复问题" .-> Repair
     Gate --> Done["本地可玩工程"]
-    Gate -. "证明不完整" .-> Blocked["Blocked"]
+    Gate -. "外部阻塞" .-> Blocked["Blocked"]
 ```
 
 工作台用 `Brief → Scaffold → GDD → Assets → World → Code → Verify → Complete` 展示制作进度；真正的完成条件由 Reviewer 与宿主证明门禁共同决定。
@@ -107,7 +111,9 @@ Noobi.ai 把关键能力放在可替换的边界上，一个有价值的 Fork �
 - 八个可视制作阶段与实时 Agent 事件流
 - 命令和文件修改审批
 - 本地可玩预览、工程文件树与统一素材库
-- 30 / 60 / 120 FPS 制作目标及配套的时序、动画审查契约
+- Agent 自动选择 Web 或 Godot 4，并检查 Godot 环境与 Export Templates
+- 使用宿主管理的内部时序与动画契约，不再让用户选择帧率生成策略
+- Noobi 多角色分工、动作状态、可选工坊场景和动态钓鱼背景
 - 持久化项目与可恢复的 Codex Implementer 线程
 
 ### 媒体与扩展
@@ -115,7 +121,9 @@ Noobi.ai 把关键能力放在可替换的边界上，一个有价值的 Fork �
 - 可配置图片、音频与 3D REST Provider
 - 必需图片生成的 Codex ImageGen 回退
 - 音乐、语音、人声音效、程序化 WAV 与 Web Audio 路线
-- 自包含 GLB 导入与程序化 Three.js 回退
+- 3D API 优先；未配置时自动生成自包含 Three.js GLB
+- 上传的图片和文件可影响需求拆解、视觉方向与素材复用
+- 失败素材工单保留占位、错误与尝试次数，可单项重新生成
 - Codex 原生 Skills、stdio/HTTP MCP Server 与分角色提示词
 
 ### 安全边界
@@ -144,6 +152,9 @@ npm run smoke:codex
 npm run smoke:harness
 npm run smoke:media
 npm run smoke:image
+npm run smoke:model3d
+npm run smoke:godot
+npm run smoke:playtest
 ```
 
 在本机生成未签名的 macOS DMG：
@@ -156,10 +167,11 @@ npm run package:mac
 
 ## 当前边界
 
-- 当前输出浏览器游戏工程与本机预览，不提供云部署或 Unity、Unreal、Godot 导出。
-- 当前发行目标是 macOS；Windows 与 Linux 工作流在路线图中。
+- 当前支持 Web 与 Godot 4/GDScript 工程。Godot 自动交付目前使用 Compatibility renderer 的 Web 导出，尚未接通原生 macOS、Windows、Linux 可执行包。
+- 当前发行目标是 macOS；Windows 与 Linux 桌面工作流在路线图中。
 - Meshy、Tripo、Rodin 当前使用同步 REST 网关契约，并非全部厂商异步任务 API 的原生编排。
-- 生成质量与完成率取决于模型、提示、依赖和媒体能力；不能通过证明门禁的任务会保持 `blocked`。
+- 内置 Three.js 回退提供功能性低多边形自包含 GLB，不冒充外部 3D Provider 的高保真有机拓扑与贴图能力。
+- 生成质量与完成率取决于模型、提示、依赖和媒体能力；不能通过证明门禁的任务会保持 `blocked`，不会伪装完成。
 
 ## 参与贡献
 

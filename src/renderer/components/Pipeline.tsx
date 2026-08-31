@@ -20,6 +20,7 @@ import { stageProgress } from '../ui';
 interface PipelineProps {
   stage: PipelineStage;
   status: ProjectStatus;
+  compact?: boolean;
 }
 
 const ICONS = {
@@ -33,7 +34,7 @@ const ICONS = {
   complete: Flag,
 } as const;
 
-export function Pipeline({ stage, status }: PipelineProps) {
+export function Pipeline({ stage, status, compact = false }: PipelineProps) {
   const progress = stageProgress(stage);
   const listRef = useRef<HTMLOListElement>(null);
 
@@ -47,7 +48,7 @@ export function Pipeline({ stage, status }: PipelineProps) {
   }, [stage]);
 
   return (
-    <section className="pipeline" aria-label="游戏制作流程">
+    <section className={`pipeline${compact ? ' is-compact' : ''}`} aria-label="游戏制作流程">
       <header className="section-heading pipeline-heading">
         <div>
           <span>PRODUCTION PIPELINE</span>

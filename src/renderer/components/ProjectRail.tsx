@@ -1,12 +1,14 @@
 import {
   FolderKanban,
   Gauge,
+  Home,
   Plus,
   Settings,
   X,
 } from 'lucide-react';
 
 import type { ProjectRecord, RuntimeStatus } from '../../shared/contracts';
+import type { SettingsSection } from './SettingsModal';
 import { BrandMark } from './BrandMark';
 import {
   formatRelative,
@@ -19,11 +21,12 @@ interface ProjectRailProps {
   selectedId?: string;
   runtime: RuntimeStatus;
   open: boolean;
+  variant: 'dashboard' | 'workbench';
   onClose: () => void;
   onHome: () => void;
   onSelect: (project: ProjectRecord) => void;
   onCreate: () => void;
-  onSettings: () => void;
+  onSettings: (section?: SettingsSection) => void;
 }
 
 export function ProjectRail({
@@ -31,6 +34,7 @@ export function ProjectRail({
   selectedId,
   runtime,
   open,
+  variant,
   onClose,
   onHome,
   onSelect,
@@ -46,13 +50,13 @@ export function ProjectRail({
         tabIndex={open ? 0 : -1}
         onClick={onClose}
       />
-      <aside className={`project-rail ${open ? 'is-open' : ''}`}>
+      <aside className={`project-rail mode-${variant} ${open ? 'is-open' : ''}`}>
         <div className="rail-brand-row">
-          <button className="brand" type="button" onClick={onHome}>
+          <button className="brand" type="button" title="返回首页" onClick={onHome}>
             <BrandMark />
             <span className="brand-copy">
               <strong>Noobi.ai</strong>
-              <small>GAME PRODUCTION SYSTEM</small>
+              <small>AI GAME STUDIO</small>
             </span>
           </button>
           <button
@@ -65,13 +69,15 @@ export function ProjectRail({
           </button>
         </div>
 
-        <button className="new-project-button" type="button" onClick={onCreate}>
-          <Plus size={16} />
-          新建游戏
-        </button>
+        <nav className="rail-primary-navigation" aria-label="Noobi 导航">
+          <button className={variant === 'dashboard' ? 'is-active' : ''} type="button" onClick={onHome}>
+            <Home size={17} />
+            <span>首页</span>
+          </button>
+        </nav>
 
         <div className="rail-section-heading">
-          <span>PROJECTS</span>
+          <span>MY GAMES</span>
           <strong>{String(projects.length).padStart(2, '0')}</strong>
         </div>
 
@@ -84,17 +90,12 @@ export function ProjectRail({
                 className={`project-item ${project.id === selectedId ? 'is-active' : ''}`}
                 onClick={() => onSelect(project)}
               >
-                <span
-                  className={`status-dot status-${project.status}`}
-                  aria-hidden="true"
-                />
+                <span className={`status-dot status-${project.status}`} aria-hidden="true" />
                 <span className="project-item-copy">
                   <strong>{project.name}</strong>
-                  <small>{PROJECT_STATUS_LABELS[project.status]}</small>
+                  <small>{project.engine === 'godot' ? 'GODOT 4' : 'WEB'} · {PROJECT_STATUS_LABELS[project.status]}</small>
                 </span>
-                <time dateTime={project.updatedAt}>
-                  {formatRelative(project.updatedAt)}
-                </time>
+                <time dateTime={project.updatedAt}>{formatRelative(project.updatedAt)}</time>
               </button>
             ))
           ) : (
@@ -106,11 +107,31 @@ export function ProjectRail({
           )}
         </nav>
 
+        <nav className="compact-project-list" aria-label="快速切换项目">
+          <button className="compact-create" type="button" title="新建游戏" onClick={onCreate}>
+            <Plus size={18} />
+          </button>
+          {projects.slice(0, 8).map((project, index) => (
+            <button
+              key={project.id}
+              type="button"
+              className={`${project.id === selectedId ? 'is-active' : ''} tone-${index % 4}`}
+              title={`${project.name} · ${PROJECT_STATUS_LABELS[project.status]}`}
+              aria-label={`打开 ${project.name}`}
+              onClick={() => onSelect(project)}
+            >
+              <span>{project.name.trim().slice(0, 1).toUpperCase() || 'N'}</span>
+              <i className={`status-dot status-${project.status}`} />
+            </button>
+          ))}
+        </nav>
+
         <div className="rail-footer">
           <button
             type="button"
             className="runtime-mini"
-            onClick={onSettings}
+            title={runtimeLabel(runtime)}
+            onClick={() => onSettings(runtime.account ? 'environment' : 'account')}
           >
             <Gauge size={15} />
             <span>
@@ -119,9 +140,9 @@ export function ProjectRail({
             </span>
             <i className={`runtime-dot state-${runtime.state}`} />
           </button>
-          <button className="rail-settings" type="button" onClick={onSettings}>
+          <button className="rail-settings" type="button" title="设置" onClick={() => onSettings()}>
             <Settings size={15} />
-            设置
+            <span>设置</span>
           </button>
         </div>
       </aside>

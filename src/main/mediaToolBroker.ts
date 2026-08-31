@@ -1,4 +1,5 @@
 import type { AssetStore } from './assetStore.js';
+import type { AssetPlanStore, AssetPlanUpsertInput } from './assetPlanStore.js';
 import type { CodexAppServer, DynamicToolSpec, JsonValue } from './codexAppServer.js';
 import type { JsonRpcServerRequest } from './jsonRpcPeer.js';
 import {
@@ -11,7 +12,12 @@ import {
   synthesizeProceduralWav,
   type ProceduralAudioPreset,
 } from './proceduralAudio.js';
-import type { GameAssetKind, GameAssetRecord } from '../shared/contracts.js';
+import type {
+  AssetPlanRecord,
+  AssetPlanRoute,
+  GameAssetKind,
+  GameAssetRecord,
+} from '../shared/contracts.js';
 
 interface DynamicToolCallParams {
   threadId: string;
@@ -35,9 +41,14 @@ export interface MediaToolProject {
 export interface MediaToolBrokerOptions {
   server: Pick<CodexAppServer, 'respondToServerRequest'>;
   assetStore: AssetStore;
+  assetPlanStore?: Pick<
+    AssetPlanStore,
+    'list' | 'get' | 'upsert' | 'begin' | 'waitForAgent' | 'generated' | 'fail'
+  >;
   generationService?: Pick<MediaGenerationService, 'generate'>;
   resolveProject(threadId: string): Promise<MediaToolProject | null>;
   onAssetsChanged?(projectId: string, assets: GameAssetRecord[]): void | Promise<void>;
+  onAssetPlansChanged?(projectId: string, assetPlans: AssetPlanRecord[]): void | Promise<void>;
   /** Main-process provenance hook; generated image proof must never come from the workspace manifest. */
   onGeneratedAsset?(
     projectId: string,
@@ -50,6 +61,16 @@ const MAX_RESPONSE_BYTES = 32 * 1024;
 const MAX_LIST_LIMIT = 100;
 const KINDS = ['image', 'audio', 'model3d'] as const;
 const AUDIO_PURPOSES = ['music', 'speech', 'vocal-sfx', 'sfx', 'ambience'] as const;
+const VISUAL_ASSET_ROLES = [
+  'background', 'card-art', 'card-face', 'card-art-atlas', 'character', 'enemy',
+  'environment', 'item', 'ui', 'vfx', 'other',
+] as const;
+const ASSET_PLAN_ARGUMENT_KEYS = [
+  'planId', 'name', 'kind', 'prompt', 'required', 'model',
+  'width', 'height', 'quality', 'background',
+  'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format',
+  'animation', 'textureResolution',
+] as const;
 
 export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
   {
@@ -67,14 +88,49 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
   },
   {
     type: 'function',
-    name: 'noobi_asset_register',
-    description: 'Validate and register an existing asset under public/assets in the current project.',
+    name: 'noobi_asset_plan',
+    description: 'Create or update an expected game asset before generation, or list/get current expected-asset states. Reuse the returned planId in generation and registration calls so failures remain visible and retryable in the Noobi.ai workbench.',
     inputSchema: {
       type: 'object',
       properties: {
+        planId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' },
+        name: { type: 'string', minLength: 1, maxLength: 160 },
+        kind: { type: 'string', enum: [...KINDS] },
+        prompt: { type: 'string', minLength: 1, maxLength: 4000 },
+        required: { type: 'boolean' },
+        model: { type: 'string', minLength: 1, maxLength: 200 },
+        width: { type: 'integer', minimum: 256, maximum: 4096 },
+        height: { type: 'integer', minimum: 256, maximum: 4096 },
+        quality: { type: 'string', enum: ['low', 'medium', 'high', 'auto'] },
+        background: { type: 'string', enum: ['transparent', 'opaque', 'auto'] },
+        purpose: { type: 'string', enum: [...AUDIO_PURPOSES] },
+        instrumental: { type: 'boolean' },
+        lyrics: { type: 'string', minLength: 1, maxLength: 3500 },
+        durationSeconds: { type: 'number', minimum: 0.05, maximum: 600 },
+        voice: { type: 'string', minLength: 1, maxLength: 100 },
+        format: { type: 'string', enum: ['wav', 'mp3', 'ogg'] },
+        animation: { type: 'boolean' },
+        textureResolution: { type: 'integer', minimum: 256, maximum: 8192 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    type: 'function',
+    name: 'noobi_asset_register',
+    description: 'Validate and register an existing asset under public/assets in the current project. For gameplay images, classify the visual role and stable subjectId; card atlases must also declare atlasColumns, atlasRows, and comma-separated subjects.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' },
         relativePath: { type: 'string', minLength: 1, maxLength: 1000 },
         name: { type: 'string', minLength: 1, maxLength: 160 },
         kind: { type: 'string', enum: [...KINDS] },
+        role: { type: 'string', enum: [...VISUAL_ASSET_ROLES] },
+        subjectId: { type: 'string', minLength: 1, maxLength: 80 },
+        atlasColumns: { type: 'integer', minimum: 1, maximum: 64 },
+        atlasRows: { type: 'integer', minimum: 1, maximum: 64 },
+        subjects: { type: 'string', minLength: 1, maxLength: 1000 },
       },
       required: ['relativePath'],
       additionalProperties: false,
@@ -87,6 +143,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        planId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' },
         name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' },
         preset: { type: 'string', enum: [...PROCEDURAL_AUDIO_PRESETS] },
         durationSeconds: { type: 'number', minimum: 0.05, maximum: 8 },
@@ -103,6 +160,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        planId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' },
         name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' },
         prompt: { type: 'string', minLength: 1, maxLength: 4000 },
         model: { type: 'string', minLength: 1, maxLength: 200 },
@@ -122,6 +180,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        planId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' },
         name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' },
         prompt: { type: 'string', minLength: 1, maxLength: 4000 },
         model: {
@@ -144,10 +203,11 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
   {
     type: 'function',
     name: 'noobi_model3d_generate',
-    description: 'Generate and register a self-contained GLB through the configured 3D model API.',
+    description: 'Generate and register a self-contained GLB. Noobi.ai automatically uses the configured 3D model API first; when no 3D API is configured, the host uses Three.js to author and export a procedural GLB. The final game must load the returned GLB (including in Godot); Three.js is not the game runtime. Set animation=true for a fallback rig with real idle, walk, and run clips.',
     inputSchema: {
       type: 'object',
       properties: {
+        planId: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' },
         name: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' },
         prompt: { type: 'string', minLength: 1, maxLength: 4000 },
         model: { type: 'string', minLength: 1, maxLength: 200 },
@@ -186,6 +246,9 @@ export class MediaToolBroker {
         case 'noobi_asset_list':
           payload = await this.#list(project, params.arguments);
           break;
+        case 'noobi_asset_plan':
+          payload = await this.#plan(project, params.arguments);
+          break;
         case 'noobi_asset_register':
           payload = await this.#register(project, params.arguments);
           break;
@@ -208,6 +271,48 @@ export class MediaToolBroker {
     } catch (error) {
       this.#respond(request.id, { error: safeError(error, project?.root) }, false);
     }
+  }
+
+  async #plan(project: MediaToolProject, rawArguments: JsonValue): Promise<unknown> {
+    const store = this.#requireAssetPlanStore();
+    const args = objectArguments(rawArguments);
+    assertOnlyKeys(args, ASSET_PLAN_ARGUMENT_KEYS);
+    const planId = optionalPlanId(args.planId);
+    const creationFields = ['name', 'kind', 'prompt'] as const;
+    const hasCreationField = creationFields.some((key) => args[key] !== undefined);
+    if (!hasCreationField) {
+      if (Object.keys(args).some((key) => key !== 'planId')) {
+        throw new ToolInputError('name, kind, and prompt are required when creating an asset plan');
+      }
+      if (planId) return { plan: publicAssetPlan(await store.get(project.id, planId)) };
+      const plans = await store.list(project.id);
+      const publicPlans = boundedPublicPlans(plans);
+      return {
+        total: plans.length,
+        shown: publicPlans.length,
+        truncated: publicPlans.length < plans.length,
+        plans: publicPlans,
+      };
+    }
+    const name = requiredString(args.name, 'name', 160);
+    const kind = requiredKind(args.kind);
+    const prompt = requiredMultilineString(args.prompt, 'prompt', 4_000);
+    assertOnlyKeys(args, ['planId', 'kind', 'required', ...generationArgumentKeys(kind)]);
+    const required = optionalBoolean(args.required, 'required');
+    const model = optionalString(args.model, 'model', 200);
+    const options = generationOptions(args, kind, false);
+    const plan = await store.upsert({
+      id: planId ?? automaticPlanId(kind, name),
+      projectId: project.id,
+      name,
+      kind,
+      prompt,
+      ...(required === undefined ? {} : { required }),
+      ...(model ? { model } : {}),
+      ...(Object.keys(options).length > 0 ? { options } : {}),
+    });
+    await this.#notifyPlans(project.id);
+    return { plan: publicAssetPlan(plan) };
   }
 
   async #list(project: MediaToolProject, rawArguments: JsonValue): Promise<unknown> {
@@ -239,7 +344,10 @@ export class MediaToolBroker {
 
   async #register(project: MediaToolProject, rawArguments: JsonValue): Promise<unknown> {
     const args = objectArguments(rawArguments);
-    assertOnlyKeys(args, ['relativePath', 'name', 'kind']);
+    assertOnlyKeys(args, [
+      'planId', 'relativePath', 'name', 'kind', 'role', 'subjectId', 'atlasColumns', 'atlasRows', 'subjects',
+    ]);
+    const planId = optionalPlanId(args.planId);
     const relativePath = requiredString(args.relativePath, 'relativePath', 1_000);
     if (!relativePath.startsWith('public/assets/')) {
       throw new ToolInputError('Registered assets must be inside public/assets');
@@ -250,6 +358,8 @@ export class MediaToolBroker {
     if (expectedKind && inferredKind && expectedKind !== inferredKind) {
       throw new ToolInputError(`Asset kind is ${inferredKind}, not ${expectedKind}`);
     }
+    if (planId) await this.#assertPlanKind(project, planId, inferredKind ?? expectedKind);
+    const metadata = visualAssetMetadata(args, inferredKind ?? expectedKind);
     const asset = await this.#options.assetStore.registerExisting({
       projectId: project.id,
       root: project.root,
@@ -257,17 +367,25 @@ export class MediaToolBroker {
       ...(name ? { name } : {}),
       source: 'procedural',
       provider: 'workspace-agent',
+      ...(metadata ? { metadata } : {}),
     });
     if (expectedKind && asset.kind !== expectedKind) {
       throw new ToolInputError(`Asset kind is ${asset.kind}, not ${expectedKind}`);
     }
     await this.#notify(project);
-    return { asset: publicAsset(asset) };
+    const plan = planId
+      ? await this.#recordGeneratedPlan(project, planId, asset, 'workspace-agent')
+      : undefined;
+    return {
+      asset: publicAsset(asset),
+      ...(plan ? { plan: publicAssetPlan(plan) } : {}),
+    };
   }
 
   async #synthesize(project: MediaToolProject, rawArguments: JsonValue): Promise<unknown> {
     const args = objectArguments(rawArguments);
-    assertOnlyKeys(args, ['name', 'preset', 'durationSeconds', 'seed']);
+    assertOnlyKeys(args, ['planId', 'name', 'preset', 'durationSeconds', 'seed']);
+    const planId = optionalPlanId(args.planId);
     const name = requiredString(args.name, 'name', 64);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(name)) {
       throw new ToolInputError('Audio name must use 1-64 letters, numbers, underscores, or hyphens');
@@ -275,31 +393,59 @@ export class MediaToolBroker {
     const preset = requiredPreset(args.preset);
     const durationSeconds = optionalNumber(args.durationSeconds, 'durationSeconds', 0.05, 8);
     const seed = optionalInteger(args.seed, 'seed', 0, 0xffff_ffff);
-    const generated = await synthesizeProceduralWav({
-      root: project.root,
-      name,
-      preset,
-      ...(durationSeconds === undefined ? {} : { durationSeconds }),
-      ...(seed === undefined ? {} : { seed }),
-    });
-    const asset = await this.#options.assetStore.registerExisting({
-      projectId: project.id,
-      root: project.root,
-      relativePath: generated.relativePath,
-      name,
-      source: 'procedural',
-      provider: 'noobi-procedural-audio',
-      metadata: {
-        preset: generated.preset,
-        durationSeconds: generated.durationSeconds,
-        sampleRate: generated.sampleRate,
-        seed: generated.seed,
-        channels: 1,
-        bitDepth: 16,
-      },
-    });
-    await this.#notify(project);
-    return { asset: publicAsset(asset) };
+    let plan = planId
+      ? await this.#assertPlanKind(project, planId, 'audio')
+      : await this.#preparePlan(project, {
+          id: automaticPlanId('audio', name),
+          projectId: project.id,
+          name,
+          kind: 'audio',
+          prompt: `Procedural ${preset} game sound`,
+          options: {
+            preset,
+            ...(durationSeconds === undefined ? {} : { durationSeconds }),
+            ...(seed === undefined ? {} : { seed }),
+          },
+        });
+    let began = false;
+    try {
+      if (plan) {
+        plan = await this.#beginPlan(project, plan.id, 'procedural-audio');
+        began = true;
+      }
+      const generated = await synthesizeProceduralWav({
+        root: project.root,
+        name,
+        preset,
+        ...(durationSeconds === undefined ? {} : { durationSeconds }),
+        ...(seed === undefined ? {} : { seed }),
+      });
+      const asset = await this.#options.assetStore.registerExisting({
+        projectId: project.id,
+        root: project.root,
+        relativePath: generated.relativePath,
+        name,
+        source: 'procedural',
+        provider: 'noobi-procedural-audio',
+        metadata: {
+          preset: generated.preset,
+          durationSeconds: generated.durationSeconds,
+          sampleRate: generated.sampleRate,
+          seed: generated.seed,
+          channels: 1,
+          bitDepth: 16,
+        },
+      });
+      await this.#notify(project);
+      if (plan) plan = await this.#recordGeneratedPlan(project, plan.id, asset, 'procedural-audio');
+      return {
+        asset: publicAsset(asset),
+        ...(plan ? { plan: publicAssetPlan(plan) } : {}),
+      };
+    } catch (error) {
+      if (began && plan) await this.#recordFailedPlan(project, plan.id, error);
+      throw error;
+    }
   }
 
   async #generate(
@@ -307,65 +453,146 @@ export class MediaToolBroker {
     kind: GameAssetKind,
     rawArguments: JsonValue,
   ): Promise<unknown> {
-    if (!this.#options.generationService) throw new ToolInputError('Media API generation is not configured');
     const args = objectArguments(rawArguments);
-    const allowed = kind === 'image'
-      ? ['name', 'prompt', 'model', 'width', 'height', 'quality', 'background']
-      : kind === 'audio'
-        ? ['name', 'prompt', 'model', 'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format']
-        : ['name', 'prompt', 'model', 'animation', 'textureResolution'];
+    const allowed = ['planId', ...generationArgumentKeys(kind)];
     assertOnlyKeys(args, allowed);
+    const explicitPlanId = optionalPlanId(args.planId);
     const name = requiredGenerationName(args.name);
-    const prompt = requiredString(args.prompt, 'prompt', 4_000);
+    const prompt = requiredMultilineString(args.prompt, 'prompt', 4_000);
     const model = optionalString(args.model, 'model', 200);
-    const options: Record<string, string | number | boolean> = {};
-    if (kind === 'image') {
-      const width = optionalInteger(args.width, 'width', 256, 4_096);
-      const height = optionalInteger(args.height, 'height', 256, 4_096);
-      const quality = optionalEnum(args.quality, 'quality', ['low', 'medium', 'high', 'auto']);
-      const background = optionalEnum(args.background, 'background', ['transparent', 'opaque', 'auto']);
-      if ((width === undefined) !== (height === undefined)) {
-        throw new ToolInputError('width and height must be provided together');
-      }
-      if (width !== undefined) options.width = width;
-      if (height !== undefined) options.height = height;
-      if (quality) options.quality = quality;
-      if (background) options.background = background;
-    } else if (kind === 'audio') {
-      const purpose = optionalEnum(args.purpose, 'purpose', AUDIO_PURPOSES);
-      if (!purpose) throw new ToolInputError('purpose is required for audio generation');
-      const instrumental = optionalBoolean(args.instrumental, 'instrumental');
-      const lyrics = optionalMultilineString(args.lyrics, 'lyrics', 3_500);
-      const durationSeconds = optionalNumber(args.durationSeconds, 'durationSeconds', 0.05, 600);
-      const voice = optionalString(args.voice, 'voice', 100);
-      const format = optionalEnum(args.format, 'format', ['wav', 'mp3', 'ogg']);
-      options.purpose = purpose;
-      if (instrumental !== undefined) options.instrumental = instrumental;
-      if (lyrics) options.lyrics = lyrics;
-      if (durationSeconds !== undefined) options.durationSeconds = durationSeconds;
-      if (voice) options.voice = voice;
-      if (format) options.format = format;
-    } else {
-      const animation = optionalBoolean(args.animation, 'animation');
-      const textureResolution = optionalInteger(args.textureResolution, 'textureResolution', 256, 8_192);
-      if (animation !== undefined) options.animation = animation;
-      if (textureResolution !== undefined) options.textureResolution = textureResolution;
+    const options = generationOptions(args, kind, true);
+    if (explicitPlanId && this.#options.assetPlanStore) {
+      await this.#assertPlanKind(project, explicitPlanId, kind);
     }
-    const result = await this.#options.generationService.generate({
-      project,
-      kind,
+    let plan = await this.#preparePlan(project, {
+      id: explicitPlanId ?? automaticPlanId(kind, name),
+      projectId: project.id,
       name,
+      kind,
       prompt,
       ...(model ? { model } : {}),
       ...(Object.keys(options).length ? { options } : {}),
     });
-    if (result.outcome === 'asset') {
-      if (this.#options.onGeneratedAsset) {
-        await this.#options.onGeneratedAsset(project.id, result.asset, result.provider);
+    let began = false;
+    try {
+      if (plan) {
+        plan = await this.#beginPlan(project, plan.id);
+        began = true;
       }
-      await this.#notify(project);
+      if (!this.#options.generationService) throw new ToolInputError('Media API generation is not configured');
+      const result = await this.#options.generationService.generate({
+        project,
+        kind,
+        name,
+        prompt,
+        ...(model ? { model } : {}),
+        ...(Object.keys(options).length ? { options } : {}),
+      });
+      if (result.outcome === 'asset') {
+        if (this.#options.onGeneratedAsset) {
+          await this.#options.onGeneratedAsset(project.id, result.asset, result.provider);
+        }
+        await this.#notify(project);
+        if (plan) {
+          const route: AssetPlanRoute = result.provider.route === 'threejs-fallback'
+            ? 'threejs-fallback'
+            : 'configured-api';
+          plan = await this.#recordGeneratedPlan(project, plan.id, result.asset, route);
+        }
+      } else if (plan) {
+        const route: AssetPlanRoute = result.fallback === 'codex-imagegen'
+          ? 'codex-imagegen'
+          : result.fallback === 'procedural-audio'
+            ? 'procedural-audio'
+            : 'workspace-agent';
+        plan = await this.#recordWaitingPlan(project, plan.id, route);
+      }
+      return publicGenerationResult(result, plan);
+    } catch (error) {
+      if (began && plan) await this.#recordFailedPlan(project, plan.id, error);
+      throw error;
     }
-    return publicGenerationResult(result);
+  }
+
+  #requireAssetPlanStore(): NonNullable<MediaToolBrokerOptions['assetPlanStore']> {
+    if (!this.#options.assetPlanStore) throw new ToolInputError('Asset plan tracking is unavailable');
+    return this.#options.assetPlanStore;
+  }
+
+  async #preparePlan(
+    project: MediaToolProject,
+    input: AssetPlanUpsertInput,
+  ): Promise<AssetPlanRecord | undefined> {
+    if (!this.#options.assetPlanStore) return undefined;
+    const plan = await this.#options.assetPlanStore.upsert(input);
+    await this.#notifyPlans(project.id);
+    return plan;
+  }
+
+  async #assertPlanKind(
+    project: MediaToolProject,
+    planId: string,
+    expectedKind: GameAssetKind | null | undefined,
+  ): Promise<AssetPlanRecord> {
+    const plan = await this.#requireAssetPlanStore().get(project.id, planId);
+    if (expectedKind && plan.kind !== expectedKind) {
+      throw new ToolInputError(`Asset plan kind is ${plan.kind}, not ${expectedKind}`);
+    }
+    return plan;
+  }
+
+  async #beginPlan(
+    project: MediaToolProject,
+    planId: string,
+    route?: AssetPlanRoute,
+  ): Promise<AssetPlanRecord> {
+    const plan = await this.#requireAssetPlanStore().begin(project.id, planId, route);
+    await this.#notifyPlans(project.id);
+    return plan;
+  }
+
+  async #recordWaitingPlan(
+    project: MediaToolProject,
+    planId: string,
+    route: AssetPlanRoute,
+  ): Promise<AssetPlanRecord> {
+    const plan = await this.#requireAssetPlanStore().waitForAgent(project.id, planId, route);
+    await this.#notifyPlans(project.id);
+    return plan;
+  }
+
+  async #recordGeneratedPlan(
+    project: MediaToolProject,
+    planId: string,
+    asset: GameAssetRecord,
+    route: AssetPlanRoute,
+  ): Promise<AssetPlanRecord> {
+    const plan = await this.#requireAssetPlanStore().generated(project.id, planId, asset, route);
+    await this.#notifyPlans(project.id);
+    return plan;
+  }
+
+  async #recordFailedPlan(project: MediaToolProject, planId: string, error: unknown): Promise<void> {
+    try {
+      await this.#requireAssetPlanStore().fail(project.id, planId, {
+        code: error instanceof ToolInputError ? 'generation-input-invalid' : 'media-generation-failed',
+        message: safeError(error, project.root),
+        retryable: !(error instanceof ToolInputError),
+      });
+      await this.#notifyPlans(project.id);
+    } catch {
+      // The original media failure remains authoritative; never replace it with a telemetry failure.
+    }
+  }
+
+  async #notifyPlans(projectId: string): Promise<void> {
+    if (!this.#options.assetPlanStore || !this.#options.onAssetPlansChanged) return;
+    try {
+      const plans = await this.#options.assetPlanStore.list(projectId);
+      await this.#options.onAssetPlansChanged(projectId, plans);
+    } catch {
+      // UI refresh is best-effort and must not turn a completed plan mutation into a failure.
+    }
   }
 
   async #notify(project: MediaToolProject): Promise<void> {
@@ -431,11 +658,70 @@ function assertOnlyKeys(record: Record<string, JsonValue>, allowed: readonly str
   }
 }
 
+function generationArgumentKeys(kind: GameAssetKind): readonly string[] {
+  if (kind === 'image') return ['name', 'prompt', 'model', 'width', 'height', 'quality', 'background'];
+  if (kind === 'audio') {
+    return ['name', 'prompt', 'model', 'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format'];
+  }
+  return ['name', 'prompt', 'model', 'animation', 'textureResolution'];
+}
+
+function generationOptions(
+  args: Record<string, JsonValue>,
+  kind: GameAssetKind,
+  requireAudioPurpose: boolean,
+): Record<string, string | number | boolean> {
+  const options: Record<string, string | number | boolean> = {};
+  if (kind === 'image') {
+    const width = optionalInteger(args.width, 'width', 256, 4_096);
+    const height = optionalInteger(args.height, 'height', 256, 4_096);
+    const quality = optionalEnum(args.quality, 'quality', ['low', 'medium', 'high', 'auto']);
+    const background = optionalEnum(args.background, 'background', ['transparent', 'opaque', 'auto']);
+    if ((width === undefined) !== (height === undefined)) {
+      throw new ToolInputError('width and height must be provided together');
+    }
+    if (width !== undefined) options.width = width;
+    if (height !== undefined) options.height = height;
+    if (quality) options.quality = quality;
+    if (background) options.background = background;
+    return options;
+  }
+  if (kind === 'audio') {
+    const purpose = optionalEnum(args.purpose, 'purpose', AUDIO_PURPOSES);
+    if (requireAudioPurpose && !purpose) throw new ToolInputError('purpose is required for audio generation');
+    const instrumental = optionalBoolean(args.instrumental, 'instrumental');
+    const lyrics = optionalMultilineString(args.lyrics, 'lyrics', 3_500);
+    const durationSeconds = optionalNumber(args.durationSeconds, 'durationSeconds', 0.05, 600);
+    const voice = optionalString(args.voice, 'voice', 100);
+    const format = optionalEnum(args.format, 'format', ['wav', 'mp3', 'ogg']);
+    if (purpose) options.purpose = purpose;
+    if (instrumental !== undefined) options.instrumental = instrumental;
+    if (lyrics) options.lyrics = lyrics;
+    if (durationSeconds !== undefined) options.durationSeconds = durationSeconds;
+    if (voice) options.voice = voice;
+    if (format) options.format = format;
+    return options;
+  }
+  const animation = optionalBoolean(args.animation, 'animation');
+  const textureResolution = optionalInteger(args.textureResolution, 'textureResolution', 256, 8_192);
+  if (animation !== undefined) options.animation = animation;
+  if (textureResolution !== undefined) options.textureResolution = textureResolution;
+  return options;
+}
+
 function requiredString(value: JsonValue | undefined, field: string, maxLength: number): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > maxLength || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new ToolInputError(`${field} must be a non-empty string no longer than ${maxLength} characters`);
   }
   return value;
+}
+
+function requiredMultilineString(value: JsonValue | undefined, field: string, maxLength: number): string {
+  const output = optionalMultilineString(value, field, maxLength);
+  if (output === undefined) {
+    throw new ToolInputError(`${field} must be non-empty text no longer than ${maxLength} characters`);
+  }
+  return output;
 }
 
 function optionalString(value: JsonValue | undefined, field: string, maxLength: number): string | undefined {
@@ -511,6 +797,40 @@ function optionalKind(value: JsonValue | undefined): GameAssetKind | undefined {
   return value as GameAssetKind;
 }
 
+function requiredKind(value: JsonValue | undefined): GameAssetKind {
+  const kind = optionalKind(value);
+  if (!kind) throw new ToolInputError('kind is required and must be image, audio, or model3d');
+  return kind;
+}
+
+function optionalPlanId(value: JsonValue | undefined): string | undefined {
+  const planId = optionalString(value, 'planId', 96);
+  if (planId && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(planId)) {
+    throw new ToolInputError('planId must use 1-96 letters, numbers, underscores, or hyphens');
+  }
+  return planId;
+}
+
+function automaticPlanId(kind: GameAssetKind, name: string): string {
+  const slug = name.toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, '-')
+    .replace(/^-+|-+$/gu, '');
+  const hash = stableTextHash(name);
+  if (!slug) return `${kind}-asset-${hash}`;
+  const prefix = `${kind}-`;
+  if (prefix.length + slug.length <= 96) return `${prefix}${slug}`;
+  return `${prefix}${slug.slice(0, 96 - prefix.length - hash.length - 1)}-${hash}`;
+}
+
+function stableTextHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function requiredPreset(value: JsonValue | undefined): ProceduralAudioPreset {
   if (typeof value !== 'string' || !PROCEDURAL_AUDIO_PRESETS.includes(value as ProceduralAudioPreset)) {
     throw new ToolInputError(`preset must be one of: ${PROCEDURAL_AUDIO_PRESETS.join(', ')}`);
@@ -534,14 +854,93 @@ function publicAsset(asset: GameAssetRecord): Record<string, unknown> {
     relativePath: asset.relativePath,
     mimeType: asset.mimeType,
     size: asset.size,
+    ...(asset.metadata ? { metadata: asset.metadata } : {}),
   };
 }
 
-function publicGenerationResult(result: MediaGenerationResult): Record<string, unknown> {
+function publicAssetPlan(plan: AssetPlanRecord): Record<string, unknown> {
+  return {
+    planId: plan.id,
+    name: plan.name,
+    kind: plan.kind,
+    prompt: plan.prompt,
+    required: plan.required,
+    status: plan.status,
+    attemptCount: plan.attemptCount,
+    ...(plan.model ? { model: plan.model } : {}),
+    ...(plan.options ? { options: plan.options } : {}),
+    ...(plan.relativePath ? { relativePath: plan.relativePath } : {}),
+    ...(plan.referencedBy ? { referencedBy: plan.referencedBy } : {}),
+    ...(plan.route ? { route: plan.route } : {}),
+    ...(plan.error ? { error: plan.error } : {}),
+    createdAt: plan.createdAt,
+    updatedAt: plan.updatedAt,
+  };
+}
+
+function boundedPublicPlans(plans: readonly AssetPlanRecord[]): Array<Record<string, unknown>> {
+  const output: Array<Record<string, unknown>> = [];
+  for (const plan of plans) {
+    const next = [...output, publicAssetPlan(plan)];
+    if (Buffer.byteLength(JSON.stringify({ plans: next }), 'utf8') > MAX_RESPONSE_BYTES - 512) break;
+    output.push(next[next.length - 1]!);
+  }
+  return output;
+}
+
+function visualAssetMetadata(
+  args: Record<string, JsonValue>,
+  kind: GameAssetKind | null | undefined,
+): GameAssetRecord['metadata'] | undefined {
+  const role = optionalEnum(args.role, 'role', VISUAL_ASSET_ROLES);
+  const subjectId = optionalString(args.subjectId, 'subjectId', 80);
+  const atlasColumns = optionalInteger(args.atlasColumns, 'atlasColumns', 1, 64);
+  const atlasRows = optionalInteger(args.atlasRows, 'atlasRows', 1, 64);
+  const subjectsText = optionalString(args.subjects, 'subjects', 1_000);
+  const hasClassification = role || subjectId || atlasColumns || atlasRows || subjectsText;
+  if (!hasClassification) return undefined;
+  if (kind !== 'image') throw new ToolInputError('Visual role metadata is supported only for image assets');
+  if (!role) throw new ToolInputError('role is required when visual classification metadata is supplied');
+  if (subjectId && !/^[\p{L}\p{N}][\p{L}\p{N}_-]{0,79}$/u.test(subjectId)) {
+    throw new ToolInputError('subjectId must use letters, numbers, underscores, or hyphens');
+  }
+  const subjects = subjectsText
+    ? subjectsText.split(',').map((value) => value.trim()).filter(Boolean)
+    : [];
+  if (subjects.some((value) => !/^[\p{L}\p{N}][\p{L}\p{N}_-]{0,79}$/u.test(value))) {
+    throw new ToolInputError('subjects must be comma-separated stable IDs');
+  }
+  if (new Set(subjects).size !== subjects.length || subjects.length > 64) {
+    throw new ToolInputError('subjects must contain between 1 and 64 unique stable IDs');
+  }
+  if (role === 'card-art-atlas') {
+    if (!atlasColumns || !atlasRows || subjects.length < 4) {
+      throw new ToolInputError('card-art-atlas requires atlasColumns, atlasRows, and at least four subjects');
+    }
+    if (atlasColumns * atlasRows < subjects.length) {
+      throw new ToolInputError('card-art-atlas grid does not contain enough regions for subjects');
+    }
+  } else if (atlasColumns || atlasRows || subjects.length > 0) {
+    throw new ToolInputError('atlasColumns, atlasRows, and subjects require role=card-art-atlas');
+  }
+  return {
+    role,
+    ...(subjectId ? { subjectId } : {}),
+    ...(atlasColumns ? { columns: atlasColumns } : {}),
+    ...(atlasRows ? { rows: atlasRows } : {}),
+    ...(subjects.length > 0 ? { subjects: subjects.join(',') } : {}),
+  };
+}
+
+function publicGenerationResult(
+  result: MediaGenerationResult,
+  plan?: AssetPlanRecord,
+): Record<string, unknown> {
   if (result.outcome === 'asset') {
     return {
       asset: publicAsset(result.asset),
       provider: result.provider,
+      ...(plan ? { plan: publicAssetPlan(plan) } : {}),
     };
   }
   return {
@@ -549,12 +948,14 @@ function publicGenerationResult(result: MediaGenerationResult): Record<string, u
       type: result.fallback,
       reason: result.reason,
       prompt: result.prompt,
+      ...(plan ? { planId: plan.id } : {}),
       ...(result.fallback === 'codex-imagegen'
-        ? { instruction: 'Invoke the Codex $imagegen skill now, then register the generated image with Noobi.ai.' }
+        ? { instruction: `Invoke the Codex $imagegen skill now, then register the generated image with Noobi.ai${plan ? ` using planId=${plan.id}` : ''}.` }
         : result.fallback === 'procedural-audio'
-          ? { instruction: 'Use noobi_audio_synthesize for a short deterministic effect, deterministic Web Audio for a custom/ambient fallback, or import a licensed WAV/MP3/OGG. Do not claim MiniMax generated generic SFX or ambience.' }
-          : { instruction: 'Configure a 3D generation provider or create and register a validated GLB in the workspace.' }),
+          ? { instruction: `Use noobi_audio_synthesize${plan ? ` with planId=${plan.id}` : ''} for a short deterministic effect, deterministic Web Audio for a custom/ambient fallback, or import a licensed WAV/MP3/OGG. Do not claim MiniMax generated generic SFX or ambience.` }
+          : { instruction: 'Call noobi_model3d_generate again. It automatically routes to a configured 3D API or the built-in Three.js GLB exporter.' }),
     },
+    ...(plan ? { plan: publicAssetPlan(plan) } : {}),
   };
 }
 

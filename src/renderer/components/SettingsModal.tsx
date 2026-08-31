@@ -2,6 +2,7 @@ import {
   Boxes,
   Cable,
   CheckCircle2,
+  Cpu,
   ExternalLink,
   FileCode2,
   FileText,
@@ -10,6 +11,7 @@ import {
   LogIn,
   LogOut,
   Monitor,
+  Palette,
   RefreshCw,
   Save,
   Settings2,
@@ -23,8 +25,15 @@ import type {
   LoginStartResult,
   RuntimeStatus,
 } from '../../shared/contracts';
+import {
+  DEFAULT_NOOBI_CREW,
+  DEFAULT_NOOBI_SCENE_ID,
+} from '../../shared/contracts';
 import { runtimeLabel, toMessage } from '../ui';
 import { Modal } from './Modal';
+import { EnvironmentSettings } from './EnvironmentSettings';
+import { NoobiCrewPicker } from './NoobiCrewPicker';
+import { NoobiScenePicker } from './NoobiScenePicker';
 import {
   McpSettings,
   MediaApiSettings,
@@ -33,20 +42,23 @@ import {
   useExtensionSettings,
 } from './SettingsExtensions';
 
+export type SettingsSection = 'account' | 'environment' | 'media' | 'defaults' | 'noobi' | 'skills' | 'mcp' | 'prompts' | 'appearance';
+
 interface SettingsModalProps {
   value: AppSettings;
   runtime: RuntimeStatus;
+  initialSection?: SettingsSection;
   onClose: () => void;
   onSaved: (settings: AppSettings) => void;
   onRuntime: (runtime: RuntimeStatus) => void;
 }
 
-type SettingsSection = 'account' | 'media' | 'defaults' | 'skills' | 'mcp' | 'prompts' | 'appearance';
-
 const SECTIONS = [
   { id: 'account', label: 'Codex 账户', detail: '登录与运行时', icon: KeyRound },
+  { id: 'environment', label: '环境管理', detail: 'Node、Codex、Godot', icon: Cpu },
   { id: 'media', label: '媒体 API', detail: '图像、音频、3D', icon: Boxes },
   { id: 'defaults', label: '项目默认值', detail: '目录、模型、推理', icon: Settings2 },
+  { id: 'noobi', label: 'Noobi 工坊', detail: '伙伴形象与场景', icon: Palette },
   { id: 'skills', label: 'Skills', detail: 'Agent 专业能力', icon: FileCode2 },
   { id: 'mcp', label: 'MCP Servers', detail: '工具与数据连接', icon: Cable },
   { id: 'prompts', label: '提示词', detail: '分角色模板', icon: FileText },
@@ -56,11 +68,12 @@ const SECTIONS = [
 export function SettingsModal({
   value,
   runtime,
+  initialSection = 'account',
   onClose,
   onSaved,
   onRuntime,
 }: SettingsModalProps) {
-  const [section, setSection] = useState<SettingsSection>('account');
+  const [section, setSection] = useState<SettingsSection>(initialSection);
   const [draft, setDraft] = useState(value);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -167,7 +180,7 @@ export function SettingsModal({
       footer={
         <>
           <span className="settings-feedback" role="status">{message}</span>
-          {section === 'defaults' || section === 'appearance' ? (
+          {section === 'defaults' || section === 'noobi' || section === 'appearance' ? (
             <button className="primary-button" type="button" disabled={busy} onClick={() => void save()}>
               <Save size={15} /> {busy ? '保存中…' : '保存设置'}
             </button>
@@ -209,6 +222,8 @@ export function SettingsModal({
               onLogout={() => void logout()}
             />
           ) : null}
+
+          {section === 'environment' ? <EnvironmentSettings onMessage={setMessage} /> : null}
 
           {section === 'media' ? <MediaApiSettings controller={extensions} /> : null}
 
@@ -263,6 +278,33 @@ export function SettingsModal({
                   </select>
                 </label>
               </div>
+            </section>
+          ) : null}
+
+          {section === 'noobi' ? (
+            <section>
+              <SettingsHeading
+                eyebrow="NOOBI WORKSHOP"
+                title="组建你的 Noobi 制作编队"
+                description="从不同伙伴中选择 2–4 位，并为策划、美术、工程与测试分配清晰岗位。"
+              />
+              <NoobiCrewPicker
+                value={draft.defaultNoobiCrew ?? DEFAULT_NOOBI_CREW}
+                busy={busy}
+                onChange={(defaultNoobiCrew) => {
+                  setDraft((current) => ({ ...current, defaultNoobiCrew }));
+                }}
+              />
+              <NoobiScenePicker
+                value={draft.defaultNoobiSceneId ?? DEFAULT_NOOBI_SCENE_ID}
+                busy={busy}
+                onChange={(defaultNoobiSceneId) => {
+                  setDraft((current) => ({ ...current, defaultNoobiSceneId }));
+                }}
+              />
+              <p className="noobi-pack-settings-note">
+                协作工坊会让当前编队按照岗位进入工位；荷塘钓鱼是包含四位角色的完整动态演出，因此不会额外叠加编队角色。已有项目仍可在制作预览右上角建立自己的编队。
+              </p>
             </section>
           ) : null}
 

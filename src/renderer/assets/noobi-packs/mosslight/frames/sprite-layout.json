@@ -1,0 +1,355 @@
+{
+  "schemaVersion": 2,
+  "scaleMode": "pack-base-with-pose-a-canonical",
+  "packBaseScale": 0.9884169884169884,
+  "canvas": {
+    "width": 252,
+    "height": 336,
+    "pivot": {
+      "x": 126,
+      "y": 320
+    }
+  },
+  "frames": {
+    "idle-a": {
+      "file": "sprite-idle-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 17,
+        "minY": 273,
+        "maxX": 212,
+        "maxY": 530
+      },
+      "normalizedPrimarySize": {
+        "width": 193.72972972972974,
+        "height": 255.011583011583
+      },
+      "droppedComponentCount": 0
+    },
+    "walk-a-a": {
+      "file": "sprite-walk-a-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 20,
+        "minY": 270,
+        "maxX": 217,
+        "maxY": 524
+      },
+      "normalizedPrimarySize": {
+        "width": 195.7065637065637,
+        "height": 252.04633204633205
+      },
+      "droppedComponentCount": 0
+    },
+    "walk-b-a": {
+      "file": "sprite-walk-b-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 16,
+        "minY": 274,
+        "maxX": 199,
+        "maxY": 532
+      },
+      "normalizedPrimarySize": {
+        "width": 181.86872586872587,
+        "height": 256
+      },
+      "droppedComponentCount": 1
+    },
+    "work-a": {
+      "file": "sprite-work-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 284,
+        "maxX": 204,
+        "maxY": 530
+      },
+      "normalizedPrimarySize": {
+        "width": 202.62548262548262,
+        "height": 244.13899613899613
+      },
+      "droppedComponentCount": 0
+    },
+    "paint-a": {
+      "file": "sprite-paint-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 280,
+        "maxX": 227,
+        "maxY": 530
+      },
+      "normalizedPrimarySize": {
+        "width": 225.35907335907336,
+        "height": 248.0926640926641
+      },
+      "droppedComponentCount": 0
+    },
+    "repair-a": {
+      "file": "sprite-repair-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 25,
+        "minY": 52,
+        "maxX": 242,
+        "maxY": 306
+      },
+      "normalizedPrimarySize": {
+        "width": 215.47490347490347,
+        "height": 252.04633204633205
+      },
+      "droppedComponentCount": 0
+    },
+    "carry-a": {
+      "file": "sprite-carry-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 17,
+        "minY": 54,
+        "maxX": 220,
+        "maxY": 306
+      },
+      "normalizedPrimarySize": {
+        "width": 201.63706563706563,
+        "height": 250.06949806949808
+      },
+      "droppedComponentCount": 0
+    },
+    "play-a": {
+      "file": "sprite-play-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 5,
+        "minY": 56,
+        "maxX": 188,
+        "maxY": 304
+      },
+      "normalizedPrimarySize": {
+        "width": 181.86872586872587,
+        "height": 246.11583011583014
+      },
+      "droppedComponentCount": 1
+    },
+    "sleep-a": {
+      "file": "sprite-sleep-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 153,
+        "maxX": 208,
+        "maxY": 304
+      },
+      "normalizedPrimarySize": {
+        "width": 206.5791505791506,
+        "height": 150.23938223938225
+      },
+      "droppedComponentCount": 1
+    },
+    "celebrate-a": {
+      "file": "sprite-celebrate-a.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 55,
+        "maxX": 208,
+        "maxY": 305
+      },
+      "normalizedPrimarySize": {
+        "width": 206.5791505791506,
+        "height": 248.0926640926641
+      },
+      "droppedComponentCount": 0
+    },
+    "idle-b": {
+      "file": "sprite-idle-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 17,
+        "minY": 273,
+        "maxX": 211,
+        "maxY": 530
+      },
+      "normalizedPrimarySize": {
+        "width": 192.74131274131275,
+        "height": 255.011583011583
+      },
+      "droppedComponentCount": 0
+    },
+    "walk-a-b": {
+      "file": "sprite-walk-a-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1.007905138339921,
+      "sourceScale": 0.9962305614479527,
+      "primarySourceBounds": {
+        "minX": 14,
+        "minY": 269,
+        "maxX": 211,
+        "maxY": 521
+      },
+      "normalizedPrimarySize": {
+        "width": 197.25365116669465,
+        "height": 252.04633204633205
+      },
+      "droppedComponentCount": 0
+    },
+    "walk-b-b": {
+      "file": "sprite-walk-b-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1.01171875,
+      "sourceScale": 1,
+      "primarySourceBounds": {
+        "minX": 7,
+        "minY": 273,
+        "maxX": 193,
+        "maxY": 528
+      },
+      "normalizedPrimarySize": {
+        "width": 187,
+        "height": 256
+      },
+      "droppedComponentCount": 1
+    },
+    "work-b": {
+      "file": "sprite-work-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 284,
+        "maxX": 203,
+        "maxY": 530
+      },
+      "normalizedPrimarySize": {
+        "width": 201.63706563706563,
+        "height": 244.13899613899613
+      },
+      "droppedComponentCount": 1
+    },
+    "paint-b": {
+      "file": "sprite-paint-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 0.996031746031746,
+      "sourceScale": 0.9844946987804131,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 280,
+        "maxX": 226,
+        "maxY": 531
+      },
+      "normalizedPrimarySize": {
+        "width": 223.48029662315378,
+        "height": 248.09266409266408
+      },
+      "droppedComponentCount": 0
+    },
+    "repair-b": {
+      "file": "sprite-repair-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1.0039370078740157,
+      "sourceScale": 0.992308393883197,
+      "primarySourceBounds": {
+        "minX": 25,
+        "minY": 53,
+        "maxX": 242,
+        "maxY": 306
+      },
+      "normalizedPrimarySize": {
+        "width": 216.32322986653696,
+        "height": 252.04633204633205
+      },
+      "droppedComponentCount": 0
+    },
+    "carry-b": {
+      "file": "sprite-carry-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 0.9921568627450981,
+      "sourceScale": 0.9806646983117572,
+      "primarySourceBounds": {
+        "minX": 12,
+        "minY": 52,
+        "maxX": 219,
+        "maxY": 306
+      },
+      "normalizedPrimarySize": {
+        "width": 203.9782572488455,
+        "height": 250.06949806949808
+      },
+      "droppedComponentCount": 0
+    },
+    "play-b": {
+      "file": "sprite-play-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 5,
+        "minY": 56,
+        "maxX": 187,
+        "maxY": 304
+      },
+      "normalizedPrimarySize": {
+        "width": 180.8803088803089,
+        "height": 246.11583011583014
+      },
+      "droppedComponentCount": 1
+    },
+    "sleep-b": {
+      "file": "sprite-sleep-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1,
+      "sourceScale": 0.9884169884169884,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 153,
+        "maxX": 207,
+        "maxY": 304
+      },
+      "normalizedPrimarySize": {
+        "width": 205.5907335907336,
+        "height": 150.23938223938225
+      },
+      "droppedComponentCount": 1
+    },
+    "celebrate-b": {
+      "file": "sprite-celebrate-b.png",
+      "packBaseScale": 0.9884169884169884,
+      "poseScale": 1.004,
+      "sourceScale": 0.9923706563706564,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 56,
+        "maxX": 199,
+        "maxY": 305
+      },
+      "normalizedPrimarySize": {
+        "width": 198.47413127413128,
+        "height": 248.09266409266408
+      },
+      "droppedComponentCount": 0
+    }
+  }
+}

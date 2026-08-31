@@ -100,7 +100,7 @@ export function notificationToEvent(
     kind,
     title,
     message: clip(message),
-    stage: inferStage(`${title}\n${message}`, currentStage),
+    stage: stageForNotification(notification, route, currentStage),
     timestamp: new Date().toISOString(),
     method,
     ...(itemId ? { itemId } : {}),
@@ -110,15 +110,135 @@ export function notificationToEvent(
 
 export function inferStage(value: string, fallback: PipelineStage): PipelineStage {
   const normalized = value.toLowerCase();
-  if (/\b(test|verify|build|lint|检查|测试|验证|构建)\b/u.test(normalized)) return 'verify';
-  if (/\b(asset|sprite|texture|audio|素材|贴图|音频)\b/u.test(normalized)) return 'assets';
-  if (/\b(level|scene|map|world|关卡|场景|地图)\b/u.test(normalized)) return 'world';
-  if (/\b(gdd|game design|玩法|规则|核心循环)\b/u.test(normalized)) return 'gdd';
-  if (/\b(scaffold|package\.json|脚手架|工程骨架)\b/u.test(normalized)) return 'scaffold';
-  if (/\b(code|implement|typescript|javascript|css|代码|实现)\b/u.test(normalized)) return 'code';
-  if (/\b(complete|delivered|完成|交付)\b/u.test(normalized)) return 'complete';
-  if (/\b(brief|requirement|需求|创意)\b/u.test(normalized)) return 'brief';
+  if (/\b(?:test|verify|build|lint)\b/u.test(normalized) || /检查|测试|验证|构建/u.test(normalized)) return 'verify';
+  if (/\b(?:asset|sprite|texture|audio)\b/u.test(normalized) || /素材|贴图|音频/u.test(normalized)) return 'assets';
+  if (/\b(?:level|scene|map|world)\b/u.test(normalized) || /关卡|场景|地图/u.test(normalized)) return 'world';
+  if (/\b(?:gdd|game design)\b/u.test(normalized) || /玩法|规则|核心循环/u.test(normalized)) return 'gdd';
+  if (/\b(?:scaffold|package\.json)\b/u.test(normalized) || /脚手架|工程骨架/u.test(normalized)) return 'scaffold';
+  if (/\b(?:code|implement|typescript|javascript|css)\b/u.test(normalized) || /代码|实现/u.test(normalized)) return 'code';
+  if (/\b(?:complete|delivered)\b/u.test(normalized) || /完成|交付/u.test(normalized)) return 'complete';
+  if (/\b(?:brief|requirement)\b/u.test(normalized) || /需求|创意/u.test(normalized)) return 'brief';
   return fallback;
+}
+
+/**
+ * Resolve the visible production station from structured App Server facts.
+ * Free-form assistant/reasoning/output deltas deliberately preserve the
+ * current station: a single token such as "test" must never teleport Noobi.
+ */
+export function stageForNotification(
+  notification: { method: string; params?: unknown },
+  route: ThreadRoute,
+  currentStage: PipelineStage,
+): PipelineStage {
+  if (route.role === 'planner') return 'brief';
+  if (route.role === 'reviewer') return 'verify';
+
+  const params = asRecord(notification.params) ?? {};
+  const item = asRecord(params.item);
+  const itemType = readString(item?.type);
+
+  if (itemType === 'imageGeneration') return 'assets';
+
+  if (itemType === 'dynamicToolCall' || itemType === 'mcpToolCall') {
+    const tool = cleanToolName(readString(item?.tool)).toLowerCase();
+    return isMediaTool(tool) ? 'assets' : currentStage;
+  }
+
+  if (itemType === 'fileChange') {
+    const paths = collectStructuredPaths(item?.changes ?? item);
+    return inferFileStage(paths, currentStage);
+  }
+
+  if (notification.method === 'item/fileChange/patchUpdated') {
+    const patch = readString(params.patch) ?? readString(params.diff) ?? '';
+    return inferFileStage(
+      [...collectStructuredPaths(params), ...extractPatchPaths(patch)],
+      currentStage,
+    );
+  }
+
+  if (itemType === 'commandExecution'
+    && (notification.method === 'item/started' || notification.method === 'item/completed')) {
+    return inferCommandStage(readString(item?.command) ?? '', currentStage);
+  }
+
+  return currentStage;
+}
+
+function inferFileStage(paths: readonly string[], fallback: PipelineStage): PipelineStage {
+  if (paths.length === 0) return fallback;
+  const normalized = paths.map((path) => path.toLowerCase());
+  const includes = (pattern: RegExp) => normalized.some((path) => pattern.test(path));
+  if (includes(/(?:^|[/_.-])(?:test|tests|spec|specs|playtest|verification)(?:[/_.-]|$)/u)) {
+    return 'verify';
+  }
+  if (includes(/(?:^|[/_.-])(?:gdd|game[_ -]?design|design[_ -]?doc)(?:[/_.-]|$)|game_design\.md/u)) {
+    return 'gdd';
+  }
+  if (includes(/(?:^|[/_.-])(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig(?:\.[^/]+)?\.json|vite\.config|webpack\.config|project\.godot|scaffold)(?:[/_.-]|$)/u)) {
+    return 'scaffold';
+  }
+  if (includes(/(?:^|\/)(?:assets?|images?|sprites?|textures?|audio|music|sounds?|models?)(?:\/|$)|\.(?:png|jpe?g|webp|gif|svg|wav|mp3|ogg|flac|glb|gltf|fbx|obj)$/u)) {
+    return 'assets';
+  }
+  if (includes(/(?:^|[/_.-])(?:world|worlds|level|levels|scene|scenes|map|maps)(?:[/_.-]|$)|\.tscn$/u)) {
+    return 'world';
+  }
+  return 'code';
+}
+
+function inferCommandStage(command: string, fallback: PipelineStage): PipelineStage {
+  const normalized = command.toLowerCase();
+  if (!normalized.trim()) return fallback;
+  if (/\b(?:test|vitest|jest|playwright|lint|typecheck|build|verify|check)\b/u.test(normalized)
+    || /godot[^\n]*(?:--headless|--editor-pid)/u.test(normalized)) {
+    return 'verify';
+  }
+  if (/\b(?:imagegen|image_generation|generate[_ -]?(?:image|audio|music|model)|noobi_(?:image|audio|music|model3d)|blender)\b/u.test(normalized)) {
+    return 'assets';
+  }
+  if (/\b(?:npm|pnpm|yarn)\s+(?:install|init)\b/u.test(normalized)
+    || /\bgodot\s+--editor\b/u.test(normalized)) {
+    return 'scaffold';
+  }
+  return fallback;
+}
+
+function isMediaTool(tool: string): boolean {
+  return /(?:^|[_.-])(?:image|imagegen|audio|music|sound|sfx|model3d|model_3d|mesh)(?:[_.-]|$)/u.test(tool);
+}
+
+function collectStructuredPaths(value: unknown): string[] {
+  const paths: string[] = [];
+  const visit = (candidate: unknown, depth: number): void => {
+    if (depth > 5 || paths.length >= 64) return;
+    if (Array.isArray(candidate)) {
+      for (const entry of candidate) visit(entry, depth + 1);
+      return;
+    }
+    const record = asRecord(candidate);
+    if (!record) return;
+    for (const [key, entry] of Object.entries(record)) {
+      if (typeof entry === 'string'
+        && /^(?:path|file|filePath|relativePath|filename|name)$/iu.test(key)) {
+        paths.push(entry);
+      } else if (entry && typeof entry === 'object') {
+        visit(entry, depth + 1);
+      }
+    }
+  };
+  visit(value, 0);
+  return paths;
+}
+
+function extractPatchPaths(patch: string): string[] {
+  const paths: string[] = [];
+  for (const line of patch.split(/\r?\n/u)) {
+    const match = line.match(/^(?:\+\+\+|---)\s+(?:[ab]\/)?([^\t\n]+?)(?:\t.*)?$/u);
+    if (match?.[1] && match[1] !== '/dev/null') paths.push(match[1]);
+  }
+  return paths;
 }
 
 function describeItem(

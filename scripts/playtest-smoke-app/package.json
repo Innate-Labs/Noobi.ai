@@ -1,0 +1,5 @@
+{
+  "name": "noobi-playtest-smoke",
+  "private": true,
+  "main": "main.cjs"
+}

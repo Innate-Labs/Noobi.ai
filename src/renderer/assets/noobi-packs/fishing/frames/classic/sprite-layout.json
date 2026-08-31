@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 2,
+  "packId": "classic",
+  "source": {
+    "filename": "classic-seated-fishing-sheet.png",
+    "sha256": "ab314aaecf9b16ed4d46ac088c75ea3c880e9c09c5df7a869fd974cb7ad8750f",
+    "width": 1536,
+    "height": 1024,
+    "columns": 2,
+    "frameWidth": 768
+  },
+  "chroma": {
+    "mode": "soft-chroma-alpha",
+    "hueDegrees": {
+      "minimum": 90,
+      "maximum": 150
+    },
+    "minimumSaturation": 0.45,
+    "minimumGreen": 80,
+    "greenDominance": {
+      "opaqueAtOrBelow": 40,
+      "transparentAtOrAbove": 190
+    },
+    "alphaCurve": "1-smoothstep(40,190,D)",
+    "despill": "G=min(G,max(R,B)+20) for 0<alpha<255"
+  },
+  "canvas": {
+    "width": 252,
+    "height": 336,
+    "pivot": {
+      "x": 126,
+      "y": 336
+    },
+    "alignment": "bottom-center",
+    "sourceFitScale": 0.56,
+    "anchorSpace": "normalized-canvas-pixels",
+    "facing": 1
+  },
+  "frames": [
+    {
+      "id": "a",
+      "file": "sprite-fishing-a.png",
+      "sourceBounds": {
+        "left": 178,
+        "top": 221,
+        "right": 569,
+        "bottom": 798,
+        "width": 392,
+        "height": 578
+      },
+      "placement": {
+        "x": 16,
+        "y": 12,
+        "width": 220,
+        "height": 324
+      },
+      "seatAnchor": {
+        "x": 126,
+        "y": 267
+      },
+      "handAnchor": {
+        "x": 154,
+        "y": 221
+      },
+      "sourceAnchors": {
+        "seatAnchor": {
+          "x": 374,
+          "y": 676
+        },
+        "handAnchor": {
+          "x": 424,
+          "y": 594
+        }
+      },
+      "opaquePixels": 47367,
+      "keyedPixels": 637325,
+      "softAlphaPixels": 489,
+      "remainingOpaqueChromaPixels": 0
+    },
+    {
+      "id": "b",
+      "file": "sprite-fishing-b.png",
+      "sourceBounds": {
+        "left": 157,
+        "top": 209,
+        "right": 592,
+        "bottom": 808,
+        "width": 436,
+        "height": 600
+      },
+      "placement": {
+        "x": 4,
+        "y": 0,
+        "width": 244,
+        "height": 336
+      },
+      "seatAnchor": {
+        "x": 126,
+        "y": 267
+      },
+      "handAnchor": {
+        "x": 157,
+        "y": 205
+      },
+      "sourceAnchors": {
+        "seatAnchor": {
+          "x": 375,
+          "y": 686
+        },
+        "handAnchor": {
+          "x": 430,
+          "y": 575
+        }
+      },
+      "opaquePixels": 48222,
+      "keyedPixels": 634274,
+      "softAlphaPixels": 562,
+      "remainingOpaqueChromaPixels": 0
+    }
+  ]
+}

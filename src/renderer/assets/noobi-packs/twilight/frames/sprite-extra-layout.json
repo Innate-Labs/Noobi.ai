@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 2,
+  "scaleMode": "pack-base-with-pose-a-canonical",
+  "sheetMode": "extra-actions",
+  "packBaseScale": 0.8825438027255028,
+  "canvas": {
+    "width": 252,
+    "height": 336,
+    "pivot": {
+      "x": 126,
+      "y": 320
+    }
+  },
+  "frames": {
+    "coffee-a": {
+      "file": "sprite-coffee-a.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 1,
+      "sourceScale": 0.8825438027255028,
+      "primarySourceBounds": {
+        "minX": 17,
+        "minY": 246,
+        "maxX": 262,
+        "maxY": 508
+      },
+      "normalizedPrimarySize": {
+        "width": 217.1057754704737,
+        "height": 232.10902011680724
+      },
+      "droppedComponentCount": 0
+    },
+    "stretch-a": {
+      "file": "sprite-stretch-a.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 1,
+      "sourceScale": 0.8825438027255028,
+      "primarySourceBounds": {
+        "minX": 11,
+        "minY": 276,
+        "maxX": 250,
+        "maxY": 516
+      },
+      "normalizedPrimarySize": {
+        "width": 211.81051265412069,
+        "height": 212.69305645684616
+      },
+      "droppedComponentCount": 0
+    },
+    "type-a": {
+      "file": "sprite-type-a.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 1,
+      "sourceScale": 0.8825438027255028,
+      "primarySourceBounds": {
+        "minX": 15,
+        "minY": 262,
+        "maxX": 271,
+        "maxY": 518
+      },
+      "normalizedPrimarySize": {
+        "width": 226.81375730045423,
+        "height": 226.81375730045423
+      },
+      "droppedComponentCount": 0
+    },
+    "inspect-a": {
+      "file": "sprite-inspect-a.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 1,
+      "sourceScale": 0.8825438027255028,
+      "primarySourceBounds": {
+        "minX": 6,
+        "minY": 261,
+        "maxX": 253,
+        "maxY": 509
+      },
+      "normalizedPrimarySize": {
+        "width": 218.8708630759247,
+        "height": 219.7534068786502
+      },
+      "droppedComponentCount": 1
+    },
+    "sweep-a": {
+      "file": "sprite-sweep-a.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 1,
+      "sourceScale": 0.8825438027255028,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 251,
+        "maxX": 248,
+        "maxY": 526
+      },
+      "normalizedPrimarySize": {
+        "width": 219.7534068786502,
+        "height": 243.58208955223878
+      },
+      "droppedComponentCount": 0
+    },
+    "coffee-b": {
+      "file": "sprite-coffee-b.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 1.0193798449612403,
+      "sourceScale": 0.8996473647938266,
+      "primarySourceBounds": {
+        "minX": 17,
+        "minY": 37,
+        "maxX": 265,
+        "maxY": 294
+      },
+      "normalizedPrimarySize": {
+        "width": 224.01219383366282,
+        "height": 232.10902011680724
+      },
+      "droppedComponentCount": 0
+    },
+    "stretch-b": {
+      "file": "sprite-stretch-b.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 0.9377431906614786,
+      "sourceScale": 0.8275994414663276,
+      "primarySourceBounds": {
+        "minX": 26,
+        "minY": 38,
+        "maxX": 249,
+        "maxY": 294
+      },
+      "normalizedPrimarySize": {
+        "width": 185.38227488845737,
+        "height": 212.6930564568462
+      },
+      "droppedComponentCount": 0
+    },
+    "type-b": {
+      "file": "sprite-type-b.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 1.0118110236220472,
+      "sourceScale": 0.8929675484269851,
+      "primarySourceBounds": {
+        "minX": 7,
+        "minY": 48,
+        "maxX": 261,
+        "maxY": 301
+      },
+      "normalizedPrimarySize": {
+        "width": 227.7067248488812,
+        "height": 226.81375730045423
+      },
+      "droppedComponentCount": 0
+    },
+    "inspect-b": {
+      "file": "sprite-inspect-b.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 0.9764705882352941,
+      "sourceScale": 0.8617780661907851,
+      "primarySourceBounds": {
+        "minX": 3,
+        "minY": 41,
+        "maxX": 265,
+        "maxY": 295
+      },
+      "normalizedPrimarySize": {
+        "width": 226.6476314081765,
+        "height": 219.7534068786502
+      },
+      "droppedComponentCount": 0
+    },
+    "sweep-b": {
+      "file": "sprite-sweep-b.png",
+      "packBaseScale": 0.8825438027255028,
+      "poseScale": 0.9963898916967509,
+      "sourceScale": 0.8793577240153024,
+      "primarySourceBounds": {
+        "minX": 0,
+        "minY": 39,
+        "maxX": 212,
+        "maxY": 315
+      },
+      "normalizedPrimarySize": {
+        "width": 187.30319521525942,
+        "height": 243.58208955223878
+      },
+      "droppedComponentCount": 0
+    }
+  }
+}

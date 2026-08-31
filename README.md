@@ -5,8 +5,8 @@
 <h1 align="center">Noobi.ai</h1>
 
 <p align="center">
-  <strong>Turn one game idea into a reviewed, playable browser game.</strong><br>
-  A local-first desktop production agent powered by Codex App Server.
+  <strong>Turn one game idea into a reviewed, playable Web or Godot game.</strong><br>
+  A local-first desktop production agent powered by Codex App Server and Godot 4.
 </p>
 
 <p align="center">
@@ -26,19 +26,20 @@
 
 ![Noobi.ai production workbench showing the agent pipeline, playable preview, assets and project files](docs/images/noobi-workbench.png)
 
-Noobi.ai gives Codex a bounded game-production pipeline instead of asking one agent to improvise everything in a single pass. A read-only Planner scopes the work, an Implementer builds inside an isolated project directory, an independent Reviewer checks the result, and the host verifies that generated assets are real, intact, and actually used by production code.
+Noobi.ai gives Codex a bounded game-production loop instead of asking one agent to improvise everything in a single pass. A read-only Planner scopes the work, an Implementer builds inside an isolated project directory, an independent Reviewer checks the result, and the host builds and plays the production output before completion. Failed review, build or playtest checks return to the same Implementer for up to three repair rounds.
 
-> **Current status:** developer preview for macOS. No signed or notarized binary is published yet; run it from source. The output is a standalone browser-game project in your own workspace.
+> **Current status:** developer preview for macOS. No signed or notarized binary is published yet; run it from source. The output is a standalone Web or Godot 4 project in your own workspace.
 
 ## Why Noobi.ai
 
 | | What you get |
 | --- | --- |
-| **From prompt to playable** | Start with a natural-language brief, produce a real browser-game workspace, and preview it locally in the same app. |
-| **Review-gated execution** | Planner → Implementer → independent Reviewer → one bounded Repair. A failed proof gate stays blocked instead of being presented as complete. |
-| **Real media pipeline** | Route images, music, speech, sound effects and 3D through configured providers, Codex ImageGen, imported assets or explicit procedural fallbacks. |
+| **From prompt to playable** | Start with a natural-language brief, let the Agent choose Web or Godot 4, and preview a real standalone game workspace locally. |
+| **Review-gated production loop** | Planner → Implementer → Reviewer → formal build → automated playtest. Failed checks trigger up to three bounded repair rounds. |
+| **Automatic experience evaluation** | A sandboxed hidden browser exercises core controls, captures evidence, and checks visible gameplay, animation continuity and runtime errors. |
+| **Real media pipeline** | Route images, music, speech, sound effects and 3D through configured providers, Codex ImageGen, imported assets or procedural fallbacks. Failed assets remain visible as retryable placeholders. |
 | **A workspace you own** | Every game is a normal local project. Inspect the files, continue with Codex, commit it to Git, or take it outside Noobi.ai. |
-| **Built to extend** | Add media providers, Codex Skills, MCP servers, agent prompts, project templates, or an entirely different workbench UI. |
+| **Built to extend** | Add media providers, Codex Skills, MCP servers, agent prompts, project templates, Godot export targets, or an entirely different workbench UI. |
 
 ## Quick start
 
@@ -48,6 +49,7 @@ Noobi.ai gives Codex a bounded game-production pipeline instead of asking one ag
 - Node.js 22 LTS and npm
 - a ChatGPT/Codex account
 - an available image route: a configured image provider or Codex ImageGen
+- Godot 4 with exactly matching Web export templates, only when the Agent selects Godot
 
 ```bash
 git clone https://github.com/Innate-Labs/Noobi.ai.git
@@ -68,17 +70,19 @@ NOOBI_CODEX_BIN=/absolute/path/to/codex npm run dev
 
 ```mermaid
 flowchart LR
-    Idea["Your game idea"] --> Preflight["Capability preflight"]
+    Idea["Idea + reference files"] --> Preflight["Capability and engine preflight"]
     Preflight --> Plan["Planner<br/>read-only"]
     Plan --> Build["Implementer<br/>workspace-write"]
     Build --> Review["Reviewer<br/>read-only"]
     Review --> Pass{"Pass?"}
-    Pass -- "No" --> Repair["One bounded repair"]
-    Repair --> ReReview["Re-review"]
-    Pass -- "Yes" --> Gate["Host proof gate"]
-    ReReview --> Gate
+    Pass -- "No" --> Repair["Repair<br/>up to 3 rounds"]
+    Repair --> Review
+    Pass -- "Yes" --> EngineBuild["Web build or<br/>Godot import + export"]
+    EngineBuild --> Playtest["Hidden-browser playtest<br/>inputs + screenshots + errors"]
+    Playtest --> Gate["Host proof gate"]
+    Gate -. "Repairable finding" .-> Repair
     Gate --> Done["Playable local project"]
-    Gate -. "Proof incomplete" .-> Blocked["Blocked"]
+    Gate -. "External blocker" .-> Blocked["Blocked"]
 ```
 
 The workbench visualizes `Brief → Scaffold → GDD → Assets → World → Code → Verify → Complete`. Those stages explain progress; the Reviewer and host proof gate decide whether a run is actually complete.
@@ -107,7 +111,9 @@ Good first directions include a new provider adapter, Windows/Linux packaging, s
 - eight visible production stages and a live Agent event stream
 - command and file-change approvals
 - playable loopback preview, project files, and a unified asset library
-- 30 / 60 / 120 FPS production targets with timing and animation review contracts
+- Agent-selected Web or Godot 4 workspace with environment and export-template checks
+- host-managed timing and animation contracts without a user-facing FPS strategy selector
+- Noobi crew characters, role-based motion, selectable studio scenes and an animated fishing background
 - persistent projects and resumable Codex Implementer threads
 
 ### Media and extension layer
@@ -115,7 +121,9 @@ Good first directions include a new provider adapter, Windows/Linux packaging, s
 - configurable image, audio and 3D REST providers
 - Codex ImageGen fallback for required image generation
 - music, speech, vocal effects, procedural WAV and Web Audio paths
-- self-contained GLB import and procedural Three.js fallback
+- API-first self-contained GLB generation with a procedural Three.js fallback
+- image and file attachments that influence planning, visual direction and asset reuse
+- retryable asset work orders that preserve placeholders after generation failures
 - native Codex Skills, stdio/HTTP MCP servers, and role-specific prompt customization
 
 ### Trust boundaries
@@ -137,17 +145,22 @@ flowchart LR
         Renderer <-->|"typed IPC"| Main["Electron Main<br/>trusted host"]
         Main --> Harness["Game Harness"]
         Main --> Preview["Loopback preview"]
+        Main --> Playtest["Experience evaluator"]
+        Main --> Environment["Godot environment manager"]
         Main --> Broker["Media tool broker"]
         Main --> Gate["Asset store + host attestation"]
     end
 
     Harness <-->|"JSONL · stdio"| Codex["Codex App Server"]
     Codex --> Agents["Planner · Implementer · Reviewer"]
-    Agents --> Workspace["Standalone game workspace"]
+    Agents --> Workspace["Web or Godot 4 workspace"]
     Broker --> Providers["Image · audio · 3D providers"]
     Providers --> Gate
     Gate --> Workspace
     Preview --> Workspace
+    Playtest --> Preview
+    Environment --> Godot["Godot 4<br/>headless import · validate · export"]
+    Godot --> Workspace
 ```
 
 ## Development
@@ -167,6 +180,9 @@ npm run smoke:codex
 npm run smoke:harness
 npm run smoke:media
 npm run smoke:image
+npm run smoke:model3d
+npm run smoke:godot
+npm run smoke:playtest
 ```
 
 To produce an unsigned macOS DMG locally:
@@ -179,10 +195,11 @@ Public distribution still requires Developer ID signing, Apple notarization and 
 
 ## Current boundaries
 
-- Browser-game workspaces and local preview are supported; cloud deployment and Unity, Unreal or Godot export are not.
-- macOS is the current release target. Windows and Linux workflows are on the roadmap.
+- Web and Godot 4/GDScript workspaces are supported. Godot delivery currently targets a Compatibility-renderer Web export; automatic native macOS, Windows and Linux exports are not connected yet.
+- macOS is the current release target. Windows and Linux desktop workflows are on the roadmap.
 - Meshy, Tripo and Rodin currently use a synchronous REST gateway contract rather than native asynchronous job orchestration for every vendor.
-- Quality and completion depend on the selected model, prompt, dependencies and available media routes. A run that cannot satisfy the proof gate remains `blocked`.
+- The built-in Three.js fallback produces functional low-poly, self-contained GLB assets; it does not claim provider-level high-fidelity organic topology or texturing.
+- Quality and completion depend on the selected model, prompt, dependencies and available media routes. A run that cannot satisfy the proof gate remains `blocked` instead of being presented as complete.
 
 ## Contributing
 

@@ -24,16 +24,30 @@ import {
 import { TextDecoder } from 'node:util';
 import type {
   AppSettings,
-  CreateProjectInput,
+  ProjectStoreCreateInput,
   FileNode,
   FileReadResult,
+  GameEngine,
+  NoobiCrewMember,
+  NoobiPackId,
   PipelineStage,
   ProjectRecord,
   ProjectStatus,
   TargetFrameRate,
 } from '../shared/contracts.js';
 import {
+  DEFAULT_GAME_ENGINE,
+  DEFAULT_NOOBI_CREW,
+  DEFAULT_NOOBI_PACK_ID,
+  DEFAULT_NOOBI_SCENE_ID,
   DEFAULT_TARGET_FRAME_RATE,
+  NOOBI_CREW_MAX_SIZE,
+  NOOBI_CREW_MIN_SIZE,
+  NOOBI_PACK_IDS,
+  isGameEngine,
+  isNoobiCrewRole,
+  isNoobiPackId,
+  isNoobiSceneId,
   isTargetFrameRate,
 } from '../shared/contracts.js';
 import { createWorkspaceTemplate } from './workspaceTemplate.js';
@@ -76,7 +90,7 @@ export interface ProjectStoreOptions {
 }
 
 export type ProjectPatch = Partial<
-  Omit<ProjectRecord, 'id' | 'root' | 'createdAt' | 'updatedAt'>
+  Omit<ProjectRecord, 'id' | 'root' | 'createdAt' | 'updatedAt' | 'engine'>
 >;
 
 export interface FileTreeOptions {
@@ -150,7 +164,7 @@ export class ProjectStore {
     return this.get(projectId);
   }
 
-  async create(input: CreateProjectInput): Promise<ProjectRecord> {
+  async create(input: ProjectStoreCreateInput): Promise<ProjectRecord> {
     return this.#mutate(async (state) => {
       const normalized = validateCreateProjectInput(input);
       const parent = await ensureDirectory(normalized.parentDirectory);
@@ -165,7 +179,10 @@ export class ProjectStore {
         updatedAt: timestamp,
         status: 'draft',
         stage: 'brief',
-        targetFrameRate: normalized.targetFrameRate,
+        engine: normalized.engine,
+        targetFrameRate: DEFAULT_TARGET_FRAME_RATE,
+        noobiPackOverrideId: null,
+        noobiCrewOverride: null,
         model: normalized.model,
         threadId: null,
         toolsetVersion: 0,
@@ -185,7 +202,7 @@ export class ProjectStore {
     });
   }
 
-  async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
+  async createProject(input: ProjectStoreCreateInput): Promise<ProjectRecord> {
     return this.create(input);
   }
 
@@ -245,7 +262,7 @@ export class ProjectStore {
     try {
       const source = await readFile(this.storageFile, 'utf8');
       const loaded = parsePersistedStore(source);
-      if (loaded.needsTargetFrameRateMigration) {
+      if (loaded.needsMigration) {
         await atomicWriteJson(this.storageFile, loaded.store);
       }
       this.#state = loaded.store;
@@ -445,12 +462,12 @@ export async function atomicWriteJson(targetPath: string, value: unknown): Promi
   }
 }
 
-function validateCreateProjectInput(input: CreateProjectInput): {
+function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   name: string;
   idea: string;
   parentDirectory: string;
   model: string | null;
-  targetFrameRate: TargetFrameRate;
+  engine: GameEngine;
 } {
   if (!input || typeof input !== 'object') throw new Error('Project input is required');
   const name = validatedText(input.name, 'Project name', MAX_PROJECT_NAME_LENGTH);
@@ -461,15 +478,15 @@ function validateCreateProjectInput(input: CreateProjectInput): {
   if (input.model !== undefined && input.model !== null && !isNonEmptyString(input.model)) {
     throw new Error('Project model must be a non-empty string or null');
   }
-  if (input.targetFrameRate !== undefined && !isTargetFrameRate(input.targetFrameRate)) {
-    throw new Error('Project targetFrameRate must be 30, 60, or 120');
+  if (input.engine !== undefined && !isGameEngine(input.engine)) {
+    throw new Error('Project engine must be web or godot');
   }
   return {
     name,
     idea,
     parentDirectory: resolve(input.parentDirectory),
     model: input.model?.trim() || null,
-    targetFrameRate: input.targetFrameRate ?? DEFAULT_TARGET_FRAME_RATE,
+    engine: input.engine ?? DEFAULT_GAME_ENGINE,
   };
 }
 
@@ -483,6 +500,8 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
     'status',
     'stage',
     'targetFrameRate',
+    'noobiPackOverrideId',
+    'noobiCrewOverride',
     'model',
     'threadId',
     'toolsetVersion',
@@ -509,6 +528,19 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
     }
     next.targetFrameRate = patch.targetFrameRate;
   }
+  if (patch.noobiPackOverrideId !== undefined) {
+    if (patch.noobiPackOverrideId !== null && !isNoobiPackId(patch.noobiPackOverrideId)) {
+      throw new Error(
+        `Project noobiPackOverrideId must be ${NOOBI_PACK_IDS.join(', ')}, or null`,
+      );
+    }
+    next.noobiPackOverrideId = patch.noobiPackOverrideId;
+  }
+  if (patch.noobiCrewOverride !== undefined) {
+    next.noobiCrewOverride = patch.noobiCrewOverride === null
+      ? null
+      : validatedNoobiCrew(patch.noobiCrewOverride, 'Project noobiCrewOverride');
+  }
   for (const field of ['model', 'threadId', 'activeTurnId', 'lastError'] as const) {
     if (patch[field] !== undefined) {
       const value = patch[field];
@@ -529,7 +561,7 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
 
 function parsePersistedStore(source: string): {
   store: PersistedProjectStore;
-  needsTargetFrameRateMigration: boolean;
+  needsMigration: boolean;
 } {
   let parsed: unknown;
   try {
@@ -552,9 +584,18 @@ function parsePersistedStore(source: string): {
       projects,
       settings: validateSettings(parsed.settings),
     },
-    needsTargetFrameRateMigration: parsed.projects.some(
-      (project) => isRecord(project) && project.targetFrameRate === undefined,
-    ),
+    needsMigration: parsed.projects.some(
+      (project) => isRecord(project)
+        && (
+          project.targetFrameRate === undefined
+          || project.engine === undefined
+          || project.noobiPackOverrideId === undefined
+          || project.noobiCrewOverride === undefined
+        ),
+    ) || !isRecord(parsed.settings)
+      || parsed.settings.defaultNoobiSceneId === undefined
+      || parsed.settings.defaultNoobiPackId === undefined
+      || parsed.settings.defaultNoobiCrew === undefined,
   };
 }
 
@@ -584,9 +625,18 @@ function validateProjectRecord(value: unknown): ProjectRecord {
     updatedAt: value.updatedAt,
     status: value.status as ProjectStatus,
     stage: value.stage as PipelineStage,
+    engine: value.engine === undefined
+      ? DEFAULT_GAME_ENGINE
+      : validatedGameEngine(value.engine, id),
     targetFrameRate: value.targetFrameRate === undefined
       ? DEFAULT_TARGET_FRAME_RATE
       : validatedTargetFrameRate(value.targetFrameRate, id),
+    noobiPackOverrideId: value.noobiPackOverrideId === undefined
+      ? null
+      : validatedNoobiPackOverrideId(value.noobiPackOverrideId, id),
+    noobiCrewOverride: value.noobiCrewOverride === undefined
+      ? null
+      : validatedNoobiCrewOverride(value.noobiCrewOverride, id),
     model: nullableString(value.model, `Project ${id} model`),
     threadId: nullableString(value.threadId, `Project ${id} thread id`),
     toolsetVersion: value.toolsetVersion === undefined
@@ -602,6 +652,50 @@ function validatedTargetFrameRate(value: unknown, projectId: string): TargetFram
     throw new Error(`Project ${projectId} has an invalid target frame rate`);
   }
   return value;
+}
+
+function validatedGameEngine(value: unknown, projectId: string): GameEngine {
+  if (!isGameEngine(value)) {
+    throw new Error(`Project ${projectId} has an invalid game engine`);
+  }
+  return value;
+}
+
+function validatedNoobiPackOverrideId(value: unknown, projectId: string): NoobiPackId | null {
+  if (value !== null && !isNoobiPackId(value)) {
+    throw new Error(`Project ${projectId} has an invalid Noobi pack override`);
+  }
+  return value;
+}
+
+function validatedNoobiCrewOverride(value: unknown, projectId: string): NoobiCrewMember[] | null {
+  return value === null ? null : validatedNoobiCrew(value, `Project ${projectId} Noobi crew override`);
+}
+
+function validatedNoobiCrew(value: unknown, field: string): NoobiCrewMember[] {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
+  if (value.length < NOOBI_CREW_MIN_SIZE || value.length > NOOBI_CREW_MAX_SIZE) {
+    throw new Error(`${field} must contain 2 to 4 members`);
+  }
+  const packIds = new Set<NoobiPackId>();
+  const roles = new Set<NoobiCrewMember['role']>();
+  return value.map((candidate, index) => {
+    if (!isRecord(candidate)) throw new Error(`${field} member ${index + 1} is invalid`);
+    if (Object.keys(candidate).some((key) => key !== 'packId' && key !== 'role')) {
+      throw new Error(`${field} members may only contain packId and role`);
+    }
+    if (!isNoobiPackId(candidate.packId)) {
+      throw new Error(`${field} member ${index + 1} has an invalid packId`);
+    }
+    if (!isNoobiCrewRole(candidate.role)) {
+      throw new Error(`${field} member ${index + 1} has an invalid role`);
+    }
+    if (packIds.has(candidate.packId)) throw new Error(`${field} contains a duplicate packId`);
+    if (roles.has(candidate.role)) throw new Error(`${field} contains a duplicate role`);
+    packIds.add(candidate.packId);
+    roles.add(candidate.role);
+    return { packId: candidate.packId, role: candidate.role };
+  });
 }
 
 function validatedToolsetVersion(value: unknown, projectId: string): number {
@@ -620,11 +714,27 @@ function validateSettings(value: unknown): AppSettings {
     throw new Error('Default model setting must be a non-empty string or null');
   }
   if (!isNonEmptyString(value.defaultEffort)) throw new Error('Default effort setting is invalid');
+  const defaultNoobiSceneId = value.defaultNoobiSceneId === undefined
+    ? DEFAULT_NOOBI_SCENE_ID
+    : value.defaultNoobiSceneId;
+  if (!isNoobiSceneId(defaultNoobiSceneId)) {
+    throw new Error('Default Noobi scene setting is invalid');
+  }
+  const defaultNoobiPackId = value.defaultNoobiPackId === undefined
+    ? DEFAULT_NOOBI_PACK_ID
+    : value.defaultNoobiPackId;
+  if (!isNoobiPackId(defaultNoobiPackId)) throw new Error('Default Noobi pack setting is invalid');
+  const defaultNoobiCrew = value.defaultNoobiCrew === undefined
+    ? DEFAULT_NOOBI_CREW
+    : value.defaultNoobiCrew;
   if (value.theme !== 'dark' && value.theme !== 'light') throw new Error('Theme setting is invalid');
   return {
     defaultWorkspace: resolve(value.defaultWorkspace),
     defaultModel: value.defaultModel === null ? null : value.defaultModel.trim(),
     defaultEffort: value.defaultEffort.trim(),
+    defaultNoobiSceneId,
+    defaultNoobiPackId,
+    defaultNoobiCrew: validatedNoobiCrew(defaultNoobiCrew, 'Default Noobi crew setting'),
     theme: value.theme,
   };
 }
@@ -634,7 +744,10 @@ function defaultSettings(defaultWorkspace: string): AppSettings {
     defaultWorkspace,
     defaultModel: null,
     defaultEffort: 'medium',
-    theme: 'dark',
+    defaultNoobiSceneId: DEFAULT_NOOBI_SCENE_ID,
+    defaultNoobiPackId: DEFAULT_NOOBI_PACK_ID,
+    defaultNoobiCrew: DEFAULT_NOOBI_CREW.map((member) => ({ ...member })),
+    theme: 'light',
   };
 }
 

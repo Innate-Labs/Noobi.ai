@@ -11,7 +11,8 @@ import {
   type MediaProviderStore,
   type ResolvedMediaProvider,
 } from './mediaProviderStore.js';
-import type { GameAssetRecord } from '../shared/contracts.js';
+import { createProceduralModel3dGlb } from './proceduralModel3d.js';
+import type { GameAssetRecord, GameAssetSource } from '../shared/contracts.js';
 
 export interface MediaGenerationProject {
   id: string;
@@ -35,6 +36,7 @@ export interface MediaGenerationAssetResult {
     presetId: string;
     displayName: string;
     model: string;
+    route: 'configured-api' | 'threejs-fallback';
   };
 }
 
@@ -124,6 +126,16 @@ interface GeneratedBytes {
   mimeType: string;
 }
 
+interface PersistMetadata {
+  name: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  presetId: string;
+  source?: GameAssetSource;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
 /**
  * Calls configured media APIs and imports only validated files through AssetStore.
  * Provider JSON/base64 is consumed privately and is never returned to App Server JSON-RPC.
@@ -167,10 +179,56 @@ export class MediaGenerationService {
           presetId: provider.preset.id,
           displayName: provider.displayName,
           model,
+          route: 'configured-api',
         },
       } satisfies MediaGenerationAssetResult;
     });
     if (result) return result;
+    if (input.kind === 'model3d') {
+      const procedural = await createProceduralModel3dGlb({
+        name,
+        prompt,
+        animation: options.animation === true,
+      });
+      const model = procedural.generator;
+      const presetId = 'threejs-procedural';
+      const displayName = 'Three.js Procedural GLB';
+      const asset = await this.#persist(input.project, {
+        bytes: procedural.bytes,
+        extension: '.glb',
+        mimeType: 'model/gltf-binary',
+      }, {
+        name,
+        prompt,
+        provider: `Noobi:${displayName}`,
+        model,
+        presetId,
+        source: 'procedural',
+        metadata: {
+          route: 'threejs-fallback',
+          generator: procedural.generator,
+          preset: procedural.preset,
+          rigged: procedural.rigged,
+          animated: procedural.animated,
+          animations: procedural.animations,
+          vertexCount: procedural.vertexCount,
+          triangleCount: procedural.triangleCount,
+          promptSha256: procedural.promptSha256,
+          selfContained: true,
+        },
+      });
+      return {
+        outcome: 'asset',
+        asset,
+        provider: {
+          id: 'builtin-threejs',
+          presetId,
+          displayName,
+          model,
+          route: 'threejs-fallback',
+        },
+      } satisfies MediaGenerationAssetResult;
+    }
     return {
       outcome: 'fallback',
       fallback: input.kind === 'image'
@@ -328,7 +386,7 @@ export class MediaGenerationService {
   async #persist(
     project: MediaGenerationProject,
     generated: GeneratedBytes,
-    metadata: { name: string; prompt: string; provider: string; model: string; presetId: string },
+    metadata: PersistMetadata,
   ): Promise<GameAssetRecord> {
     const before = new Set((await this.#options.assetStore.list(project.id, project.root)).map((asset) => asset.relativePath));
     const temporaryRoot = await mkdtemp(join(tmpdir(), 'noobi-media-generation-'));
@@ -344,13 +402,14 @@ export class MediaGenerationService {
         root: project.root,
         relativePath: imported.relativePath,
         name: metadata.name,
-        source: 'generated',
+        source: metadata.source ?? 'generated',
         prompt: metadata.prompt,
         provider: metadata.provider,
         metadata: {
           model: metadata.model,
           presetId: metadata.presetId,
           mediaGeneration: true,
+          ...metadata.metadata,
         },
       });
     } finally {

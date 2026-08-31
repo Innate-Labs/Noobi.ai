@@ -10,7 +10,7 @@ Noobi.ai 是一个面向独立开发者和创意团队的游戏制作 Agent。�
 
 ### 1. 项目与工作区
 
-- 创建游戏项目：名称、创意描述、存放目录、模型、30/60/120 FPS 制作目标（默认 60）；AI 图片素材生产是固定要求，不提供跳过策略。
+- 创建游戏项目：名称、创意描述、存放目录、模型和游戏引擎；新项目由宿主统一使用 60 FPS 内部制作基准，不向用户提供帧率生成策略；AI 图片素材生产是固定要求，不提供跳过策略。
 - 项目轨：切换项目、查看状态、继续最近会话。
 - 初始化标准游戏工作区：`AGENTS.md`、Noobi Skill、项目元数据和可运行网页游戏入口。
 - 在 Finder 中显示项目、刷新文件、读取文本文件。
@@ -39,18 +39,20 @@ Noobi.ai 是一个面向独立开发者和创意团队的游戏制作 Agent。�
 - `turn/start` 发起制作或继续修改；`turn/interrupt` 停止。
 - 实时展示 `turn/*`、`item/*`、文本 delta、命令、文件修改和计划事件。
 - Planner 每轮检查现有工程后输出 `generate` / `reuse` / `not-needed` 动画判断和 2D/2.5D/实际 3D 表现类型；理由、对象/状态、已有证据和生产路径随计划事件展示，并传入 Implementer 与 Reviewer。
-- 当前项目帧率随每次 Planner/Implementer/Reviewer/Repair/Re-review 注入：Agent 分离 simulation、presentation、显示器刷新率和动画 source sample rate，生成/复用带 target/source FPS 与时长/variant 元数据的素材，并由生产代码选择匹配变体。切换帧率时必须审计和替换/重选 stale 素材与时序。
+- 当前项目的宿主内部帧率随每次 Planner/Implementer/Reviewer/Repair/Re-review 注入：新项目固定为 60 FPS，既有项目继续使用原先持久化的 30/60/120 FPS 技术目标。Agent 分离 simulation、presentation、显示器刷新率和动画 source sample rate，生成/复用带 target/source FPS 与时长/variant 元数据的素材，并由生产代码选择匹配变体。
 - 持久化 thread id，应用重启后继续上下文。
 - 命令和文件变更审批由用户在界面处理。
 
 ### 4. 制作工作台
 
 - 中央事件时间线：用户指令、Agent 信息、推理摘要、工具调用、错误和完成状态。
-- Prompt Composer：固定显示 `IMAGE ROUTER / REQUIRED` 生产要求、模型、推理强度、30/60/120 FPS、继续修改、快捷键发送和停止；外部图像 API 与 Codex ImageGen 都不可用时阻止启动并解释原因。
-- 项目制作可选择 30、60 或 120 FPS；选择值持久化到项目并用于下一轮素材与代码生产，旧项目默认 60。
+- Prompt Composer：固定显示 `IMAGE ROUTER / REQUIRED` 生产要求、模型、推理强度、继续修改、快捷键发送和停止；外部图像 API 与 Codex ImageGen 都不可用时阻止启动并解释原因。帧率由宿主内部管理，不占用用户决策位。
+- 项目记录继续持久化内部帧率，以便 Harness、引擎时序和素材变体保持一致；新项目写入 60 FPS，升级前已有的有效 30/60/120 FPS 值原样保留但不在工作台提供修改入口。
 - 制作阶段条：突出当前阶段及完成状态。
 - 右侧 Inspector：实时预览、文件树、文件内容和素材索引。
+- 体验评测面板：展示宿主自动试玩的总分，以及加载、稳定性、可见画面、操作反馈、持续动画、重开六项结论；支持手动重新评测和停止，运行中的旧分数不会被误当成当前结论。
 - 素材工作台：等比例图片缩略图、音频试听、GLB 索引、批量导入、PNG/JPEG/WebP 拖入和 Agent 生成结果实时同步，并明确显示 AI 图片门禁是否满足。
+- 素材工单：生成前登记预期图片、音频和 3D；失败时保留占位、脱敏错误与尝试次数，用户可从素材页单项重新生成，旧的可用素材引用不会因替换失败而丢失。
 - 运行时状态：Codex 位置、版本、账号、模型、启动错误。
 
 ### 5. 设置与扩展
@@ -83,8 +85,9 @@ Noobi.ai 是一个面向独立开发者和创意团队的游戏制作 Agent。�
 ### Slice C：游戏能力扩展（当前已落地基础层）
 
 - 固定执行“配置图像 API 优先、Codex ImageGen 回退”的图片生成并校验实际使用；2D/2.5D 动画为 `generate` 时才额外生产风格、尺度、锚点、单帧尺寸与视角一致的关键帧/sprite sheet，`reuse` 时验证并复用已有多姿态帧与实际播放，实际 3D 则复用/接入真实 rigged-GLB animation clip，`not-needed` 时验证具体理由和程序运动反馈；同时提供媒体 API、程序化音效、图片拖入、音频/GLB 导入与统一 manifest。
-- 30/60/120 FPS 目标驱动确定性引擎 cadence、动画素材 target/source FPS 标记和 runtime variant selection；Harness 启动前先同步宿主元数据/指令策略，随后要求 Agent 替换、重采样、重标记或重选不兼容素材并由 Reviewer 验收。不会机械生成每秒 120 张位图，而是按运动/风格选择关键帧密度并用持帧、插值、骨骼/morph 或引擎采样保持时长与质量。
+- 宿主管理的内部 FPS 目标驱动确定性引擎 cadence、动画素材 target/source FPS 标记和 runtime variant selection；新项目采用 60 FPS，既有项目保持原技术目标。Harness 启动前同步宿主元数据/指令策略，并由 Reviewer 验收时序和素材兼容性。目标 FPS 不等于每秒需要同等数量的位图；系统按运动/风格选择关键帧密度，并用持帧、插值、骨骼/morph 或引擎采样保持时长与质量。
 - 安全 Dynamic Tool dispatcher、工具契约版本化和素材 UI。
+- Reviewer、宿主构建/素材门禁与隐藏浏览器体验评测形成最多 3 轮自动修复闭环；体验评测按 `.noobi/playtest.json` 真实操作正式构建，采集截图、画面变化、连续中间帧和运行错误。只有 Reviewer 复核最新体验证据且所有宿主门禁通过才进入 Complete；外部账户、余额或权限问题停在可继续的 waiting 状态。
 - Dynamic Tools 已提供图片、音频、3D 生成入口；`noobi_audio_generate` 透传 `purpose`、`instrumental`、`lyrics` 等有界参数，音乐与人声音效分别路由到 MiniMax Music/Speech。枪声、爆炸、撞击、脚步或环境底噪不虚构成 MiniMax 能力，统一走 `procedural-audio`、Web Audio 或导入素材。Codex 没有原生音频/3D 生成时使用用户配置 API 或明确的程序化/无服务回退，不虚构能力。
 - Settings 已接入 Codex 原生 Skills 与 MCP 配置/状态，并提供应用私有的分角色提示词管理。
 - 构建产物导出与平台打包。
