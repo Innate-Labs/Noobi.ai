@@ -391,9 +391,9 @@ a {
   display: grid;
   width: 100%;
   min-height: 54px;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   border: 1px solid transparent;
   border-bottom-color: var(--line);
   background: transparent;

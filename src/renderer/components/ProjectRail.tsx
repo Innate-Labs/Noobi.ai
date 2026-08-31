@@ -89,7 +89,6 @@ export function ProjectRail({
                 className={`project-item ${project.id === selectedId ? 'is-active' : ''}`}
                 onClick={() => onSelect(project)}
               >
-                <span className={`status-dot status-${project.status}`} aria-hidden="true" />
                 <span className="project-item-copy">
                   <strong>{project.name}</strong>
                   <small>{project.engine === 'godot' ? 'GODOT 4' : 'WEB'} · {PROJECT_STATUS_LABELS[project.status]}</small>
