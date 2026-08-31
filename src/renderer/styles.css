@@ -315,29 +315,14 @@ a {
 .brand {
   min-width: 0;
   flex: 1 1 auto;
-  gap: 10px;
   overflow: hidden;
   background: transparent;
   padding: 0;
   text-align: left;
 }
 
-.brand-mark {
-  display: block;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--line));
-  border-radius: 10px;
-  background: #a9e5ba;
-}
-
-.brand-mark img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.brand-monogram {
+  display: none;
 }
 
 .brand-copy {
@@ -5315,9 +5300,7 @@ a {
 }
 
 .loading-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  text-align: center;
 }
 
 .loading-brand strong,
@@ -8108,11 +8091,16 @@ a {
     place-items: center;
   }
 
-  .view-workbench .project-rail.mode-workbench .brand-mark {
+  .view-workbench .project-rail.mode-workbench .brand-monogram {
+    display: grid;
     width: 42px;
     height: 42px;
-    flex-basis: 42px;
-    border-radius: 13px;
+    place-items: center;
+    color: var(--studio-accent);
+    font: 400 16px/1 var(--pixel);
+    text-shadow: 1px 1px 0 color-mix(in srgb, var(--studio-accent) 24%, transparent);
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: none;
   }
 
   .view-workbench .project-rail.mode-workbench .brand-copy,

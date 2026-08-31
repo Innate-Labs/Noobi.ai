@@ -9,7 +9,6 @@ import {
 
 import type { ProjectRecord, RuntimeStatus } from '../../shared/contracts';
 import type { SettingsSection } from './SettingsModal';
-import { BrandMark } from './BrandMark';
 import {
   formatRelative,
   PROJECT_STATUS_LABELS,
@@ -52,8 +51,8 @@ export function ProjectRail({
       />
       <aside className={`project-rail mode-${variant} ${open ? 'is-open' : ''}`}>
         <div className="rail-brand-row">
-          <button className="brand" type="button" title="返回首页" onClick={onHome}>
-            <BrandMark />
+          <button className="brand" type="button" aria-label="返回首页" title="返回首页" onClick={onHome}>
+            {variant === 'workbench' ? <span className="brand-monogram" aria-hidden="true">N</span> : null}
             <span className="brand-copy">
               <strong>Noobi.ai</strong>
               <small>AI GAME STUDIO</small>

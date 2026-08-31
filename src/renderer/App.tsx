@@ -25,7 +25,6 @@ import type {
   RuntimeStatus,
 } from '../shared/contracts';
 import { ApprovalModal } from './components/ApprovalModal';
-import { BrandMark } from './components/BrandMark';
 import { Composer } from './components/Composer';
 import { EventStream } from './components/EventStream';
 import { HomeDashboard, type HomeLaunchInput } from './components/HomeDashboard';
@@ -285,7 +284,6 @@ export function App() {
     return (
       <main className="loading-screen">
         <div className="loading-brand">
-          <BrandMark />
           <div><strong>Noobi.ai</strong><small>GAME PRODUCTION SYSTEM</small></div>
         </div>
         {loadingError ? (
