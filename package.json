@@ -51,6 +51,7 @@
     "package:mac": "npm run build && electron-builder --mac dmg --publish never"
   },
   "dependencies": {
+    "@fontsource/press-start-2p": "^5.3.0",
     "@openai/codex": "0.148.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",

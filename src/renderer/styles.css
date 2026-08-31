@@ -21,6 +21,7 @@
   --shadow: rgba(0, 0, 0, 0.22);
   --sans: 'Helvetica Neue', 'Avenir Next', 'Noto Sans SC', sans-serif;
   --mono: 'SFMono-Regular', 'IBM Plex Mono', 'Noto Sans Mono CJK SC', monospace;
+  --pixel: 'Press Start 2P', 'SFMono-Regular', monospace;
   --studio-bg: #11130f;
   --studio-surface: #191c17;
   --studio-surface-raised: #22261f;
@@ -306,12 +307,15 @@ a {
 }
 
 .rail-brand-row {
+  gap: 8px;
   justify-content: space-between;
 }
 
 .brand {
   min-width: 0;
+  flex: 1 1 auto;
   gap: 10px;
+  overflow: hidden;
   background: transparent;
   padding: 0;
   text-align: left;
@@ -338,6 +342,8 @@ a {
 .brand-copy {
   display: block;
   min-width: 0;
+  overflow: hidden;
+  padding-top: 1px;
 }
 
 .brand-copy strong,
@@ -346,15 +352,29 @@ a {
 }
 
 .brand-copy strong {
-  font: 700 14px/1 var(--mono);
-  letter-spacing: 0.08em;
+  color: var(--text);
+  font-family: var(--pixel);
+  font-size: clamp(14px, 5vw, 18px);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  text-shadow: 1px 1px 0 color-mix(in srgb, var(--accent) 24%, transparent);
+  text-rendering: geometricPrecision;
+  white-space: nowrap;
+  -webkit-font-smoothing: none;
 }
 
 .brand-copy small {
-  margin-top: 5px;
+  margin-top: 8px;
   color: var(--faint);
-  font: 8px/1 var(--mono);
-  letter-spacing: 0.06em;
+  font-family: var(--pixel);
+  font-size: clamp(7px, 2.5vw, 9px);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  text-rendering: geometricPrecision;
+  white-space: nowrap;
+  -webkit-font-smoothing: none;
 }
 
 .rail-section-heading {
@@ -5305,14 +5325,19 @@ a {
 }
 
 .loading-brand strong {
-  font: 700 17px/1 var(--mono);
-  letter-spacing: 0.1em;
+  font: 400 20px/1.25 var(--pixel);
+  letter-spacing: 0.02em;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: none;
 }
 
 .loading-brand small {
-  margin-top: 6px;
+  margin-top: 9px;
   color: var(--faint);
-  font: 8px/1 var(--mono);
+  font: 400 9px/1.25 var(--pixel);
+  letter-spacing: 0.04em;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: none;
 }
 
 .loading-progress {
