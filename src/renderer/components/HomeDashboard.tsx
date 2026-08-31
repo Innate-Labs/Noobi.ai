@@ -27,7 +27,7 @@ import type {
   ProjectRecord,
   RuntimeStatus,
 } from '../../shared/contracts';
-import { formatRelative, PROJECT_STATUS_LABELS, runtimeLabel } from '../ui';
+import { formatRelative, PROJECT_STATUS_LABELS } from '../ui';
 import { ModelPicker } from './ModelPicker';
 import { RotatingIdeaInput } from './RotatingIdeaInput';
 
@@ -207,15 +207,6 @@ export function HomeDashboard({
           onClick={onOpenRail}
         >
           <Menu size={18} />
-        </button>
-        <button
-          className={`home-runtime state-${runtime.state}`}
-          type="button"
-          title={runtime.error ?? runtimeLabel(runtime)}
-          onClick={() => onOpenSettings(runtime.account ? 'environment' : 'account')}
-        >
-          <span className={`runtime-dot state-${runtime.state}`} />
-          {runtimeLabel(runtime)}
         </button>
         <div className="home-toolbar-actions">
           <button type="button" aria-label="切换主题" title="切换主题" onClick={onToggleTheme}>
