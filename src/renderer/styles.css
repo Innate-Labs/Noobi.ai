@@ -5926,7 +5926,7 @@ a {
   overflow: hidden;
   border: 1px solid var(--studio-border);
   border-radius: 24px;
-  background: #dfe8de;
+  background: #e8f3ff;
   isolation: isolate;
 }
 
@@ -5941,8 +5941,9 @@ a {
 
 .home-hero-art {
   object-fit: cover;
-  object-position: center 38%;
-  filter: saturate(0.82) brightness(1.08);
+  object-position: center 46%;
+  filter: saturate(0.96) brightness(1.02);
+  image-rendering: pixelated;
   transform: scale(1.015);
   animation: home-art-arrive 900ms cubic-bezier(0.2, 0.75, 0.2, 1) both;
 }
@@ -5950,22 +5951,22 @@ a {
 .home-hero-wash {
   z-index: -1;
   background:
-    linear-gradient(180deg, rgba(247, 250, 244, 0.1) 0%, rgba(247, 249, 244, 0.36) 36%, rgba(247, 248, 244, 0.97) 92%),
-    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.7), transparent 44%);
+    linear-gradient(180deg, rgba(247, 251, 255, 0.02) 0%, rgba(247, 251, 255, 0.14) 42%, rgba(249, 251, 255, 0.84) 94%),
+    radial-gradient(ellipse at 50% 44%, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.06) 56%, transparent 76%);
 }
 
 :root[data-theme='dark'] .home-hero {
-  background: #151a13;
+  background: #15213a;
 }
 
 :root[data-theme='dark'] .home-hero-art {
-  filter: saturate(0.82) brightness(0.72);
+  filter: saturate(0.84) brightness(0.68);
 }
 
 :root[data-theme='dark'] .home-hero-wash {
   background:
-    linear-gradient(180deg, rgba(14, 17, 12, 0.1) 0%, rgba(14, 17, 12, 0.34) 38%, rgba(14, 17, 12, 0.97) 92%),
-    radial-gradient(circle at 50% 42%, rgba(18, 21, 16, 0.08), rgba(18, 21, 16, 0.7) 74%);
+    linear-gradient(180deg, rgba(12, 20, 38, 0.08) 0%, rgba(12, 20, 38, 0.28) 44%, rgba(12, 18, 32, 0.94) 94%),
+    radial-gradient(ellipse at 50% 44%, rgba(31, 45, 72, 0.08), rgba(12, 18, 32, 0.66) 78%);
 }
 
 .home-hero-content {
