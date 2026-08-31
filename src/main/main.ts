@@ -47,6 +47,7 @@ import {
   isNoobiCrew,
   isNoobiPackId,
   isNoobiSceneId,
+  isNoobiStageMode,
   NOOBI_PACK_IDS,
   NOOBI_SCENE_IDS,
 } from '../shared/contracts.js';
@@ -1914,7 +1915,19 @@ async function ensureSmokeProject(): Promise<void> {
   }
   const smokeScene = process.env.NOOBI_SMOKE_SCENE?.trim();
   if (isNoobiSceneId(smokeScene)) {
-    await projectStore.saveSettings({ defaultNoobiSceneId: smokeScene });
+    await projectStore.saveSettings({
+      defaultNoobiSceneId: smokeScene,
+      defaultNoobiStageMode: 'crew',
+    });
+  } else if (process.env.NOOBI_SMOKE_CREW === '1') {
+    await projectStore.saveSettings({ defaultNoobiStageMode: 'crew' });
+  } else if (process.env.NOOBI_SMOKE_VIEW === 'settings-noobi'
+    || process.env.NOOBI_SMOKE_VIEW === 'workbench') {
+    await projectStore.saveSettings({
+      defaultNoobiStageMode: 'solo',
+      defaultNoobiSoloSceneId: 'classic',
+      defaultNoobiPackId: 'classic',
+    });
   }
   if (process.env.NOOBI_SMOKE_TAB === 'assets') {
     const plan = await assetPlanStore.upsert({
@@ -2053,7 +2066,10 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
         const images = Array.from(document.querySelectorAll('.noobi-crew-card img'));
         const roleSlots = Array.from(document.querySelectorAll('.noobi-crew-role-slot.is-filled'));
         const roleSelects = Array.from(document.querySelectorAll('.noobi-crew-role-control select'));
-        const sceneCards = Array.from(document.querySelectorAll('.noobi-scene-card'));
+        const characterCards = Array.from(document.querySelectorAll('[data-pack-kind="character"]'));
+        const characterImages = Array.from(document.querySelectorAll('[data-pack-kind="character"] .noobi-character-avatar-image'));
+        const soloSceneCards = Array.from(document.querySelectorAll('.noobi-scene-card[data-scene-kind="solo"]'));
+        const multiplayerSceneCards = Array.from(document.querySelectorAll('.noobi-scene-card[data-scene-kind="multiplayer"]'));
         const sceneImages = Array.from(document.querySelectorAll('.noobi-scene-card img'));
         return {
           cards: cards.length,
@@ -2062,11 +2078,18 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
           loaded: images.filter((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0).length,
           filledRoles: roleSlots.length,
           roleSelects: roleSelects.length,
-          sceneCards: sceneCards.length,
-          selectedScenes: sceneCards.filter((card) => card.getAttribute('aria-checked') === 'true').length,
-          animatedScenes: sceneCards.filter((card) => card.getAttribute('data-motion') === 'animated').length,
+          characterCards: characterCards.length,
+          selectedCharacters: characterCards.filter((card) => card.getAttribute('aria-checked') === 'true').length,
+          characterImages: characterImages.length,
+          loadedCharacterImages: characterImages.filter((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0).length,
+          soloScenes: soloSceneCards.length,
+          selectedSoloScenes: soloSceneCards.filter((card) => card.getAttribute('aria-checked') === 'true').length,
+          multiplayerScenes: multiplayerSceneCards.length,
+          selectedMultiplayerScenes: multiplayerSceneCards.filter((card) => card.getAttribute('aria-checked') === 'true').length,
+          animatedScenes: multiplayerSceneCards.filter((card) => card.getAttribute('data-motion') === 'animated').length,
           sceneImages: sceneImages.length,
           loadedSceneImages: sceneImages.filter((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0).length,
+          activeMode: document.querySelector('.noobi-mode-panel.is-active')?.classList.contains('noobi-solo-panel') ? 'solo' : 'crew',
         };
       })()`,
       true,
@@ -2077,11 +2100,18 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       loaded: number;
       filledRoles: number;
       roleSelects: number;
-      sceneCards: number;
-      selectedScenes: number;
+      characterCards: number;
+      selectedCharacters: number;
+      characterImages: number;
+      loadedCharacterImages: number;
+      soloScenes: number;
+      selectedSoloScenes: number;
+      multiplayerScenes: number;
+      selectedMultiplayerScenes: number;
       animatedScenes: number;
       sceneImages: number;
       loadedSceneImages: number;
+      activeMode: string;
     };
     const expectedPackCount = NOOBI_PACK_IDS.length;
     const expectedImageCount = expectedPackCount * 2;
@@ -2092,21 +2122,39 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       || crewCards.loaded !== expectedImageCount
       || crewCards.filledRoles !== expectedCrewCount
       || crewCards.roleSelects !== expectedCrewCount
-      || crewCards.sceneCards !== NOOBI_SCENE_IDS.length
-      || crewCards.selectedScenes !== 1
+      || crewCards.characterCards !== expectedPackCount
+      || crewCards.selectedCharacters !== 1
+      || crewCards.characterImages !== expectedPackCount
+      || crewCards.loadedCharacterImages !== expectedPackCount
+      || crewCards.soloScenes !== expectedPackCount
+      || crewCards.selectedSoloScenes !== 1
+      || crewCards.multiplayerScenes !== NOOBI_SCENE_IDS.length
+      || crewCards.selectedMultiplayerScenes !== 0
       || crewCards.animatedScenes !== 1
-      || crewCards.sceneImages !== NOOBI_SCENE_IDS.length
-      || crewCards.loadedSceneImages !== NOOBI_SCENE_IDS.length) {
+      || crewCards.sceneImages !== expectedPackCount + NOOBI_SCENE_IDS.length
+      || crewCards.loadedSceneImages !== expectedPackCount + NOOBI_SCENE_IDS.length
+      || crewCards.activeMode !== 'solo') {
       throw new Error(`Noobi crew cards did not render correctly: ${JSON.stringify(crewCards)}`);
     }
     process.stdout.write(
-      `Noobi workshop settings rendered ${crewCards.selected}/${crewCards.cards} crew members and ${crewCards.sceneCards} runtime backgrounds\n`,
+      `Noobi workshop settings rendered one solo character, ${crewCards.soloScenes} solo scenes, and ${crewCards.multiplayerScenes} multiplayer scenes\n`,
     );
-    await window.webContents.executeJavaScript(
-      `document.querySelector('.settings-page')?.scrollTo({ top: 99999, behavior: 'instant' })`,
-      true,
-    );
-    await delay(250);
+    const settingsScrollY = Number.parseInt(process.env.NOOBI_SMOKE_SETTINGS_SCROLL_Y ?? '', 10);
+    if (Number.isFinite(settingsScrollY)) {
+      await window.webContents.executeJavaScript(
+        `document.querySelector('.settings-page')?.scrollTo({ top: ${Math.max(0, settingsScrollY)}, behavior: 'instant' })`,
+        true,
+      );
+      await delay(250);
+    } else if (process.env.NOOBI_SMOKE_SETTINGS_TOP !== '1') {
+      await window.webContents.executeJavaScript(
+        `document.querySelector('.settings-page')?.scrollTo({ top: 99999, behavior: 'instant' })`,
+        true,
+      );
+      await delay(250);
+    } else {
+      await delay(250);
+    }
   }
   if (process.env.NOOBI_SMOKE_VIEW === 'workbench') {
     await window.webContents.executeJavaScript(
@@ -2152,6 +2200,41 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
         throw new Error(`Noobi runtime background did not load correctly: ${JSON.stringify(sceneState)}`);
       }
       process.stdout.write(`Noobi runtime background loaded: ${sceneState.id}\n`);
+    } else if (process.env.NOOBI_SMOKE_CREW !== '1') {
+      const soloState = await window.webContents.executeJavaScript(
+        `(() => {
+          const scene = document.querySelector('.production-diorama');
+          const image = scene?.querySelector('.workshop-map img');
+          const indicator = document.querySelector('.inspector-solo-indicator');
+          if (!(scene instanceof HTMLElement) || !(image instanceof HTMLImageElement)) return null;
+          return {
+            stageMode: scene.dataset.stageMode ?? '',
+            sceneMode: scene.dataset.sceneMode ?? '',
+            sceneId: scene.dataset.runtimeScene ?? '',
+            actors: scene.querySelectorAll('[data-crew-role]').length,
+            indicator: indicator?.textContent?.includes('单人') ?? false,
+            loaded: image.complete && image.naturalWidth > 0,
+          };
+        })()`,
+        true,
+      ) as {
+        stageMode: string;
+        sceneMode: string;
+        sceneId: string;
+        actors: number;
+        indicator: boolean;
+        loaded: boolean;
+      } | null;
+      if (!soloState
+        || soloState.stageMode !== 'solo'
+        || soloState.sceneMode !== 'solo'
+        || soloState.sceneId !== 'classic'
+        || soloState.actors !== 1
+        || !soloState.indicator
+        || !soloState.loaded) {
+        throw new Error(`Noobi solo default did not load correctly: ${JSON.stringify(soloState)}`);
+      }
+      process.stdout.write('Noobi solo default loaded one character in the classic studio\n');
     }
   }
   if (process.env.NOOBI_SMOKE_CREW === '1') {
@@ -2420,12 +2503,22 @@ function validateSettingsPatch(value: Partial<AppSettings>): Partial<AppSettings
     'defaultWorkspace',
     'defaultModel',
     'defaultEffort',
+    'defaultNoobiStageMode',
+    'defaultNoobiSoloSceneId',
     'defaultNoobiSceneId',
     'defaultNoobiPackId',
     'defaultNoobiCrew',
     'theme',
   ]);
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`未知设置：${key}`);
+  if (value.defaultNoobiStageMode !== undefined
+    && !isNoobiStageMode(value.defaultNoobiStageMode)) {
+    throw new Error('无效的 Noobi 舞台模式');
+  }
+  if (value.defaultNoobiSoloSceneId !== undefined
+    && !isNoobiPackId(value.defaultNoobiSoloSceneId)) {
+    throw new Error('无效的 Noobi 单人场景');
+  }
   if (value.defaultNoobiSceneId !== undefined
     && !isNoobiSceneId(value.defaultNoobiSceneId)) {
     throw new Error('无效的 Noobi 场景');

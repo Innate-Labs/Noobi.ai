@@ -1,17 +1,19 @@
 import { Check, MonitorPlay } from 'lucide-react';
-import React from 'react';
-import type { KeyboardEvent } from 'react';
+import React, { type KeyboardEvent } from 'react';
 
-import {
-  NOOBI_SCENE_IDS,
-  type NoobiSceneId,
+import type {
+  NoobiPackId,
+  NoobiSceneId,
 } from '../../shared/contracts';
 import collaborationScene from '../assets/noobi-packs/collaboration/scene.png';
 import fishingScene from '../assets/noobi-packs/fishing/four-ip-fishing.gif';
-import { noobiPackGridColumnCount } from './NoobiPackPicker';
+import {
+  NOOBI_PACK_OPTIONS,
+  noobiPackGridColumnCount,
+} from './NoobiPackPicker';
 
-export interface NoobiSceneOption {
-  id: NoobiSceneId;
+export interface NoobiSceneOption<Id extends string = string> {
+  id: Id;
   eyebrow: string;
   name: string;
   description: string;
@@ -20,14 +22,25 @@ export interface NoobiSceneOption {
   animated: boolean;
 }
 
-export const NOOBI_SCENE_OPTIONS: readonly NoobiSceneOption[] = [
+export const NOOBI_SOLO_SCENE_OPTIONS: readonly NoobiSceneOption<NoobiPackId>[] =
+  NOOBI_PACK_OPTIONS.map((option) => ({
+    id: option.id,
+    eyebrow: option.eyebrow,
+    name: option.name,
+    description: option.sceneDescription,
+    image: option.sceneImage,
+    badges: ['单人工作室', '角色独立选择'],
+    animated: false,
+  }));
+
+export const NOOBI_SCENE_OPTIONS: readonly NoobiSceneOption<NoobiSceneId>[] = [
   {
     id: 'collaboration',
     eyebrow: 'COLLABORATION WORKSHOP',
     name: '协作工坊',
     description: '伙伴会按照岗位在策划、美术、工程与测试工位之间协作。',
     image: collaborationScene,
-    badges: ['标准场景', '按编队渲染'],
+    badges: ['多人场景', '按编队渲染'],
     animated: false,
   },
   {
@@ -39,10 +52,44 @@ export const NOOBI_SCENE_OPTIONS: readonly NoobiSceneOption[] = [
     badges: ['动态循环', '固定四人'],
     animated: true,
   },
-] as const satisfies readonly NoobiSceneOption[];
+] as const satisfies readonly NoobiSceneOption<NoobiSceneId>[];
+
+interface PickerShellProps<Id extends string> {
+  value: Id | null;
+  options: readonly NoobiSceneOption<Id>[];
+  variant: 'solo' | 'multiplayer';
+  disabled: boolean;
+  busy: boolean;
+  onChange: (sceneId: Id) => void;
+}
+
+interface NoobiSoloScenePickerProps {
+  value: NoobiPackId;
+  disabled?: boolean;
+  busy?: boolean;
+  onChange: (sceneId: NoobiPackId) => void;
+}
+
+export function NoobiSoloScenePicker({
+  value,
+  disabled = false,
+  busy = false,
+  onChange,
+}: NoobiSoloScenePickerProps) {
+  return (
+    <NoobiScenePickerShell
+      value={value}
+      options={NOOBI_SOLO_SCENE_OPTIONS}
+      variant="solo"
+      disabled={disabled}
+      busy={busy}
+      onChange={onChange}
+    />
+  );
+}
 
 interface NoobiScenePickerProps {
-  value: NoobiSceneId;
+  value: NoobiSceneId | null;
   disabled?: boolean;
   busy?: boolean;
   onChange: (sceneId: NoobiSceneId) => void;
@@ -54,8 +101,28 @@ export function NoobiScenePicker({
   busy = false,
   onChange,
 }: NoobiScenePickerProps) {
+  return (
+    <NoobiScenePickerShell
+      value={value}
+      options={NOOBI_SCENE_OPTIONS}
+      variant="multiplayer"
+      disabled={disabled}
+      busy={busy}
+      onChange={onChange}
+    />
+  );
+}
+
+function NoobiScenePickerShell<Id extends string>({
+  value,
+  options,
+  variant,
+  disabled,
+  busy,
+  onChange,
+}: PickerShellProps<Id>) {
   function selectAt(index: number) {
-    const option = NOOBI_SCENE_OPTIONS[index];
+    const option = options[index];
     if (option) onChange(option.id);
   }
 
@@ -66,15 +133,11 @@ export function NoobiScenePicker({
     const columnCount = noobiPackGridColumnCount(container);
     let nextIndex = index;
     if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = NOOBI_SCENE_OPTIONS.length - 1;
-    if (event.key === 'ArrowLeft') {
-      nextIndex = (index - 1 + NOOBI_SCENE_OPTIONS.length) % NOOBI_SCENE_OPTIONS.length;
-    }
-    if (event.key === 'ArrowRight') nextIndex = (index + 1) % NOOBI_SCENE_OPTIONS.length;
+    if (event.key === 'End') nextIndex = options.length - 1;
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + options.length) % options.length;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % options.length;
     if (event.key === 'ArrowUp') nextIndex = Math.max(0, index - columnCount);
-    if (event.key === 'ArrowDown') {
-      nextIndex = Math.min(NOOBI_SCENE_OPTIONS.length - 1, index + columnCount);
-    }
+    if (event.key === 'ArrowDown') nextIndex = Math.min(options.length - 1, index + columnCount);
     const nextButton = container?.querySelector<HTMLButtonElement>(
       `button[data-scene-index="${nextIndex}"]`,
     );
@@ -82,19 +145,32 @@ export function NoobiScenePicker({
     selectAt(nextIndex);
   }
 
+  const solo = variant === 'solo';
+
   return (
-    <section className="noobi-scene-picker" aria-label="Noobi 运行背景" aria-busy={busy}>
+    <section
+      className={`noobi-scene-picker variant-${variant}`}
+      data-scene-kind={variant}
+      aria-label={solo ? 'Noobi 单人工作室' : 'Noobi 多人运行背景'}
+      aria-busy={busy}
+    >
       <header className="noobi-scene-heading">
         <span className="noobi-scene-heading-icon" aria-hidden="true"><MonitorPlay size={18} /></span>
         <div>
-          <small>RUNNING BACKGROUND</small>
-          <strong>选择 Agent 工作时的舞台</strong>
-          <p>运行背景只改变制作过程的视觉演出，不会调整伙伴岗位或 Agent 行为。</p>
+          <small>{solo ? '02 / SOLO WORKSPACE' : 'MULTIPLAYER STAGE'}</small>
+          <strong>{solo ? '再选择一个单人工作室' : '最后选择多人工作的舞台'}</strong>
+          <p>{solo
+            ? '场景与角色互相独立；任何角色都可以进入任意一个工作室。'
+            : '选择这里的任一舞台后，运行预览才会切换为多人模式。'}</p>
         </div>
       </header>
 
-      <div className="noobi-scene-grid" role="radiogroup" aria-label="选择运行背景">
-        {NOOBI_SCENE_OPTIONS.map((option, index) => {
+      <div
+        className="noobi-scene-grid"
+        role="radiogroup"
+        aria-label={solo ? '选择单人工作室' : '选择多人运行背景'}
+      >
+        {options.map((option, index) => {
           const selected = option.id === value;
           return (
             <button
@@ -105,9 +181,10 @@ export function NoobiScenePicker({
               className={`noobi-pack-card noobi-scene-card${selected ? ' is-selected' : ''}`}
               data-scene-id={option.id}
               data-scene-index={index}
+              data-scene-kind={variant}
               data-motion={option.animated ? 'animated' : 'static'}
               disabled={disabled || busy}
-              tabIndex={selected || (!NOOBI_SCENE_IDS.includes(value) && index === 0) ? 0 : -1}
+              tabIndex={selected || (value === null && index === 0) ? 0 : -1}
               key={option.id}
               onKeyDown={(event) => handleArrowKey(event, index)}
               onClick={() => onChange(option.id)}
@@ -120,7 +197,7 @@ export function NoobiScenePicker({
                   draggable={false}
                 />
                 <span className="noobi-scene-live-badge">
-                  <i /> {option.animated ? 'LIVE LOOP' : 'STUDIO MAP'}
+                  <i /> {solo ? 'SOLO MAP' : option.animated ? 'LIVE LOOP' : 'CREW MAP'}
                 </span>
               </span>
               <span className="noobi-pack-card-copy noobi-scene-card-copy">

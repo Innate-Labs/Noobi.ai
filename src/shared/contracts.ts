@@ -28,6 +28,10 @@ export const NOOBI_SCENE_IDS = ['collaboration', 'fishing'] as const;
 export type NoobiSceneId = (typeof NOOBI_SCENE_IDS)[number];
 export const DEFAULT_NOOBI_SCENE_ID: NoobiSceneId = 'collaboration';
 
+export const NOOBI_STAGE_MODES = ['solo', 'crew'] as const;
+export type NoobiStageMode = (typeof NOOBI_STAGE_MODES)[number];
+export const DEFAULT_NOOBI_STAGE_MODE: NoobiStageMode = 'solo';
+
 export const NOOBI_PACK_IDS = [
   'classic',
   'mosslight',
@@ -37,6 +41,7 @@ export const NOOBI_PACK_IDS = [
 ] as const;
 export type NoobiPackId = (typeof NOOBI_PACK_IDS)[number];
 export const DEFAULT_NOOBI_PACK_ID: NoobiPackId = 'classic';
+export const DEFAULT_NOOBI_SOLO_SCENE_ID: NoobiPackId = 'classic';
 
 export const NOOBI_CREW_ROLES = ['planner', 'artist', 'engineer', 'tester'] as const;
 export type NoobiCrewRole = (typeof NOOBI_CREW_ROLES)[number];
@@ -62,6 +67,10 @@ export function isGameEngine(value: unknown): value is GameEngine {
 
 export function isNoobiSceneId(value: unknown): value is NoobiSceneId {
   return typeof value === 'string' && NOOBI_SCENE_IDS.some((sceneId) => sceneId === value);
+}
+
+export function isNoobiStageMode(value: unknown): value is NoobiStageMode {
+  return typeof value === 'string' && NOOBI_STAGE_MODES.some((mode) => mode === value);
 }
 
 export function isNoobiPackId(value: unknown): value is NoobiPackId {
@@ -185,6 +194,8 @@ export interface AppSettings {
   defaultWorkspace: string;
   defaultModel: string | null;
   defaultEffort: string;
+  defaultNoobiStageMode: NoobiStageMode;
+  defaultNoobiSoloSceneId: NoobiPackId;
   defaultNoobiSceneId: NoobiSceneId;
   defaultNoobiPackId: NoobiPackId;
   defaultNoobiCrew: NoobiCrewMember[];

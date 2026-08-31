@@ -5,6 +5,7 @@ import type {
   NoobiCrewMember,
   NoobiPackId,
   NoobiSceneId,
+  NoobiStageMode,
   PipelineStage,
   ProjectStatus,
 } from '../../shared/contracts';
@@ -40,7 +41,9 @@ import { NoobiAnimatedSprite } from './NoobiAnimatedSprite';
 interface ProductionDioramaProps {
   stage: PipelineStage;
   status: ProjectStatus;
+  stageMode?: NoobiStageMode;
   sceneId?: NoobiSceneId;
+  soloSceneId?: NoobiPackId;
   packId?: NoobiPackId;
   spriteManifest?: NoobiSpriteManifest;
   crewSize?: ProductionCrewSize;
@@ -50,24 +53,30 @@ interface ProductionDioramaProps {
 export function ProductionDiorama({
   stage,
   status,
+  stageMode = 'solo',
   sceneId = 'collaboration',
+  soloSceneId = 'classic',
   packId = 'classic',
   spriteManifest,
   crewSize = 4,
   crew: configuredCrew,
 }: ProductionDioramaProps) {
   const productionPack = noobiProductionPack(packId);
+  const soloScenePack = noobiProductionPack(soloSceneId);
   const activeSpriteManifest = spriteManifest ?? productionPack.spriteManifest;
   const scene = useMemo(() => productionAssistantScene(stage, status), [stage, status]);
+  const collaborativeRuntime = stageMode === 'crew';
+  const runtimeConfiguredCrew = collaborativeRuntime ? configuredCrew : undefined;
+  const runtimeCrewSize: ProductionCrewSize = collaborativeRuntime ? crewSize : 1;
   const crew = useMemo(
-    () => configuredProductionCrewMembers(stage, status, configuredCrew, crewSize),
-    [configuredCrew, crewSize, stage, status],
+    () => configuredProductionCrewMembers(stage, status, runtimeConfiguredCrew, runtimeCrewSize),
+    [runtimeConfiguredCrew, runtimeCrewSize, stage, status],
   );
   const activeMember = crew.find((member) => member.active) ?? crew[0]!;
-  const bakedRuntimeScene = sceneId === 'fishing';
-  const sceneImage = bakedRuntimeScene
-    ? fishingScene
-    : crew.length >= 2 ? collaborationScene : productionPack.sceneImage;
+  const bakedRuntimeScene = collaborativeRuntime && sceneId === 'fishing';
+  const sceneImage = !collaborativeRuntime
+    ? soloScenePack.sceneImage
+    : bakedRuntimeScene ? fishingScene : collaborationScene;
   const orderedCrew = useMemo(() => [
     ...crew.filter((member) => member.active),
     ...crew.filter((member) => !member.active),
@@ -104,7 +113,8 @@ export function ProductionDiorama({
       className={`production-diorama status-${status}`}
       data-stage={scene.stage}
       data-noobi-pack={packId}
-      data-runtime-scene={sceneId}
+      data-stage-mode={stageMode}
+      data-runtime-scene={collaborativeRuntime ? sceneId : soloSceneId}
       data-station={activeMember.station}
       data-pipeline-station={scene.station}
       data-action={activeActor.action.id}
@@ -114,9 +124,9 @@ export function ProductionDiorama({
       data-route-remaining={activeActor.remainingRoute.length}
       data-active-crew-role={activeMember.role}
       data-crew-size={crew.length}
-      data-crew-packs={configuredCrew?.map((member) => `${member.role}:${member.packId}`).join(',') ?? packId}
-      data-scene-mode={bakedRuntimeScene ? 'fishing' : crew.length >= 2 ? 'collaboration' : 'pack'}
-      aria-label="Noobi 全画幅像素制作工坊"
+      data-crew-packs={runtimeConfiguredCrew?.map((member) => `${member.role}:${member.packId}`).join(',') ?? packId}
+      data-scene-mode={bakedRuntimeScene ? 'fishing' : collaborativeRuntime ? 'collaboration' : 'solo'}
+      aria-label={collaborativeRuntime ? 'Noobi 多人像素制作场景' : 'Noobi 单人像素制作场景'}
     >
       <div className="workshop-map" aria-hidden="true">
         <img src={sceneImage} alt="" draggable={false} />
@@ -148,7 +158,7 @@ export function ProductionDiorama({
       )) : null}
 
       {!bakedRuntimeScene ? orderedCrew.map((member) => {
-        const configuredMember = configuredCrew?.find((item) => item.role === member.role);
+        const configuredMember = runtimeConfiguredCrew?.find((item) => item.role === member.role);
         const memberPackId = configuredMember?.packId ?? packId;
         return (
           <ProductionCrewActor

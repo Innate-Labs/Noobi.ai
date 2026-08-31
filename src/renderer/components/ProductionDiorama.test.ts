@@ -24,10 +24,11 @@ describe('Noobi ground shadow profiles', () => {
     expect(noobiGroundShadowProfile('celebrate', 'acting')).toBe('standing');
   });
 
-  it('renders four independently identified crew members with one primary shadow', () => {
+  it('renders four independently identified crew members in crew mode with one primary shadow', () => {
     const markup = renderToStaticMarkup(createElement(ProductionDiorama, {
       stage: 'code',
       status: 'running',
+      stageMode: 'crew',
       packId: 'classic',
     }));
 
@@ -48,6 +49,7 @@ describe('Noobi ground shadow profiles', () => {
     const markup = renderToStaticMarkup(createElement(ProductionDiorama, {
       stage: 'assets',
       status: 'running',
+      stageMode: 'crew',
       packId: 'classic',
       crewSize: 2,
     }));
@@ -57,16 +59,28 @@ describe('Noobi ground shadow profiles', () => {
     expect(markup).toContain('data-crew-role="artist"');
   });
 
-  it('keeps the selected pack scene available for the legacy solo actor', () => {
+  it('uses one selected character in an independently selected solo scene by default', () => {
+    const crew = [
+      { packId: 'classic', role: 'planner' },
+      { packId: 'twilight', role: 'artist' },
+      { packId: 'hellokitty', role: 'engineer' },
+      { packId: 'starforge', role: 'tester' },
+    ] as const;
     const markup = renderToStaticMarkup(createElement(ProductionDiorama, {
       stage: 'brief',
       status: 'running',
-      packId: 'classic',
-      crewSize: 1,
+      packId: 'hellokitty',
+      soloSceneId: 'starforge',
+      crew,
     }));
 
     expect(markup.match(/data-crew-role=/gu)).toHaveLength(1);
-    expect(markup).toContain('data-scene-mode="pack"');
+    expect(markup).toContain('data-stage-mode="solo"');
+    expect(markup).toContain('data-runtime-scene="starforge"');
+    expect(markup).toContain('data-scene-mode="solo"');
+    expect(markup).toContain('data-noobi-member-pack="hellokitty"');
+    expect(markup).not.toContain('data-noobi-member-pack="twilight"');
+    expect(markup).not.toContain('collaboration/scene.png');
   });
 
   it('renders each configured role with its selected character pack', () => {
@@ -78,6 +92,7 @@ describe('Noobi ground shadow profiles', () => {
     const markup = renderToStaticMarkup(createElement(ProductionDiorama, {
       stage: 'code',
       status: 'running',
+      stageMode: 'crew',
       crew,
     }));
 
@@ -92,6 +107,7 @@ describe('Noobi ground shadow profiles', () => {
     const markup = renderToStaticMarkup(createElement(ProductionDiorama, {
       stage: 'world',
       status: 'running',
+      stageMode: 'crew',
       sceneId: 'fishing',
     }));
 

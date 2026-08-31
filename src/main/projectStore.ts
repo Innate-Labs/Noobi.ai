@@ -40,6 +40,8 @@ import {
   DEFAULT_NOOBI_CREW,
   DEFAULT_NOOBI_PACK_ID,
   DEFAULT_NOOBI_SCENE_ID,
+  DEFAULT_NOOBI_SOLO_SCENE_ID,
+  DEFAULT_NOOBI_STAGE_MODE,
   DEFAULT_TARGET_FRAME_RATE,
   NOOBI_CREW_MAX_SIZE,
   NOOBI_CREW_MIN_SIZE,
@@ -48,6 +50,7 @@ import {
   isNoobiCrewRole,
   isNoobiPackId,
   isNoobiSceneId,
+  isNoobiStageMode,
   isTargetFrameRate,
 } from '../shared/contracts.js';
 import { createWorkspaceTemplate } from './workspaceTemplate.js';
@@ -593,6 +596,8 @@ function parsePersistedStore(source: string): {
           || project.noobiCrewOverride === undefined
         ),
     ) || !isRecord(parsed.settings)
+      || parsed.settings.defaultNoobiStageMode === undefined
+      || parsed.settings.defaultNoobiSoloSceneId === undefined
       || parsed.settings.defaultNoobiSceneId === undefined
       || parsed.settings.defaultNoobiPackId === undefined
       || parsed.settings.defaultNoobiCrew === undefined,
@@ -714,6 +719,18 @@ function validateSettings(value: unknown): AppSettings {
     throw new Error('Default model setting must be a non-empty string or null');
   }
   if (!isNonEmptyString(value.defaultEffort)) throw new Error('Default effort setting is invalid');
+  const defaultNoobiStageMode = value.defaultNoobiStageMode === undefined
+    ? DEFAULT_NOOBI_STAGE_MODE
+    : value.defaultNoobiStageMode;
+  if (!isNoobiStageMode(defaultNoobiStageMode)) {
+    throw new Error('Default Noobi stage mode setting is invalid');
+  }
+  const defaultNoobiSoloSceneId = value.defaultNoobiSoloSceneId === undefined
+    ? DEFAULT_NOOBI_SOLO_SCENE_ID
+    : value.defaultNoobiSoloSceneId;
+  if (!isNoobiPackId(defaultNoobiSoloSceneId)) {
+    throw new Error('Default Noobi solo scene setting is invalid');
+  }
   const defaultNoobiSceneId = value.defaultNoobiSceneId === undefined
     ? DEFAULT_NOOBI_SCENE_ID
     : value.defaultNoobiSceneId;
@@ -732,6 +749,8 @@ function validateSettings(value: unknown): AppSettings {
     defaultWorkspace: resolve(value.defaultWorkspace),
     defaultModel: value.defaultModel === null ? null : value.defaultModel.trim(),
     defaultEffort: value.defaultEffort.trim(),
+    defaultNoobiStageMode,
+    defaultNoobiSoloSceneId,
     defaultNoobiSceneId,
     defaultNoobiPackId,
     defaultNoobiCrew: validatedNoobiCrew(defaultNoobiCrew, 'Default Noobi crew setting'),
@@ -744,6 +763,8 @@ function defaultSettings(defaultWorkspace: string): AppSettings {
     defaultWorkspace,
     defaultModel: null,
     defaultEffort: 'medium',
+    defaultNoobiStageMode: DEFAULT_NOOBI_STAGE_MODE,
+    defaultNoobiSoloSceneId: DEFAULT_NOOBI_SOLO_SCENE_ID,
     defaultNoobiSceneId: DEFAULT_NOOBI_SCENE_ID,
     defaultNoobiPackId: DEFAULT_NOOBI_PACK_ID,
     defaultNoobiCrew: DEFAULT_NOOBI_CREW.map((member) => ({ ...member })),

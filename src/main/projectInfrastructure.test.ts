@@ -107,6 +107,38 @@ describe('project infrastructure', () => {
     });
   });
 
+  it('persists the default Noobi stage mode and solo scene while validating both', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-stage-store-test-'));
+    roots.push(root);
+    const storageFile = join(root, 'data/projects.json');
+    const workspace = join(root, 'games');
+    const store = new ProjectStore(storageFile, workspace);
+
+    await expect(store.getSettings()).resolves.toMatchObject({
+      defaultNoobiStageMode: 'solo',
+      defaultNoobiSoloSceneId: 'classic',
+    });
+    await expect(store.saveSettings({
+      defaultNoobiStageMode: 'crew',
+      defaultNoobiSoloSceneId: 'mosslight',
+    })).resolves.toMatchObject({
+      defaultNoobiStageMode: 'crew',
+      defaultNoobiSoloSceneId: 'mosslight',
+    });
+    await expect(store.saveSettings({
+      defaultNoobiStageMode: 'unknown-mode' as never,
+    })).rejects.toThrow('Default Noobi stage mode setting is invalid');
+    await expect(store.saveSettings({
+      defaultNoobiSoloSceneId: 'unknown-scene' as never,
+    })).rejects.toThrow('Default Noobi solo scene setting is invalid');
+
+    const reloaded = new ProjectStore(storageFile, workspace);
+    await expect(reloaded.getSettings()).resolves.toMatchObject({
+      defaultNoobiStageMode: 'crew',
+      defaultNoobiSoloSceneId: 'mosslight',
+    });
+  });
+
   it('persists validated global and project Noobi crews without visual asset data', async () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-crew-store-test-'));
     roots.push(root);
@@ -265,6 +297,8 @@ describe('project infrastructure', () => {
         noobiCrewOverride?: NoobiCrewMember[] | null;
       }>;
       settings?: {
+        defaultNoobiStageMode?: string;
+        defaultNoobiSoloSceneId?: string;
         defaultNoobiSceneId?: string;
         defaultNoobiPackId?: string;
         defaultNoobiCrew?: NoobiCrewMember[];
@@ -278,6 +312,8 @@ describe('project infrastructure', () => {
     expect(migrated.projects[1]?.noobiPackOverrideId).toBeNull();
     expect(migrated.projects[0]?.noobiCrewOverride).toBeNull();
     expect(migrated.projects[1]?.noobiCrewOverride).toBeNull();
+    expect(migrated.settings?.defaultNoobiStageMode).toBe('solo');
+    expect(migrated.settings?.defaultNoobiSoloSceneId).toBe('classic');
     expect(migrated.settings?.defaultNoobiSceneId).toBe('collaboration');
     expect(migrated.settings?.defaultNoobiPackId).toBe('classic');
     expect(migrated.settings?.defaultNoobiCrew).toEqual([
@@ -286,6 +322,57 @@ describe('project infrastructure', () => {
       { packId: 'hellokitty', role: 'engineer' },
       { packId: 'starforge', role: 'tester' },
     ]);
+  });
+
+  it('adds solo defaults to legacy settings without replacing existing Noobi choices', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-stage-migration-test-'));
+    roots.push(root);
+    const storageFile = join(root, 'data/projects.json');
+    const workspace = join(root, 'games');
+    const existingCrew: NoobiCrewMember[] = [
+      { packId: 'hellokitty', role: 'artist' },
+      { packId: 'starforge', role: 'tester' },
+    ];
+    await mkdir(join(root, 'data'), { recursive: true });
+    await writeFile(storageFile, `${JSON.stringify({
+      version: 1,
+      projects: [],
+      settings: {
+        defaultWorkspace: workspace,
+        defaultModel: null,
+        defaultEffort: 'medium',
+        defaultNoobiSceneId: 'fishing',
+        defaultNoobiPackId: 'twilight',
+        defaultNoobiCrew: existingCrew,
+        theme: 'light',
+      },
+    }, null, 2)}\n`);
+
+    const store = new ProjectStore(storageFile, workspace);
+    await expect(store.getSettings()).resolves.toMatchObject({
+      defaultNoobiStageMode: 'solo',
+      defaultNoobiSoloSceneId: 'classic',
+      defaultNoobiSceneId: 'fishing',
+      defaultNoobiPackId: 'twilight',
+      defaultNoobiCrew: existingCrew,
+    });
+    const migrated = JSON.parse(await readFile(storageFile, 'utf8')) as {
+      settings?: Partial<Record<
+        | 'defaultNoobiStageMode'
+        | 'defaultNoobiSoloSceneId'
+        | 'defaultNoobiSceneId'
+        | 'defaultNoobiPackId'
+        | 'defaultNoobiCrew',
+        unknown
+      >>;
+    };
+    expect(migrated.settings).toMatchObject({
+      defaultNoobiStageMode: 'solo',
+      defaultNoobiSoloSceneId: 'classic',
+      defaultNoobiSceneId: 'fishing',
+      defaultNoobiPackId: 'twilight',
+      defaultNoobiCrew: existingCrew,
+    });
   });
 
   it('creates a Godot 4 project with scenes, GDScript, assets, and a Web preset', async () => {

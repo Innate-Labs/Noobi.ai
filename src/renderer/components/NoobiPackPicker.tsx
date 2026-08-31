@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Sparkles } from 'lucide-react';
-import type { KeyboardEvent } from 'react';
+import React, { type KeyboardEvent } from 'react';
 
 import type { NoobiPackId } from '../../shared/contracts';
 import classicAvatar from '../assets/noobi-packs/classic/frames/sprite-idle-a.png';
@@ -19,6 +19,8 @@ export interface NoobiPackOption {
   eyebrow: string;
   description: string;
   avatarLabel: string;
+  avatarDescription: string;
+  sceneDescription: string;
   sceneImage: string;
   avatarImage: string;
 }
@@ -30,6 +32,8 @@ export const NOOBI_PACK_OPTIONS: readonly NoobiPackOption[] = [
     eyebrow: 'CLASSIC STUDIO',
     description: '暖木工作室与原版 Noobi，适合大多数游戏制作任务。',
     avatarLabel: '经典制作人',
+    avatarDescription: '热情、可靠的全能制作伙伴，适合陪你完成第一款游戏。',
+    sceneDescription: '暖木色像素工作室，包含需求桌、装配台与试玩区。',
     sceneImage: classicScene,
     avatarImage: classicAvatar,
   },
@@ -39,6 +43,8 @@ export const NOOBI_PACK_OPTIONS: readonly NoobiPackOption[] = [
     eyebrow: 'MOSSLIGHT ATELIER',
     description: '植物、琥珀灯与游侠 Noobi，适合自然和冒险题材。',
     avatarLabel: '苔光游侠',
+    avatarDescription: '安静敏锐的自然系伙伴，擅长探索、地图与冒险题材。',
+    sceneDescription: '被植物与琥珀灯包围的苔光工作室，气氛安静而专注。',
     sceneImage: mosslightScene,
     avatarImage: mosslightAvatar,
   },
@@ -48,6 +54,8 @@ export const NOOBI_PACK_OPTIONS: readonly NoobiPackOption[] = [
     eyebrow: 'STARFORGE LAB',
     description: '星舰机械间与工程师 Noobi，适合科幻和 3D 项目。',
     avatarLabel: '星铸工程师',
+    avatarDescription: '喜欢机械与调试的工程伙伴，适合科幻、系统和 3D 项目。',
+    sceneDescription: '蓝色晶体与机械终端构成的星铸实验室，科技感更强。',
     sceneImage: starforgeScene,
     avatarImage: starforgeAvatar,
   },
@@ -57,6 +65,8 @@ export const NOOBI_PACK_OPTIONS: readonly NoobiPackOption[] = [
     eyebrow: 'TWILIGHT MAGIC LAB',
     description: '小马宝莉·暮光闪闪与魔法研究室，适合解谜、叙事和奇幻冒险。',
     avatarLabel: '小马宝莉·暮光闪闪',
+    avatarDescription: '专注研究与魔法推演的伙伴，适合解谜、叙事和奇幻冒险。',
+    sceneDescription: '紫色魔法研究室与星光装置，为奇幻制作提供安静舞台。',
     sceneImage: twilightScene,
     avatarImage: twilightAvatar,
   },
@@ -66,6 +76,8 @@ export const NOOBI_PACK_OPTIONS: readonly NoobiPackOption[] = [
     eyebrow: 'HELLO KITTY STUDIO',
     description: 'Hello Kitty 与草莓创意室，适合休闲、装扮和温馨题材。',
     avatarLabel: 'Hello Kitty',
+    avatarDescription: '温柔细致的创意伙伴，适合休闲、装扮与治愈题材。',
+    sceneDescription: '明亮的草莓创意室，适合轻松、可爱和生活化的项目。',
     sceneImage: helloKittyScene,
     avatarImage: helloKittyAvatar,
   },
@@ -88,6 +100,7 @@ interface NoobiPackPickerProps {
   globalValue?: NoobiPackId;
   mode: 'global' | 'project';
   variant?: 'cards' | 'compact';
+  presentation?: 'bundle' | 'character';
   disabled?: boolean;
   busy?: boolean;
   onChange: (value: NoobiPackId | null) => void;
@@ -98,6 +111,7 @@ export function NoobiPackPicker({
   globalValue = 'classic',
   mode,
   variant = 'cards',
+  presentation = 'bundle',
   disabled = false,
   busy = false,
   onChange,
@@ -180,9 +194,11 @@ export function NoobiPackPicker({
 
   return (
     <div
-      className={`noobi-pack-picker mode-${mode}`}
+      className={`noobi-pack-picker mode-${mode} presentation-${presentation}`}
       role="radiogroup"
-      aria-label={mode === 'global' ? '默认 Noobi 形象与制作场景' : '项目 Noobi 形象与制作场景'}
+      aria-label={presentation === 'character'
+        ? '选择默认 Noobi 角色'
+        : mode === 'global' ? '默认 Noobi 形象与制作场景' : '项目 Noobi 形象与制作场景'}
       aria-busy={busy}
     >
       {options.map((option, index) => {
@@ -192,7 +208,10 @@ export function NoobiPackPicker({
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={`${option.name}：${option.description}`}
+            aria-label={presentation === 'character'
+              ? `${option.avatarLabel}：${option.avatarDescription}`
+              : `${option.name}：${option.description}`}
+            data-pack-kind={presentation}
             data-pack-index={index}
             className={`noobi-pack-card pack-${option.id}${selected ? ' is-selected' : ''}${option.inherited ? ' is-inherited' : ''}`}
             key={option.inherited ? 'inherit' : option.id}
@@ -201,15 +220,20 @@ export function NoobiPackPicker({
             onKeyDown={(event) => handleArrowKey(event, index)}
             onClick={() => selectAt(index)}
           >
-            <span className="noobi-pack-preview" aria-hidden="true">
+            <span
+              className={`noobi-pack-preview${presentation === 'character' ? ' noobi-character-preview' : ''}`}
+              aria-hidden="true"
+            >
+              {presentation === 'bundle' ? (
+                <img
+                  className="noobi-pack-scene-image"
+                  src={option.sceneImage}
+                  alt=""
+                  draggable={false}
+                />
+              ) : <span className="noobi-character-pixel-grid" />}
               <img
-                className="noobi-pack-scene-image"
-                src={option.sceneImage}
-                alt=""
-                draggable={false}
-              />
-              <img
-                className="noobi-pack-avatar-image"
+                className={`noobi-pack-avatar-image${presentation === 'character' ? ' noobi-character-avatar-image' : ''}`}
                 src={option.avatarImage}
                 alt=""
                 draggable={false}
@@ -217,9 +241,9 @@ export function NoobiPackPicker({
               {option.inherited ? <Sparkles className="noobi-pack-follow-icon" size={17} /> : null}
             </span>
             <span className="noobi-pack-card-copy">
-              <small>{option.eyebrow}</small>
-              <strong>{option.name}</strong>
-              <span>{option.description}</span>
+              <small>{presentation === 'character' ? 'NOOBI CHARACTER' : option.eyebrow}</small>
+              <strong>{presentation === 'character' ? option.avatarLabel : option.name}</strong>
+              <span>{presentation === 'character' ? option.avatarDescription : option.description}</span>
             </span>
             <span className="noobi-pack-check" aria-hidden="true"><Check size={13} /></span>
           </button>

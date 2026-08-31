@@ -43,6 +43,8 @@ import type {
 import {
   DEFAULT_NOOBI_CREW,
   DEFAULT_NOOBI_SCENE_ID,
+  DEFAULT_NOOBI_SOLO_SCENE_ID,
+  DEFAULT_NOOBI_STAGE_MODE,
 } from '../../shared/contracts';
 import { toMessage } from '../ui';
 import { ProductionDiorama } from './ProductionDiorama';
@@ -118,7 +120,10 @@ export function Inspector({
     ?? 'classic';
   const globalNoobiCrew = settings.defaultNoobiCrew ?? DEFAULT_NOOBI_CREW;
   const resolvedNoobiCrew = project.noobiCrewOverride ?? globalNoobiCrew;
+  const resolvedNoobiStageMode = settings.defaultNoobiStageMode ?? DEFAULT_NOOBI_STAGE_MODE;
+  const resolvedNoobiSoloSceneId = settings.defaultNoobiSoloSceneId ?? DEFAULT_NOOBI_SOLO_SCENE_ID;
   const resolvedNoobiSceneId = settings.defaultNoobiSceneId ?? DEFAULT_NOOBI_SCENE_ID;
+  const resolvedNoobiPack = NOOBI_PACK_OPTIONS.find((option) => option.id === resolvedNoobiPackId);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -362,7 +367,7 @@ export function Inspector({
         </span>
         <div className="inspector-toolbar-actions">
           {tab === 'preview' ? (
-            <>
+            resolvedNoobiStageMode === 'crew' ? (
               <button
                 className="inspector-crew-toggle"
                 type="button"
@@ -385,7 +390,15 @@ export function Inspector({
                 </span>
                 <strong>{resolvedNoobiCrew.length}人</strong>
               </button>
-            </>
+            ) : (
+              <div className="inspector-solo-indicator" aria-label={`单人搭档：${resolvedNoobiPack?.avatarLabel ?? 'Noobi'}`}>
+                {resolvedNoobiPack ? <img src={resolvedNoobiPack.avatarImage} alt="" draggable={false} /> : null}
+                <span>
+                  <small>SOLO</small>
+                  <strong>单人</strong>
+                </span>
+              </div>
+            )
           ) : null}
           {tab === 'preview' && project.status === 'running' && payload.previewUrl ? (
             <button
@@ -433,7 +446,7 @@ export function Inspector({
         </div>
       </div>
 
-      {tab === 'preview' && crewEditorOpen ? (
+      {tab === 'preview' && resolvedNoobiStageMode === 'crew' && crewEditorOpen ? (
         <aside
           className="inspector-crew-panel"
           id="project-noobi-crew-editor"
@@ -513,10 +526,12 @@ export function Inspector({
             />
           ) : (
             <ProductionDiorama
-              key={`${resolvedNoobiPackId}:${resolvedNoobiSceneId}`}
+              key={`${resolvedNoobiStageMode}:${resolvedNoobiPackId}:${resolvedNoobiSoloSceneId}:${resolvedNoobiSceneId}`}
+              stageMode={resolvedNoobiStageMode}
               packId={resolvedNoobiPackId}
               crew={resolvedNoobiCrew}
               sceneId={resolvedNoobiSceneId}
+              soloSceneId={resolvedNoobiSoloSceneId}
               stage={activityStage}
               status={project.status}
             />
