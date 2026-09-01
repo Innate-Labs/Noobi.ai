@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -36,5 +36,42 @@ describe('ProjectStore renaming', () => {
       name: '鸭嘴兽大战僵尸',
       root: project.root,
     });
+  });
+});
+
+describe('ProjectStore selected workspace directory', () => {
+  it('initializes the exact empty folder selected by the user without nesting another directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-selected-workspace-'));
+    roots.push(root);
+    const selectedDirectory = join(root, '鸭嘴兽大战僵尸');
+    await mkdir(selectedDirectory);
+    const store = new ProjectStore(join(root, 'project-store.json'), join(root, 'default-games'));
+
+    const project = await store.create({
+      name: '鸭嘴兽大战僵尸',
+      idea: '制作一个鸭嘴兽对抗僵尸的游戏',
+      projectDirectory: selectedDirectory,
+      engine: 'web',
+    });
+
+    expect(project.root).toBe(await realpath(selectedDirectory));
+    await expect(readFile(join(selectedDirectory, 'package.json'), 'utf8')).resolves.toContain('"name"');
+  });
+
+  it('refuses a non-empty selected folder and preserves the existing files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-selected-workspace-'));
+    roots.push(root);
+    const selectedDirectory = join(root, '已有内容');
+    await mkdir(selectedDirectory);
+    await writeFile(join(selectedDirectory, '重要资料.txt'), '不要覆盖', 'utf8');
+    const store = new ProjectStore(join(root, 'project-store.json'), join(root, 'default-games'));
+
+    await expect(store.create({
+      name: '已有内容',
+      idea: '制作一个游戏',
+      projectDirectory: selectedDirectory,
+      engine: 'web',
+    })).rejects.toThrow('请选择一个空文件夹');
+    await expect(readFile(join(selectedDirectory, '重要资料.txt'), 'utf8')).resolves.toBe('不要覆盖');
   });
 });

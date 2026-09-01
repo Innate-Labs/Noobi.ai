@@ -32,10 +32,9 @@ import { HomeDashboard, type HomeLaunchInput } from './components/HomeDashboard'
 import { Inspector } from './components/Inspector';
 import { LaunchTransition, type LaunchTransitionPhase } from './components/LaunchTransition';
 import { Pipeline } from './components/Pipeline';
-import { ProjectRail } from './components/ProjectRail';
+import { ProjectRail, type ProjectRenameMenuRequest } from './components/ProjectRail';
 import { SettingsModal, type SettingsSection } from './components/SettingsModal';
 import { PROJECT_STATUS_LABELS, runtimeLabel, toMessage } from './ui';
-import { NEW_GAME_NAME } from './projectNaming';
 
 type EventMap = Record<string, AgentEvent[]>;
 type LaunchTransitionState = LaunchTransitionPhase | 'hidden';
@@ -58,7 +57,7 @@ export function App() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('account');
   const [railOpen, setRailOpen] = useState(false);
   const [homeRailCollapsed, setHomeRailCollapsed] = useState(false);
-  const [renameRequestToken, setRenameRequestToken] = useState(0);
+  const [renameMenuRequest, setRenameMenuRequest] = useState<ProjectRenameMenuRequest | null>(null);
   const [error, setError] = useState('');
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [loadingError, setLoadingError] = useState('');
@@ -218,15 +217,22 @@ export function App() {
 
   async function launchFromHome(input: HomeLaunchInput) {
     if (!settings || homeLaunching || !ensureRunReady()) return;
+    setError('');
+    let projectDirectory: string | null = null;
+    try {
+      projectDirectory = await window.noobi.chooseProjectDirectory();
+    } catch (reason) {
+      setError(toMessage(reason));
+      return;
+    }
+    if (!projectDirectory) return;
     const transitionStartedAt = Date.now();
     setHomeLaunching(true);
     setLaunchTransition('running');
-    setError('');
     try {
       const project = await window.noobi.createProject({
-        name: NEW_GAME_NAME,
         idea: input.idea,
-        parentDirectory: settings.defaultWorkspace,
+        projectDirectory,
         model: input.model,
       }, input.attachments);
       if (project.status === 'failed') {
@@ -348,7 +354,7 @@ export function App() {
         runtime={runtime}
         open={railOpen}
         collapsed={!selected && homeRailCollapsed}
-        renameRequestToken={renameRequestToken}
+        renameMenuRequest={renameMenuRequest}
         variant={selected ? 'workbench' : 'dashboard'}
         onClose={() => setRailOpen(false)}
         onToggleCollapse={() => setHomeRailCollapsed((current) => !current)}
@@ -440,9 +446,16 @@ export function App() {
                   <button
                     className="agent-project-name"
                     type="button"
-                    title="重命名游戏"
-                    aria-label={`重命名 ${selected.name}`}
-                    onClick={() => setRenameRequestToken((value) => value + 1)}
+                    title="打开名称菜单"
+                    aria-label={`打开 ${selected.name} 的名称菜单`}
+                    onClick={(event) => {
+                      const bounds = event.currentTarget.getBoundingClientRect();
+                      setRenameMenuRequest((current) => ({
+                        token: (current?.token ?? 0) + 1,
+                        x: bounds.left,
+                        y: bounds.bottom + 6,
+                      }));
+                    }}
                   >
                     {selected.name}
                   </button>

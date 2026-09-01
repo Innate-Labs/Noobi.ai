@@ -44,6 +44,8 @@ const api: NoobiApi = {
   startLogin: () => ipcRenderer.invoke('noobi:runtime:login') as Promise<LoginStartResult>,
   logout: () => ipcRenderer.invoke('noobi:runtime:logout') as Promise<RuntimeStatus>,
   chooseDirectory: () => ipcRenderer.invoke('noobi:dialog:directory') as Promise<string | null>,
+  chooseProjectDirectory: () =>
+    ipcRenderer.invoke('noobi:dialog:project-directory') as Promise<string | null>,
   createProject: (input: CreateProjectInput, files: readonly unknown[] = []) => {
     if (!Array.isArray(files) || files.length > 50) {
       return Promise.reject(new Error('一次最多上传 50 个附件'));

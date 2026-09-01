@@ -18,13 +18,19 @@ import {
   runtimeLabel,
 } from '../ui';
 
+export interface ProjectRenameMenuRequest {
+  token: number;
+  x: number;
+  y: number;
+}
+
 interface ProjectRailProps {
   projects: readonly ProjectRecord[];
   selectedId?: string;
   runtime: RuntimeStatus;
   open: boolean;
   collapsed: boolean;
-  renameRequestToken: number;
+  renameMenuRequest: ProjectRenameMenuRequest | null;
   variant: 'dashboard' | 'workbench';
   onClose: () => void;
   onToggleCollapse: () => void;
@@ -59,7 +65,7 @@ export function ProjectRail({
   runtime,
   open,
   collapsed,
-  renameRequestToken,
+  renameMenuRequest,
   variant,
   onClose,
   onToggleCollapse,
@@ -87,10 +93,17 @@ export function ProjectRail({
   }, [contextMenu, renameBusy, renaming]);
 
   useEffect(() => {
-    if (renameRequestToken === 0 || !selectedId) return;
+    if (!renameMenuRequest || !selectedId) return;
     const project = projects.find((item) => item.id === selectedId);
-    if (project) beginRename(project);
-  }, [renameRequestToken]);
+    if (!project) return;
+    const position = projectContextMenuPosition(
+      renameMenuRequest.x,
+      renameMenuRequest.y,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    setContextMenu({ project, ...position });
+  }, [renameMenuRequest?.token]);
 
   function openContextMenu(event: MouseEvent, project: ProjectRecord) {
     event.preventDefault();

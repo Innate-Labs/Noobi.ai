@@ -99,7 +99,7 @@ import {
   importProjectReferences,
   isProjectReferencePath,
 } from './projectReferenceStore.js';
-import { ProjectStore } from './projectStore.js';
+import { ProjectStore, resolveEmptyProjectDirectory } from './projectStore.js';
 import { PromptTemplateStore } from './promptTemplateStore.js';
 import { verifyVisualAssetCoverage } from './visualAssetCoverage.js';
 import { verifyWebProductionBuild } from './webProductionBuild.js';
@@ -441,7 +441,7 @@ function bindIpc(): void {
   handle('noobi:dialog:directory', async () => {
     const settings = await projectStore.getSettings();
     const options: Electron.OpenDialogOptions = {
-      title: '选择游戏项目目录',
+      title: '选择默认项目存放位置',
       defaultPath: settings.defaultWorkspace,
       properties: ['openDirectory', 'createDirectory'],
     };
@@ -450,6 +450,42 @@ function bindIpc(): void {
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
+  handle('noobi:dialog:project-directory', async () => {
+    const settings = await projectStore.getSettings();
+    while (true) {
+      const options: Electron.OpenDialogOptions = {
+        title: '创建或选择游戏项目文件夹',
+        message: '这个文件夹将直接保存游戏代码、素材和构建文件，请选择一个空文件夹。',
+        buttonLabel: '使用这个文件夹',
+        defaultPath: settings.defaultWorkspace,
+        properties: ['openDirectory', 'createDirectory'],
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled) return null;
+      const selected = result.filePaths[0];
+      if (!selected) return null;
+      try {
+        return await resolveEmptyProjectDirectory(selected);
+      } catch (error) {
+        const messageOptions: Electron.MessageBoxOptions = {
+          type: 'warning',
+          title: '请选择空文件夹',
+          message: '这个文件夹里已经有内容',
+          detail: `${asError(error).message}\n\n你可以返回 Finder 新建一个文件夹，再选择它。`,
+          buttons: ['重新选择', '取消'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+        };
+        const choice = mainWindow
+          ? await dialog.showMessageBox(mainWindow, messageOptions)
+          : await dialog.showMessageBox(messageOptions);
+        if (choice.response === 1) return null;
+      }
+    }
+  });
 
   handle('noobi:project:create', async (
     _event,
@@ -457,13 +493,19 @@ function bindIpc(): void {
     attachmentPaths: unknown = [],
   ) => {
     const attachments = await inspectCreationAttachments(attachmentPaths);
+    const projectDirectory = typeof input?.projectDirectory === 'string'
+      ? input.projectDirectory
+      : '';
+    if (!projectDirectory.trim()) throw new Error('请选择游戏项目文件夹');
+    const selectedProjectDirectory = await resolveEmptyProjectDirectory(projectDirectory);
+    const projectName = basename(selectedProjectDirectory).trim().slice(0, 100);
+    if (!projectName) throw new Error('请选择游戏项目文件夹');
     const [settings, godot] = await Promise.all([
       projectStore.getSettings(),
       godotEnvironmentService.refresh(),
     ]);
-    await mkdir(settings.defaultWorkspace, { recursive: true, mode: 0o700 });
     const decision = await engineAdvisor.decide({
-      cwd: settings.defaultWorkspace,
+      cwd: selectedProjectDirectory,
       idea: typeof input?.idea === 'string' ? input.idea : '',
       model: input?.model,
       effort: settings.defaultEffort,
@@ -480,7 +522,13 @@ function bindIpc(): void {
     const exportGodotStarter = decision.engine === 'godot'
       && godot.canExportProjects
       && godot.exportTemplates.targets.web;
-    const project = await projectStore.create({ ...input, engine: decision.engine });
+    const project = await projectStore.create({
+      name: projectName,
+      idea: input.idea,
+      projectDirectory: selectedProjectDirectory,
+      model: input.model,
+      engine: decision.engine,
+    });
     const initialEvent: AgentEvent = {
       id: randomUUID(),
       projectId: project.id,
@@ -2440,13 +2488,34 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       })()`,
       true,
     ) as boolean;
-    if (!opened) throw new Error('Workbench project title rename trigger was not available');
+    if (!opened) throw new Error('Workbench project title menu trigger was not available');
+    await delay(250);
+    const menuState = await window.webContents.executeJavaScript(
+      `({
+        menu: Boolean(document.querySelector('.project-context-menu')),
+        dialog: Boolean(document.querySelector('.project-rename-dialog')),
+      })`,
+      true,
+    ) as { menu: boolean; dialog: boolean };
+    if (!menuState.menu || menuState.dialog) {
+      throw new Error(`Workbench project title did not open the rename menu first: ${JSON.stringify(menuState)}`);
+    }
+    const renameSelected = await window.webContents.executeJavaScript(
+      `(() => {
+        const action = document.querySelector('.project-context-menu [role="menuitem"]');
+        if (!(action instanceof HTMLButtonElement)) return false;
+        action.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!renameSelected) throw new Error('Workbench rename menu action was not available');
     await delay(250);
     const dialogVisible = await window.webContents.executeJavaScript(
       `Boolean(document.querySelector('.project-rename-dialog'))`,
       true,
     ) as boolean;
-    if (!dialogVisible) throw new Error('Workbench project title did not open the rename dialog');
+    if (!dialogVisible) throw new Error('Workbench rename action did not open the rename dialog');
   }
   await window.webContents.executeJavaScript(
     `document.querySelectorAll('.brief-card footer > span').forEach((node) => {

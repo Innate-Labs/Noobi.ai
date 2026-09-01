@@ -256,14 +256,20 @@ export interface BootstrapPayload {
 }
 
 export interface CreateProjectInput {
-  name: string;
   idea: string;
-  parentDirectory: string;
+  projectDirectory: string;
   model?: string | null;
 }
 
-/** Main-only store input. Renderer creation requests never choose the engine. */
-export interface ProjectStoreCreateInput extends CreateProjectInput {
+/** Main-only store input. Renderer creation requests never choose the engine or a parent directory. */
+export interface ProjectStoreCreateInput {
+  name: string;
+  idea: string;
+  /** Legacy/internal path: the store creates a unique child directory below this parent. */
+  parentDirectory?: string;
+  /** User-selected path: the store initializes this exact empty directory. */
+  projectDirectory?: string;
+  model?: string | null;
   /** Omitted only by legacy/store tests, where it migrates to the browser engine. */
   engine?: GameEngine;
 }
@@ -525,6 +531,7 @@ export interface NoobiApi {
   startLogin(): Promise<LoginStartResult>;
   logout(): Promise<RuntimeStatus>;
   chooseDirectory(): Promise<string | null>;
+  chooseProjectDirectory(): Promise<string | null>;
   /** Files stay opaque in Renderer; Preload resolves their native paths for Main. */
   createProject(input: CreateProjectInput, files?: readonly unknown[]): Promise<ProjectRecord>;
   renameProject(projectId: string, name: string): Promise<ProjectRecord>;

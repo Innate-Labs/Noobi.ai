@@ -170,8 +170,13 @@ export class ProjectStore {
   async create(input: ProjectStoreCreateInput): Promise<ProjectRecord> {
     return this.#mutate(async (state) => {
       const normalized = validateCreateProjectInput(input);
-      const parent = await ensureDirectory(normalized.parentDirectory);
-      const projectRoot = await createUniqueWorkspaceDirectory(parent, normalized.name);
+      const usesSelectedDirectory = Boolean(normalized.projectDirectory);
+      const parent = normalized.projectDirectory
+        ? await canonicalDirectory(dirname(normalized.projectDirectory))
+        : await ensureDirectory(normalized.parentDirectory!);
+      const projectRoot = normalized.projectDirectory
+        ? await resolveEmptyProjectDirectory(normalized.projectDirectory)
+        : await createUniqueWorkspaceDirectory(parent, normalized.name);
       const timestamp = new Date().toISOString();
       const project: ProjectRecord = {
         id: randomUUID(),
@@ -198,7 +203,7 @@ export class ProjectStore {
         state.projects.push(project);
         await this.#persist(state);
       } catch (error) {
-        await removeNewWorkspace(parent, projectRoot);
+        if (!usesSelectedDirectory) await removeNewWorkspace(parent, projectRoot);
         throw error;
       }
       return structuredClone(project);
@@ -468,15 +473,24 @@ export async function atomicWriteJson(targetPath: string, value: unknown): Promi
 function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   name: string;
   idea: string;
-  parentDirectory: string;
+  parentDirectory: string | null;
+  projectDirectory: string | null;
   model: string | null;
   engine: GameEngine;
 } {
   if (!input || typeof input !== 'object') throw new Error('Project input is required');
   const name = validatedText(input.name, 'Project name', MAX_PROJECT_NAME_LENGTH);
   const idea = validatedText(input.idea, 'Game idea', MAX_PROJECT_IDEA_LENGTH);
-  if (!isNonEmptyString(input.parentDirectory) || !isAbsolute(input.parentDirectory)) {
+  const hasParentDirectory = isNonEmptyString(input.parentDirectory);
+  const hasProjectDirectory = isNonEmptyString(input.projectDirectory);
+  if (hasParentDirectory === hasProjectDirectory) {
+    throw new Error('Provide exactly one project parent directory or selected project directory');
+  }
+  if (hasParentDirectory && !isAbsolute(input.parentDirectory!)) {
     throw new Error('Project parent directory must be an absolute path');
+  }
+  if (hasProjectDirectory && !isAbsolute(input.projectDirectory!)) {
+    throw new Error('Selected project directory must be an absolute path');
   }
   if (input.model !== undefined && input.model !== null && !isNonEmptyString(input.model)) {
     throw new Error('Project model must be a non-empty string or null');
@@ -487,7 +501,8 @@ function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   return {
     name,
     idea,
-    parentDirectory: resolve(input.parentDirectory),
+    parentDirectory: hasParentDirectory ? resolve(input.parentDirectory!) : null,
+    projectDirectory: hasProjectDirectory ? resolve(input.projectDirectory!) : null,
     model: input.model?.trim() || null,
     engine: input.engine ?? DEFAULT_GAME_ENGINE,
   };
@@ -787,6 +802,15 @@ async function canonicalDirectory(directory: string): Promise<string> {
   const canonical = await realpath(lexical);
   const info = await stat(canonical);
   if (!info.isDirectory()) throw new Error(`Path is not a directory: ${directory}`);
+  return canonical;
+}
+
+export async function resolveEmptyProjectDirectory(directory: string): Promise<string> {
+  const canonical = await canonicalDirectory(directory);
+  const entries = (await readdir(canonical)).filter((name) => name !== '.DS_Store');
+  if (entries.length > 0) {
+    throw new Error('请选择一个空文件夹，避免覆盖其中已有的文件。');
+  }
   return canonical;
 }
 
