@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -13,80 +13,6 @@ afterEach(async () => {
 });
 
 describe('project infrastructure', () => {
-  it('moves legacy LoopSeed workspaces and the saved default into Noobi Games', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'noobi-workspace-migration-test-'));
-    roots.push(root);
-    const storageFile = join(root, 'data/projects.json');
-    const legacyWorkspace = join(root, 'LoopSeed Games');
-    const currentWorkspace = join(root, 'Noobi Games');
-    const legacyProjectRoot = join(legacyWorkspace, 'legacy-game');
-    const timestamp = new Date().toISOString();
-    await mkdir(join(root, 'data'), { recursive: true });
-    await mkdir(legacyProjectRoot, { recursive: true });
-    await writeFile(join(legacyProjectRoot, 'kept.txt'), 'project data');
-    await writeFile(storageFile, `${JSON.stringify({
-      version: 1,
-      projects: [{
-        id: 'legacy-workspace-project',
-        name: 'Legacy Workspace Game',
-        idea: 'Move this tracked project without losing its files.',
-        root: legacyProjectRoot,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        status: 'stopped',
-        stage: 'code',
-        engine: 'web',
-        targetFrameRate: 60,
-        noobiPackOverrideId: null,
-        noobiCrewOverride: null,
-        model: null,
-        threadId: null,
-        toolsetVersion: 0,
-        activeTurnId: null,
-        lastError: null,
-      }],
-      settings: {
-        defaultWorkspace: legacyWorkspace,
-        defaultModel: null,
-        defaultEffort: 'medium',
-        defaultNoobiStageMode: 'solo',
-        defaultNoobiSoloSceneId: 'classic',
-        defaultNoobiSceneId: 'collaboration',
-        defaultNoobiPackId: 'classic',
-        defaultNoobiCrew: [
-          { packId: 'classic', role: 'planner' },
-          { packId: 'twilight', role: 'artist' },
-          { packId: 'hellokitty', role: 'engineer' },
-          { packId: 'starforge', role: 'tester' },
-        ],
-        theme: 'light',
-      },
-    }, null, 2)}\n`);
-
-    const store = new ProjectStore({
-      storageFile,
-      defaultWorkspace: currentWorkspace,
-      legacyWorkspaces: [legacyWorkspace],
-    });
-    const migratedRoot = join(currentWorkspace, 'legacy-game');
-
-    await expect(store.getSettings()).resolves.toMatchObject({
-      defaultWorkspace: currentWorkspace,
-    });
-    await expect(store.get('legacy-workspace-project')).resolves.toMatchObject({
-      root: migratedRoot,
-    });
-    await expect(readFile(join(migratedRoot, 'kept.txt'), 'utf8')).resolves.toBe('project data');
-    await expect(access(legacyProjectRoot)).rejects.toMatchObject({ code: 'ENOENT' });
-
-    const persisted = JSON.parse(await readFile(storageFile, 'utf8')) as {
-      projects: Array<{ root: string }>;
-      settings: { defaultWorkspace: string };
-    };
-    expect(persisted.projects[0]?.root).toBe(migratedRoot);
-    expect(persisted.settings.defaultWorkspace).toBe(currentWorkspace);
-  });
-
   it('atomically reloads projects and rejects inspector traversal', async () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-store-test-'));
     roots.push(root);

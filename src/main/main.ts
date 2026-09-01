@@ -192,7 +192,6 @@ async function launch(): Promise<void> {
   projectStore = new ProjectStore({
     storageFile: join(userData, 'projects.json'),
     defaultWorkspace,
-    legacyWorkspaces: smokeCapture ? [] : [join(homedir(), 'LoopSeed Games')],
   });
   eventLog = new EventLog(join(userData, 'events'));
   assetPlanStore = new AssetPlanStore(join(userData, 'asset-plans.json'));
@@ -2168,9 +2167,7 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     ) as boolean;
     const expectedScene = process.env.NOOBI_SMOKE_SCENE?.trim();
-    if (hasPlayablePreview) {
-      process.stdout.write('Noobi workbench loaded a playable game preview\n');
-    } else if (isNoobiSceneId(expectedScene)) {
+    if (isNoobiSceneId(expectedScene)) {
       const sceneState = await window.webContents.executeJavaScript(
         `(() => {
           const scene = document.querySelector('.production-diorama');
@@ -2207,6 +2204,8 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
         throw new Error(`Noobi runtime background did not load correctly: ${JSON.stringify(sceneState)}`);
       }
       process.stdout.write(`Noobi runtime background loaded: ${sceneState.id}\n`);
+    } else if (process.env.NOOBI_SMOKE_EXPERIENCE_REPORT === 'expand' && hasPlayablePreview) {
+      process.stdout.write('Noobi workbench loaded a playable game preview\n');
     } else if (process.env.NOOBI_SMOKE_CREW !== '1') {
       const soloState = await window.webContents.executeJavaScript(
         `(() => {
