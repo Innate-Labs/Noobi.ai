@@ -532,6 +532,12 @@ function bindIpc(): void {
     return project;
   });
 
+  handle('noobi:project:rename', (_event, projectId: string, name: unknown) => {
+    const id = validateProjectId(projectId);
+    if (typeof name !== 'string') throw new Error('游戏名称必须是文字');
+    return updateProject(id, { name });
+  });
+
   handle('noobi:project:run', async (_event, input: RunProjectInput) => {
     validateRunInput(input);
     const project = await projectStore.get(input.projectId);
@@ -1968,6 +1974,55 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     );
     await delay(300);
   }
+  if (process.env.NOOBI_SMOKE_COLLAPSED === '1') {
+    const collapsed = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('[aria-label="收起首页侧栏"]');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!collapsed) throw new Error('Home rail collapse control was not available');
+    await delay(300);
+    const railCollapsed = await window.webContents.executeJavaScript(
+      `document.querySelector('.project-rail.mode-dashboard')?.classList.contains('is-collapsed') === true`,
+      true,
+    ) as boolean;
+    if (!railCollapsed) throw new Error('Home rail did not enter its collapsed state');
+    const compactHomeVisible = await window.webContents.executeJavaScript(
+      `(() => {
+        const home = document.querySelector('.compact-project-list [aria-label="首页"]');
+        return home instanceof HTMLButtonElement
+          && Boolean(home.querySelector('.lucide-house'))
+          && !home.querySelector('.lucide-plus');
+      })()`,
+      true,
+    ) as boolean;
+    if (!compactHomeVisible) throw new Error('Collapsed home rail did not show the home icon');
+    const roundTrip = await window.webContents.executeJavaScript(
+      `(() => {
+        const brand = document.querySelector('[aria-label="展开首页侧栏"]');
+        if (!(brand instanceof HTMLButtonElement)) return false;
+        brand.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!roundTrip) throw new Error('Collapsed Noobi monogram was not available');
+    await delay(200);
+    const railExpanded = await window.webContents.executeJavaScript(
+      `document.querySelector('.project-rail.mode-dashboard')?.classList.contains('is-collapsed') === false`,
+      true,
+    ) as boolean;
+    if (!railExpanded) throw new Error('Collapsed Noobi monogram did not expand the home rail');
+    await window.webContents.executeJavaScript(
+      `document.querySelector('[aria-label="收起首页侧栏"]')?.click()`,
+      true,
+    );
+    await delay(200);
+  }
   if (process.env.NOOBI_SMOKE_PROMPT_PROGRESS === '1') {
     const samples: string[] = [];
     for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -2162,6 +2217,13 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     );
     await delay(650);
+    if (process.env.NOOBI_SMOKE_STATUS === 'stopped') {
+      const resumeVisible = await window.webContents.executeJavaScript(
+        `Boolean(document.querySelector('.composer-action.is-resume[aria-label="继续制作"]'))`,
+        true,
+      ) as boolean;
+      if (!resumeVisible) throw new Error('Stopped project did not show the resume action');
+    }
     const expectedScene = process.env.NOOBI_SMOKE_SCENE?.trim();
     if (isNoobiSceneId(expectedScene)) {
       const sceneState = await window.webContents.executeJavaScript(
@@ -2359,6 +2421,32 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     }
     if (!changed) throw new Error(`Production assistant did not change action or position: ${JSON.stringify(initial)}`);
     process.stdout.write(`Noobi production assistant moved from ${initial.action} at ${initial.station}\n`);
+  }
+  if (process.env.NOOBI_SMOKE_RENAME_TITLE === '1') {
+    const workbenchBrandIsStatic = await window.webContents.executeJavaScript(
+      `(() => {
+        const brand = document.querySelector('.project-rail.mode-workbench .brand');
+        return brand instanceof HTMLElement && !(brand instanceof HTMLButtonElement);
+      })()`,
+      true,
+    ) as boolean;
+    if (!workbenchBrandIsStatic) throw new Error('Workbench N brand is still interactive');
+    const opened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('.agent-project-name');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!opened) throw new Error('Workbench project title rename trigger was not available');
+    await delay(250);
+    const dialogVisible = await window.webContents.executeJavaScript(
+      `Boolean(document.querySelector('.project-rename-dialog'))`,
+      true,
+    ) as boolean;
+    if (!dialogVisible) throw new Error('Workbench project title did not open the rename dialog');
   }
   await window.webContents.executeJavaScript(
     `document.querySelectorAll('.brief-card footer > span').forEach((node) => {

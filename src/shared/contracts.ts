@@ -527,6 +527,7 @@ export interface NoobiApi {
   chooseDirectory(): Promise<string | null>;
   /** Files stay opaque in Renderer; Preload resolves their native paths for Main. */
   createProject(input: CreateProjectInput, files?: readonly unknown[]): Promise<ProjectRecord>;
+  renameProject(projectId: string, name: string): Promise<ProjectRecord>;
   runProject(input: RunProjectInput): Promise<ProjectRecord>;
   stopProject(projectId: string): Promise<ProjectRecord>;
   revealProject(projectId: string): Promise<void>;
