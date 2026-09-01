@@ -61,6 +61,7 @@ interface InspectorProps {
   refreshSignal: number;
   onError: (message: string) => void;
   onRegenerate: (plan: AssetPlanRecord) => Promise<void>;
+  onRevealProject: () => Promise<void>;
   onProjectUpdated: (project: ProjectRecord) => void;
 }
 
@@ -73,6 +74,7 @@ export function Inspector({
   refreshSignal,
   onError,
   onRegenerate,
+  onRevealProject,
   onProjectUpdated,
 }: InspectorProps) {
   const [tab, setTab] = useState<InspectorTab>('preview');
@@ -144,7 +146,7 @@ export function Inspector({
     setShowBuildPreview(false);
     setCrewEditorOpen(false);
     void refresh();
-  }, [project.id, refresh]);
+  }, [project.id, project.root, refresh]);
 
   useEffect(() => {
     if (project.status === 'running' && previousProjectStatus.current !== 'running') {
@@ -552,7 +554,7 @@ export function Inspector({
           <footer className="inspector-footer">
             <button
               type="button"
-              onClick={() => void window.noobi.revealProject(project.id)}
+              onClick={() => void onRevealProject()}
             >
               <FolderOpen size={13} /> 在 Finder 中显示
             </button>

@@ -230,6 +230,26 @@ export class ProjectStore {
     return this.update(projectId, patch);
   }
 
+  async relocate(projectId: string, projectDirectory: string): Promise<ProjectRecord> {
+    return this.#mutate(async (state) => {
+      const id = validatedId(projectId);
+      const index = state.projects.findIndex((project) => project.id === id);
+      if (index < 0) throw new Error(`Unknown project: ${id}`);
+      const root = await resolveExistingProjectDirectory(projectDirectory, id);
+      const duplicate = state.projects.find((project) => project.id !== id && project.root === root);
+      if (duplicate) throw new Error('这个文件夹已经绑定到另一个 NooBi 游戏。');
+      const next: ProjectRecord = {
+        ...state.projects[index]!,
+        root,
+        updatedAt: new Date().toISOString(),
+        lastError: null,
+      };
+      state.projects[index] = next;
+      await this.#persist(state);
+      return structuredClone(next);
+    });
+  }
+
   async getSettings(): Promise<AppSettings> {
     await this.init();
     await this.#mutationTail;
@@ -810,6 +830,36 @@ export async function resolveEmptyProjectDirectory(directory: string): Promise<s
   const entries = (await readdir(canonical)).filter((name) => name !== '.DS_Store');
   if (entries.length > 0) {
     throw new Error('请选择一个空文件夹，避免覆盖其中已有的文件。');
+  }
+  return canonical;
+}
+
+export async function resolveExistingProjectDirectory(
+  directory: string,
+  projectId: string,
+): Promise<string> {
+  const canonical = await canonicalDirectory(directory);
+  const metadataPath = join(canonical, '.noobi', 'project.json');
+  let metadataInfo;
+  try {
+    metadataInfo = await lstat(metadataPath);
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) {
+      throw new Error('所选文件夹不是 NooBi 游戏文件夹：缺少 .noobi/project.json。');
+    }
+    throw error;
+  }
+  if (metadataInfo.isSymbolicLink() || !metadataInfo.isFile() || metadataInfo.size > MAX_FILE_BYTES) {
+    throw new Error('所选文件夹的 NooBi 项目标记无效。');
+  }
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+  } catch {
+    throw new Error('所选文件夹的 NooBi 项目标记无法读取。');
+  }
+  if (!metadata || typeof metadata !== 'object' || (metadata as { id?: unknown }).id !== validatedId(projectId)) {
+    throw new Error('所选文件夹不属于当前游戏，请选择改名前的同一个游戏文件夹。');
   }
   return canonical;
 }

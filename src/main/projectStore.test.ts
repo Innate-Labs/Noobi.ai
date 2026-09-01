@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -73,5 +73,50 @@ describe('ProjectStore selected workspace directory', () => {
       engine: 'web',
     })).rejects.toThrow('请选择一个空文件夹');
     await expect(readFile(join(selectedDirectory, '重要资料.txt'), 'utf8')).resolves.toBe('不要覆盖');
+  });
+
+  it('recovers a project after its folder is renamed in Finder', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-relocate-workspace-'));
+    roots.push(root);
+    const originalDirectory = join(root, '旧游戏名');
+    const renamedDirectory = join(root, '新游戏名');
+    await mkdir(originalDirectory);
+    const store = new ProjectStore(join(root, 'project-store.json'), join(root, 'default-games'));
+    const project = await store.create({
+      name: '旧游戏名',
+      idea: '制作一个可以运行的游戏',
+      projectDirectory: originalDirectory,
+      engine: 'web',
+    });
+
+    await rename(originalDirectory, renamedDirectory);
+    const relocated = await store.relocate(project.id, renamedDirectory);
+
+    expect(relocated.root).toBe(await realpath(renamedDirectory));
+    await expect(readFile(join(relocated.root, 'package.json'), 'utf8')).resolves.toContain('"name"');
+  });
+
+  it('refuses to reconnect a project to a different NooBi game folder', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-relocate-workspace-'));
+    roots.push(root);
+    const firstDirectory = join(root, '第一个游戏');
+    const secondDirectory = join(root, '第二个游戏');
+    await mkdir(firstDirectory);
+    await mkdir(secondDirectory);
+    const store = new ProjectStore(join(root, 'project-store.json'), join(root, 'default-games'));
+    const first = await store.create({
+      name: '第一个游戏',
+      idea: '第一个游戏',
+      projectDirectory: firstDirectory,
+      engine: 'web',
+    });
+    await store.create({
+      name: '第二个游戏',
+      idea: '第二个游戏',
+      projectDirectory: secondDirectory,
+      engine: 'web',
+    });
+
+    await expect(store.relocate(first.id, secondDirectory)).rejects.toThrow('不属于当前游戏');
   });
 });

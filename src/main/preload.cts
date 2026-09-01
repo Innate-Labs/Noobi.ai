@@ -66,7 +66,7 @@ const api: NoobiApi = {
   stopProject: (projectId: string) =>
     ipcRenderer.invoke('noobi:project:stop', projectId) as Promise<ProjectRecord>,
   revealProject: (projectId: string) =>
-    ipcRenderer.invoke('noobi:project:reveal', projectId) as Promise<void>,
+    ipcRenderer.invoke('noobi:project:reveal', projectId) as Promise<ProjectRecord | null>,
   importProjectAssets: (projectId: string) =>
     ipcRenderer.invoke('noobi:project:assets:import', projectId) as Promise<GameAssetRecord[]>,
   importDroppedProjectAssets: (projectId: string, files: readonly unknown[]) => {

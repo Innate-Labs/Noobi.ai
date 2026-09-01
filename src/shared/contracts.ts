@@ -537,7 +537,8 @@ export interface NoobiApi {
   renameProject(projectId: string, name: string): Promise<ProjectRecord>;
   runProject(input: RunProjectInput): Promise<ProjectRecord>;
   stopProject(projectId: string): Promise<ProjectRecord>;
-  revealProject(projectId: string): Promise<void>;
+  /** Opens the project folder, prompting to reconnect it first if it was moved or renamed. */
+  revealProject(projectId: string): Promise<ProjectRecord | null>;
   importProjectAssets(projectId: string): Promise<GameAssetRecord[]>;
   /** Files are resolved to native paths in preload and validated again by AssetStore in Main. */
   importDroppedProjectAssets(projectId: string, files: readonly unknown[]): Promise<GameAssetRecord[]>;

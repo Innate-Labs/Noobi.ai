@@ -278,6 +278,16 @@ export function App() {
     }
   }
 
+  async function revealProject(projectId: string) {
+    setError('');
+    try {
+      const relocated = await window.noobi.revealProject(projectId);
+      if (relocated) setProjects((current) => upsertProject(current, relocated));
+    } catch (reason) {
+      setError(toMessage(reason));
+    }
+  }
+
   async function stopProject() {
     if (!selected) return;
     try {
@@ -412,7 +422,7 @@ export function App() {
               aria-label="在 Finder 中打开项目"
               title="在 Finder 中打开项目"
               disabled={!selected}
-              onClick={() => selected && void window.noobi.revealProject(selected.id)}
+              onClick={() => selected && void revealProject(selected.id)}
             >
               <FolderOpen size={15} />
             </button>
@@ -489,6 +499,7 @@ export function App() {
                 refreshSignal={refreshSignal}
                 onError={setError}
                 onRegenerate={regenerateAsset}
+                onRevealProject={() => revealProject(selected.id)}
                 onProjectUpdated={(project) => {
                   setProjects((current) => upsertProject(current, project));
                 }}

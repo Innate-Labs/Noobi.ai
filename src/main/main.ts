@@ -99,7 +99,11 @@ import {
   importProjectReferences,
   isProjectReferencePath,
 } from './projectReferenceStore.js';
-import { ProjectStore, resolveEmptyProjectDirectory } from './projectStore.js';
+import {
+  ProjectStore,
+  resolveEmptyProjectDirectory,
+  resolveExistingProjectDirectory,
+} from './projectStore.js';
 import { PromptTemplateStore } from './promptTemplateStore.js';
 import { verifyVisualAssetCoverage } from './visualAssetCoverage.js';
 import { verifyWebProductionBuild } from './webProductionBuild.js';
@@ -588,13 +592,16 @@ function bindIpc(): void {
 
   handle('noobi:project:run', async (_event, input: RunProjectInput) => {
     validateRunInput(input);
-    const project = await projectStore.get(input.projectId);
+    let project = await projectStore.get(input.projectId);
     if (harness.isRunning(project.id) || projectRunReservations.has(project.id)) {
       throw new Error('该项目已有正在执行或启动中的 Agent');
     }
     if (experienceEvaluationRuns.has(project.id)) {
       throw new Error('该项目正在进行体验评测，请等待评测结束后再启动 Agent');
     }
+    const locatedProject = await ensureProjectLocation(project);
+    if (!locatedProject) throw new Error('尚未重新连接项目文件夹，本次制作没有启动。');
+    project = locatedProject;
     projectRunReservations.add(project.id);
     try {
     if (project.engine === 'godot') {
@@ -694,9 +701,12 @@ function bindIpc(): void {
       : project;
   });
   handle('noobi:project:reveal', async (_event, projectId: string) => {
-    const project = await projectStore.get(validateProjectId(projectId));
+    const storedProject = await projectStore.get(validateProjectId(projectId));
+    const project = await ensureProjectLocation(storedProject);
+    if (!project) return null;
     const error = await shell.openPath(project.root);
     if (error) throw new Error(error);
+    return project;
   });
   handle('noobi:project:assets:import', async (_event, projectId: string) => {
     const project = await projectStore.get(validateProjectId(projectId));
@@ -763,6 +773,9 @@ function bindIpc(): void {
   });
   handle('noobi:project:inspect', async (_event, projectId: string): Promise<ProjectInspectorPayload> => {
     const project = await projectStore.get(validateProjectId(projectId));
+    if (!await projectDirectoryAvailable(project)) {
+      throw new Error('项目文件夹已被移动或改名。请点击右上角文件夹按钮，选择改名后的文件夹重新连接。');
+    }
     const useSourceAssetOverlay = project.status !== 'completed';
     const [files, previewUrl, assets, experienceReport] = await Promise.all([
       projectStore.listProjectFiles(project.id),
@@ -1892,6 +1905,60 @@ async function updateProject(
   const project = await projectStore.update(projectId, patch);
   broadcast('noobi:event:project', project);
   return project;
+}
+
+async function projectDirectoryAvailable(project: Pick<ProjectRecord, 'id' | 'root'>): Promise<boolean> {
+  try {
+    await resolveExistingProjectDirectory(project.root, project.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureProjectLocation(project: ProjectRecord): Promise<ProjectRecord | null> {
+  if (await projectDirectoryAvailable(project)) return project;
+  if (isProjectBusyForMutation(project.id)) {
+    throw new Error('项目正在工作，暂时不能重新定位文件夹。请先停止当前任务。');
+  }
+
+  while (true) {
+    const options: Electron.OpenDialogOptions = {
+      title: `重新连接“${project.name}”的项目文件夹`,
+      message: '请选择这个游戏改名或移动后的文件夹，NooBi 会核对项目身份并更新保存路径。',
+      buttonLabel: '重新连接',
+      defaultPath: dirname(project.root),
+      properties: ['openDirectory'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled) return null;
+    const selectedDirectory = result.filePaths[0];
+    if (!selectedDirectory) return null;
+
+    try {
+      const relocated = await projectStore.relocate(project.id, selectedDirectory);
+      await Promise.allSettled([previews.stop(project.id), playtestPreviews.stop(project.id)]);
+      broadcast('noobi:event:project', relocated);
+      return relocated;
+    } catch (error) {
+      const messageOptions: Electron.MessageBoxOptions = {
+        type: 'warning',
+        title: '无法连接这个文件夹',
+        message: '请选择同一个游戏改名或移动后的文件夹',
+        detail: asError(error).message,
+        buttons: ['重新选择', '取消'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      };
+      const choice = mainWindow
+        ? await dialog.showMessageBox(mainWindow, messageOptions)
+        : await dialog.showMessageBox(messageOptions);
+      if (choice.response === 1) return null;
+    }
+  }
 }
 
 function emitAgentEvent(event: AgentEvent): void {
