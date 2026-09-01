@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 describe('createWorkspaceTemplate', () => {
-  it('creates a playable project with local Agent instructions', async () => {
+  it('creates a neutral project scaffold with local Agent instructions', async () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-template-'));
     temporaryRoots.push(root);
     await createWorkspaceTemplate(root, {
@@ -68,7 +68,15 @@ describe('createWorkspaceTemplate', () => {
     });
     expect((playtest as { journey: unknown[] }).journey).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'launch-ready', capture: '00-launch-ready.png' }),
-      expect.objectContaining({ id: 'move-player', action: 'move' }),
+      expect.objectContaining({
+        id: 'move-player',
+        action: 'move',
+        observe: [expect.objectContaining({
+          kind: 'screen-change',
+          description: 'The neutral navigation probe visibly changes position.',
+          baselineStepId: 'start-game',
+        })],
+      }),
       expect.objectContaining({ id: 'primary-action', action: 'primary' }),
       expect.objectContaining({
         id: 'pause-game',
@@ -164,6 +172,9 @@ describe('createWorkspaceTemplate', () => {
     expectManagedMediaPolicy(skill);
 
     const design = await readFile(join(root, 'GAME_DESIGN.md'), 'utf8');
+    expect(design).toContain("Define the player's starting state from the brief");
+    expect(design).not.toContain('Collect objectives while avoiding hazards');
+    expect(design).not.toContain('target score');
     expect(design).toContain('private path/SHA attestation');
     expect(design).toContain('running game visibly renders it');
     expect(design).toContain('## Animation needs assessment');
@@ -189,12 +200,22 @@ describe('createWorkspaceTemplate', () => {
       await readFile(join(root, '.noobi/project.json'), 'utf8'),
     ) as Record<string, unknown>;
     expect(metadata.targetFrameRate).toBe(120);
+    expect(metadata.starter).toBe('noobi-browser-neutral');
 
     const starter = await readFile(join(root, 'src/main.js'), 'utf8');
+    expect(starter).toContain('NOOBI_HOST_GENERATED_NEUTRAL_STARTER');
+    expect(starter).toContain('neutral scaffolding created for a brand-new project');
+    expect(starter).toContain('等待 Agent 根据项目需求构建实际玩法');
+    expect(starter).not.toContain('收集绿色光点');
+    expect(starter).not.toContain('state.hazards');
+    expect(starter).not.toContain('state.targetScore');
     expect(starter).toContain('const TARGET_FRAME_RATE = 120');
     expect(starter).toContain('const FIXED_STEP_SECONDS = 1 / TARGET_FRAME_RATE');
     expect(starter).toContain('const MAX_CATCH_UP_STEPS = 8');
     expect(starter).toContain('state.accumulatorSeconds %= FIXED_STEP_SECONDS');
+    expect(starter).toContain("event.code === 'KeyD'");
+    expect(starter).toContain('state.navigationProbeOffset');
+    expect(agents).toContain('They are not prior user code, implemented gameplay, or product requirements');
   });
 
   it('keeps Three.js as an offline GLB authoring fallback for Godot workspaces', async () => {
@@ -212,6 +233,18 @@ describe('createWorkspaceTemplate', () => {
 
     const agents = await readFile(join(root, 'AGENTS.md'), 'utf8');
     const skill = await readFile(join(root, '.codex/skills/noobi-game-builder/SKILL.md'), 'utf8');
+    const metadata = JSON.parse(
+      await readFile(join(root, '.noobi/project.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    const starter = await readFile(join(root, 'scripts/main.gd'), 'utf8');
+    expect(metadata.starter).toBe('noobi-godot-4-neutral');
+    expect(starter).toContain('NOOBI_HOST_GENERATED_NEUTRAL_STARTER');
+    expect(starter).toContain('NEUTRAL GODOT STARTER');
+    expect(starter).not.toContain('TARGET_SCORE');
+    expect(starter).not.toContain('hazard_positions');
+    expect(starter).not.toContain('goal_position');
+    expect(starter).toContain('event.keycode == KEY_D');
+    expect(starter).toContain('navigation_probe_offset');
     expect(agents).toContain('res://public/assets/models/...');
     expect(agents).toContain('Three.js is build-time asset authoring only');
     expect(skill).toContain('Godot must import/instantiate that GLB');

@@ -160,7 +160,7 @@ function workspaceFiles(project: WorkspaceProject): Record<string, string> {
     model: project.model,
     targetFrameRate: project.targetFrameRate,
     engine,
-    starter: engine === 'godot' ? 'noobi-godot-4' : 'noobi-browser-game',
+    starter: engine === 'godot' ? 'noobi-godot-4-neutral' : 'noobi-browser-neutral',
   };
 
   const sharedFiles = {
@@ -229,7 +229,7 @@ function workspaceFiles(project: WorkspaceProject): Record<string, string> {
   <body>
     <main id="app" aria-label="${safeTitle}">
       <canvas id="game" width="960" height="540"></canvas>
-      <p class="hint">WASD / 方向键移动 · 点击画面重新开始</p>
+      <p class="hint">Noobi.ai 中性项目脚手架 · Agent 将根据你的需求替换此画面</p>
     </main>
     <script type="module" src="/src/main.js"></script>
   </body>
@@ -248,6 +248,10 @@ function projectAgents(project: WorkspaceProject): string {
 Build and iteratively improve a playable game based on this brief:
 
 > ${asMarkdownQuote(project.idea)}
+
+## Starter provenance
+
+When \`.noobi/project.json\` identifies \`noobi-browser-neutral\` or \`noobi-godot-4-neutral\`, the initial source, scene, HTML, styles, controls, and preview are host-generated neutral scaffolding. They are not prior user code, implemented gameplay, or product requirements. Do not infer mechanics from them or describe them as an existing game. Replace the placeholder presentation and behavior according to the product goal, while preserving useful infrastructure such as deterministic timing only when it fits the requested game.
 
 ## Engine contract
 
@@ -599,82 +603,62 @@ function godotMainScript(project: WorkspaceProject): string {
   const title = escapeGodotString(project.name);
   const brief = escapeGodotString(project.idea.replace(/\s+/gu, ' ').trim());
   return [
+    '# NOOBI_HOST_GENERATED_NEUTRAL_STARTER',
+    '# This is neutral scaffolding for a brand-new project, not prior user code',
+    '# or implemented gameplay. Replace it with mechanics from the project brief.',
+    '',
     'extends Node2D',
     '',
     'const TARGET_FRAME_RATE: int = ' + project.targetFrameRate,
-    'const TARGET_SCORE: int = 5',
-    'const PLAYER_RADIUS: float = 20.0',
-    'const PLAYER_SPEED: float = 280.0',
     'const ARENA_SIZE := Vector2(1280.0, 720.0)',
     '',
-    'var player_position := Vector2(140.0, 360.0)',
-    'var goal_position := Vector2(1060.0, 360.0)',
-    'var hazard_positions: Array[Vector2] = [Vector2(520.0, 180.0), Vector2(760.0, 520.0)]',
-    'var hazard_velocities: Array[Vector2] = [Vector2(0.0, 120.0), Vector2(145.0, 0.0)]',
-    'var score: int = 0',
     'var state: StringName = &"ready"',
+    'var elapsed_seconds: float = 0.0',
     'var action_flash: float = 0.0',
-    'var rng := RandomNumberGenerator.new()',
+    'var navigation_probe_offset: float = 0.0',
     '',
     'func _ready() -> void:',
     '    Engine.max_fps = TARGET_FRAME_RATE',
-    '    rng.randomize()',
+    '    Engine.physics_ticks_per_second = TARGET_FRAME_RATE',
     '    queue_redraw()',
     '',
-    'func _physics_process(delta: float) -> void:',
-    '    if state != &"playing":',
-    '        return',
+    'func _process(delta: float) -> void:',
+    '    if state == &"active":',
+    '        elapsed_seconds += delta',
     '    action_flash = maxf(0.0, action_flash - delta)',
-    '    var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")',
-    '    player_position += direction * PLAYER_SPEED * delta',
-    '    player_position.x = clampf(player_position.x, PLAYER_RADIUS, ARENA_SIZE.x - PLAYER_RADIUS)',
-    '    player_position.y = clampf(player_position.y, PLAYER_RADIUS, ARENA_SIZE.y - PLAYER_RADIUS)',
-    '',
-    '    for index in range(hazard_positions.size()):',
-    '        hazard_positions[index] += hazard_velocities[index] * delta',
-    '        if hazard_positions[index].x < 80.0 or hazard_positions[index].x > ARENA_SIZE.x - 80.0:',
-    '            hazard_velocities[index].x *= -1.0',
-    '        if hazard_positions[index].y < 80.0 or hazard_positions[index].y > ARENA_SIZE.y - 80.0:',
-    '            hazard_velocities[index].y *= -1.0',
-    '        if player_position.distance_to(hazard_positions[index]) < 48.0:',
-    '            state = &"lost"',
-    '',
-    '    if player_position.distance_to(goal_position) < 38.0:',
-    '        score += 1',
-    '        if score >= TARGET_SCORE:',
-    '            state = &"won"',
-    '        else:',
-    '            goal_position = Vector2(rng.randf_range(160.0, 1120.0), rng.randf_range(110.0, 610.0))',
     '    queue_redraw()',
     '',
     'func _unhandled_input(event: InputEvent) -> void:',
-    '    if event.is_action_pressed("ui_cancel") and (state == &"playing" or state == &"paused"):',
-    '        state = &"paused" if state == &"playing" else &"playing"',
+    '    if event.is_action_pressed("ui_cancel") and (state == &"active" or state == &"paused"):',
+    '        state = &"paused" if state == &"active" else &"active"',
     '        queue_redraw()',
     '        return',
     '    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:',
     '        _reset_game()',
     '        return',
-    '    if event.is_action_pressed("ui_accept"):',
-    '        if state == &"ready":',
-    '            state = &"playing"',
-    '        elif state == &"playing":',
-    '            action_flash = 0.28',
-    '        else:',
-    '            _reset_game()',
+    '    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_D and state == &"active":',
+    '        navigation_probe_offset = -72.0 if navigation_probe_offset > 0.0 else 72.0',
     '        queue_redraw()',
     '        return',
-    '    if state != &"playing" and event is InputEventMouseButton:',
-    '        _reset_game()',
+    '    if event.is_action_pressed("ui_accept"):',
+    '        if state == &"ready":',
+    '            state = &"active"',
+    '        elif state == &"active":',
+    '            action_flash = 0.28',
+    '        queue_redraw()',
+    '        return',
+    '    if event is InputEventMouseButton and event.pressed:',
+    '        if state == &"ready":',
+    '            state = &"active"',
+    '        else:',
+    '            action_flash = 0.28',
+    '        queue_redraw()',
     '',
     'func _reset_game() -> void:',
-    '    player_position = Vector2(140.0, 360.0)',
-    '    goal_position = Vector2(1060.0, 360.0)',
-    '    hazard_positions = [Vector2(520.0, 180.0), Vector2(760.0, 520.0)]',
-    '    hazard_velocities = [Vector2(0.0, 120.0), Vector2(145.0, 0.0)]',
-    '    score = 0',
-    '    state = &"playing"',
+    '    state = &"ready"',
+    '    elapsed_seconds = 0.0',
     '    action_flash = 0.0',
+    '    navigation_probe_offset = 0.0',
     '    queue_redraw()',
     '',
     'func _draw() -> void:',
@@ -683,24 +667,19 @@ function godotMainScript(project: WorkspaceProject): string {
     '        draw_line(Vector2(x, 0), Vector2(x, 720), Color("222a38"), 1.0)',
     '    for y in range(0, 721, 64):',
     '        draw_line(Vector2(0, y), Vector2(1280, y), Color("222a38"), 1.0)',
-    '    draw_circle(goal_position, 16.0, Color("75f0b2"))',
-    '    for hazard in hazard_positions:',
-    '        draw_circle(hazard, 28.0, Color("ff706d"))',
-    '    draw_circle(player_position, PLAYER_RADIUS, Color("82aaff"))',
-    '    if action_flash > 0.0:',
-    '        draw_arc(player_position, PLAYER_RADIUS + 14.0 + action_flash * 30.0, 0.0, TAU, 40, Color("f5d787"), 5.0)',
     '',
     '    var font := ThemeDB.fallback_font',
-    '    draw_string(font, Vector2(30.0, 42.0), "' + title + '", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 26, Color("f4f5f7"))',
-    '    draw_string(font, Vector2(30.0, 68.0), "' + brief + '", HORIZONTAL_ALIGNMENT_LEFT, 760.0, 15, Color("aeb5c5"))',
-    '    draw_string(font, Vector2(1000.0, 42.0), "SCORE  %d / %d" % [score, TARGET_SCORE], HORIZONTAL_ALIGNMENT_RIGHT, 245.0, 18, Color("f4f5f7"))',
-    '',
-    '    if state != &"playing":',
-    '        draw_rect(Rect2(Vector2.ZERO, ARENA_SIZE), Color(0.02, 0.03, 0.05, 0.78))',
-    '        var message := "PRESS ENTER" if state == &"ready" else ("PAUSED" if state == &"paused" else ("YOU WIN" if state == &"won" else "TRY AGAIN"))',
-    '        var color := Color("f5d787") if state == &"ready" or state == &"paused" else (Color("75f0b2") if state == &"won" else Color("ff817e"))',
-    '        draw_string(font, Vector2(0.0, 330.0), message, HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 54, color)',
-    '        draw_string(font, Vector2(0.0, 380.0), "Enter / Space action · Esc pause · R restart", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 18, Color("f4f5f7"))',
+    '    draw_string(font, Vector2(0.0, 190.0), "' + title + '", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 42, Color("f4f5f7"))',
+    '    draw_string(font, Vector2(0.0, 235.0), "NOOBI.AI · NEUTRAL GODOT STARTER", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 17, Color("aeb5c5"))',
+    '    draw_string(font, Vector2(0.0, 295.0), "Waiting for the Agent to build gameplay from the brief", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 20, Color("f4f5f7"))',
+    '    draw_string(font, Vector2(0.0, 340.0), "' + brief + '", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 15, Color("8f98aa"))',
+    '    var pulse := 0.55 + sin(elapsed_seconds * 3.0) * 0.2',
+    '    var bar_color := Color("f5d787") if action_flash > 0.0 else Color("82aaff")',
+    '    bar_color.a = 0.35 if state == &"paused" else pulse',
+    '    draw_rect(Rect2(Vector2(618.0 + navigation_probe_offset, 362.0), Vector2(44.0, 44.0)), bar_color)',
+    '    draw_rect(Rect2(Vector2(550.0, 390.0), Vector2(180.0, 4.0)), bar_color)',
+    '    var status_label := "ENTER activate preview" if state == &"ready" else ("Paused · ESC resume" if state == &"paused" else "Placeholder active · D navigation probe · SPACE feedback · R reset")',
+    '    draw_string(font, Vector2(0.0, 440.0), status_label, HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 15, Color("aeb5c5"))',
     '',
   ].join('\n');
 }
@@ -748,7 +727,7 @@ function playtestSpec(project: WorkspaceProject): string {
         id: 'move-player',
         action: 'move',
         inputs: [{ type: 'key', code: 'KeyD', holdMs: 650 }],
-        observe: [{ kind: 'screen-change', description: 'The controlled player or focus visibly changes position.', baselineStepId: 'start-game' }],
+        observe: [{ kind: 'screen-change', description: 'The neutral navigation probe visibly changes position.', baselineStepId: 'start-game' }],
         capture: '02-move-player.png',
       },
       {
@@ -776,13 +755,13 @@ function playtestSpec(project: WorkspaceProject): string {
         id: 'restart-game',
         action: 'restart',
         inputs: [{ type: 'key', code: 'KeyR', holdMs: 60 }],
-        observe: [{ kind: 'screen-change', description: 'Restart returns to a fresh playable state without reloading Noobi.ai.', baselineStepId: 'resume-game' }],
+        observe: [{ kind: 'screen-change', description: 'Reset returns the neutral starter to its ready state without reloading Noobi.ai.', baselineStepId: 'resume-game' }],
         capture: '06-restart-game.png',
       },
     ],
     success: [
-      { kind: 'canvas-not-blank', description: 'The final restarted game remains visibly rendered and playable.' },
-      { kind: 'screen-change', description: 'Movement changed the visible game state.', baselineStepId: 'start-game' },
+      { kind: 'canvas-not-blank', description: 'The final reset starter remains visibly rendered and ready.' },
+      { kind: 'screen-change', description: 'The neutral navigation input exposed visible placeholder feedback.', baselineStepId: 'start-game' },
       { kind: 'screen-change', description: 'The primary action exposed player-visible feedback.', baselineStepId: 'move-player' },
     ],
     limits: { maxRunMs: 60_000, stepTimeoutMs: 8_000 },
@@ -807,15 +786,17 @@ Turn the brief into one sentence describing what the player gets to feel and do.
 
 ## Core loop
 
-1. Move through the arena.
-2. Collect objectives while avoiding hazards.
-3. Reach the target score to win; touching a hazard ends the run.
-4. Restart immediately and improve the result.
+1. Define the player's starting state from the brief.
+2. Define the repeatable primary decision or action.
+3. Define visible progress plus representative failure or invalid-action feedback.
+4. Define a terminal result and a fast restart path.
 
 ## Controls
 
-- Move: WASD or arrow keys
-- Restart: click/tap the game after a win or loss
+- Start: choose an input appropriate to the requested game.
+- Navigation or movement: define only what the requested interaction model needs.
+- Primary action: expose immediate, visible feedback.
+- Pause and restart: keep both reachable without reloading Noobi.ai.
 
 ## Target frame rate
 
@@ -855,10 +836,10 @@ ${frameRateImplementation(project)}
 ## Acceptance checks
 
 - The game loads without a blank screen or console error.
-- Keyboard input produces immediate visible movement.
-- The score increases when an objective is collected.
-- Collision with a hazard produces a clear loss state.
-- Reaching the target score produces a clear win state.
+- The requested controls produce immediate visible feedback.
+- The primary action changes meaningful game state.
+- Progress and representative failure or invalid-action feedback are observable.
+- A terminal result is reachable through the intended player loop.
 - The game can restart without reloading the page.
 - \`.noobi/playtest.json\` matches the production controls and describes one bounded end-to-end player journey through start, movement, primary action, progress/failure feedback, pause/resume, terminal result, and restart.
 - When host playtest evidence exists, \`artifacts/playtest/latest/report.json\` passes every declared step and its referenced screenshots are non-blank, present, and consistent with the observations.
@@ -899,7 +880,14 @@ This project targets **${project.targetFrameRate} FPS**. Simulation and animatio
 function browserGameStarter(project: WorkspaceProject): string {
   const title = JSON.stringify(project.name);
   const idea = JSON.stringify(project.idea);
-  return `const canvas = document.querySelector('#game');
+  return `/**
+ * NOOBI_HOST_GENERATED_NEUTRAL_STARTER
+ *
+ * This file is neutral scaffolding created for a brand-new project. It is not
+ * prior user code or an implemented game. Replace its placeholder rendering
+ * and input behavior with mechanics derived only from the project brief.
+ */
+const canvas = document.querySelector('#game');
 const context = canvas.getContext('2d');
 const title = ${title};
 const brief = ${idea};
@@ -909,76 +897,29 @@ const PRESENTATION_INTERVAL_MS = 1000 / TARGET_FRAME_RATE;
 const MAX_CATCH_UP_STEPS = 8;
 
 const state = {
-  player: { x: 120, y: 270, radius: 18, speed: 260 },
-  goal: { x: 760, y: 270, radius: 13 },
-  hazards: [
-    { x: 410, y: 160, radius: 24, vx: 0, vy: 95 },
-    { x: 565, y: 390, radius: 28, vx: 110, vy: 0 },
-  ],
-  keys: new Set(),
-  score: 0,
-  targetScore: 5,
   status: 'ready',
+  elapsedSeconds: 0,
   actionFlashSeconds: 0,
+  navigationProbeOffset: 0,
   lastTime: performance.now(),
   accumulatorSeconds: 0,
   lastPresentedAt: 0,
 };
 
-const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
-const overlaps = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < a.radius + b.radius;
-
 function reset() {
-  state.player.x = 120;
-  state.player.y = 270;
-  state.goal.x = 720 + Math.random() * 130;
-  state.goal.y = 90 + Math.random() * 360;
-  state.score = 0;
-  state.status = 'playing';
+  state.status = 'ready';
+  state.elapsedSeconds = 0;
   state.actionFlashSeconds = 0;
+  state.navigationProbeOffset = 0;
   state.lastTime = performance.now();
   state.accumulatorSeconds = 0;
   state.lastPresentedAt = 0;
 }
 
 function update(deltaSeconds) {
-  if (state.status !== 'playing') return;
+  if (state.status !== 'active') return;
+  state.elapsedSeconds += deltaSeconds;
   state.actionFlashSeconds = Math.max(0, state.actionFlashSeconds - deltaSeconds);
-  const left = state.keys.has('ArrowLeft') || state.keys.has('KeyA');
-  const right = state.keys.has('ArrowRight') || state.keys.has('KeyD');
-  const up = state.keys.has('ArrowUp') || state.keys.has('KeyW');
-  const down = state.keys.has('ArrowDown') || state.keys.has('KeyS');
-  const horizontal = Number(right) - Number(left);
-  const vertical = Number(down) - Number(up);
-  const magnitude = Math.hypot(horizontal, vertical) || 1;
-  state.player.x = clamp(
-    state.player.x + (horizontal / magnitude) * state.player.speed * deltaSeconds,
-    state.player.radius,
-    canvas.width - state.player.radius,
-  );
-  state.player.y = clamp(
-    state.player.y + (vertical / magnitude) * state.player.speed * deltaSeconds,
-    state.player.radius,
-    canvas.height - state.player.radius,
-  );
-
-  for (const hazard of state.hazards) {
-    hazard.x += hazard.vx * deltaSeconds;
-    hazard.y += hazard.vy * deltaSeconds;
-    if (hazard.x < 80 || hazard.x > canvas.width - 80) hazard.vx *= -1;
-    if (hazard.y < 80 || hazard.y > canvas.height - 80) hazard.vy *= -1;
-    if (overlaps(state.player, hazard)) state.status = 'lost';
-  }
-
-  if (overlaps(state.player, state.goal)) {
-    state.score += 1;
-    if (state.score >= state.targetScore) {
-      state.status = 'won';
-    } else {
-      state.goal.x = 120 + Math.random() * 720;
-      state.goal.y = 90 + Math.random() * 360;
-    }
-  }
 }
 
 function draw() {
@@ -1003,66 +944,35 @@ function draw() {
     context.stroke();
   }
 
-  context.shadowBlur = 24;
-  context.shadowColor = '#75f0b2';
-  context.fillStyle = '#75f0b2';
-  context.beginPath();
-  context.arc(state.goal.x, state.goal.y, state.goal.radius, 0, Math.PI * 2);
-  context.fill();
-
-  context.shadowColor = '#ff706d';
-  context.fillStyle = '#ff706d';
-  for (const hazard of state.hazards) {
-    context.beginPath();
-    context.arc(hazard.x, hazard.y, hazard.radius, 0, Math.PI * 2);
-    context.fill();
-  }
-
-  context.shadowColor = '#82aaff';
-  context.fillStyle = '#82aaff';
-  context.beginPath();
-  context.arc(state.player.x, state.player.y, state.player.radius, 0, Math.PI * 2);
-  context.fill();
-  if (state.actionFlashSeconds > 0) {
-    context.strokeStyle = '#f5d787';
-    context.lineWidth = 5;
-    context.beginPath();
-    context.arc(state.player.x, state.player.y, state.player.radius + 12 + state.actionFlashSeconds * 40, 0, Math.PI * 2);
-    context.stroke();
-  }
-  context.shadowBlur = 0;
-
   context.fillStyle = '#f4f5f7';
-  context.font = '600 22px system-ui, sans-serif';
-  context.fillText(title, 28, 42);
+  context.textAlign = 'center';
+  context.font = '700 42px system-ui, sans-serif';
+  context.fillText(title, canvas.width / 2, 185);
   context.fillStyle = '#aeb5c5';
-  context.font = '15px system-ui, sans-serif';
-  context.fillText('收集绿色光点，避开红色障碍', 28, 67);
-  context.textAlign = 'right';
+  context.font = '17px system-ui, sans-serif';
+  context.fillText('NOOBI.AI · NEUTRAL PROJECT STARTER', canvas.width / 2, 225);
   context.fillStyle = '#f4f5f7';
-  context.font = '600 18px system-ui, sans-serif';
-  context.fillText(\`SCORE  \${state.score} / \${state.targetScore}\`, canvas.width - 28, 42);
-  context.textAlign = 'left';
+  context.font = '20px system-ui, sans-serif';
+  context.fillText('等待 Agent 根据项目需求构建实际玩法', canvas.width / 2, 280);
+  context.fillStyle = '#8f98aa';
+  context.font = '15px system-ui, sans-serif';
+  context.fillText(brief.slice(0, 70), canvas.width / 2, 320);
 
-  if (state.status !== 'playing') {
-    context.fillStyle = 'rgba(5, 7, 12, 0.76)';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.textAlign = 'center';
-    context.fillStyle = state.status === 'ready' || state.status === 'paused'
-      ? '#f5d787'
-      : state.status === 'won' ? '#75f0b2' : '#ff817e';
-    context.font = '700 56px system-ui, sans-serif';
-    const message = state.status === 'ready'
-      ? 'PRESS ENTER'
-      : state.status === 'paused'
-        ? 'PAUSED'
-        : state.status === 'won' ? 'YOU WIN' : 'TRY AGAIN';
-    context.fillText(message, canvas.width / 2, 245);
-    context.fillStyle = '#f4f5f7';
-    context.font = '18px system-ui, sans-serif';
-    context.fillText('Enter 开始 · Space 主动作 · Esc 暂停 · R 重开', canvas.width / 2, 292);
-    context.textAlign = 'left';
-  }
+  const pulse = 0.55 + Math.sin(state.elapsedSeconds * 3) * 0.2;
+  context.globalAlpha = state.status === 'paused' ? 0.35 : pulse;
+  context.fillStyle = state.actionFlashSeconds > 0 ? '#f5d787' : '#82aaff';
+  context.fillRect(canvas.width / 2 - 22 + state.navigationProbeOffset, 337, 44, 44);
+  context.fillRect(canvas.width / 2 - 90, 365, 180, 4);
+  context.globalAlpha = 1;
+  context.fillStyle = '#aeb5c5';
+  context.font = '14px system-ui, sans-serif';
+  const statusLabel = state.status === 'ready'
+    ? 'ENTER 激活预览'
+    : state.status === 'paused'
+      ? '已暂停 · ESC 继续'
+      : '占位预览运行中 · D 导航探针 · SPACE 测试反馈 · R 重置';
+  context.fillText(statusLabel, canvas.width / 2, 410);
+  context.textAlign = 'left';
 }
 
 function frame(now) {
@@ -1089,30 +999,33 @@ function frame(now) {
 }
 
 window.addEventListener('keydown', (event) => {
-  if (event.code.startsWith('Arrow') || event.code === 'Space') event.preventDefault();
+  if (event.code === 'Space') event.preventDefault();
   if (event.code === 'Enter' && state.status === 'ready') {
-    state.status = 'playing';
+    state.status = 'active';
     return;
   }
-  if (event.code === 'Escape' && (state.status === 'playing' || state.status === 'paused')) {
-    state.status = state.status === 'playing' ? 'paused' : 'playing';
+  if (event.code === 'Escape' && (state.status === 'active' || state.status === 'paused')) {
+    state.status = state.status === 'active' ? 'paused' : 'active';
     return;
   }
   if (event.code === 'KeyR') {
     reset();
     return;
   }
-  if (event.code === 'Space' && state.status === 'playing') {
+  if (event.code === 'KeyD' && state.status === 'active' && !event.repeat) {
+    state.navigationProbeOffset = state.navigationProbeOffset > 0 ? -72 : 72;
+    return;
+  }
+  if (event.code === 'Space' && state.status === 'active') {
     state.actionFlashSeconds = 0.28;
   }
-  state.keys.add(event.code);
 });
-window.addEventListener('keyup', (event) => state.keys.delete(event.code));
 canvas.addEventListener('pointerdown', () => {
-  if (state.status === 'ready') state.status = 'playing';
-  else if (state.status !== 'playing' && state.status !== 'paused') reset();
+  if (state.status === 'ready') state.status = 'active';
+  else state.actionFlashSeconds = 0.28;
 });
 canvas.title = brief;
+canvas.dataset.noobiStarter = 'neutral';
 requestAnimationFrame(frame);
 `;
 }
