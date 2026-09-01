@@ -41,6 +41,7 @@ import type {
   NoobiCrewMember,
   ProjectInspectorPayload,
   ProjectRecord,
+  ProjectStatus,
 } from '../../shared/contracts';
 import {
   DEFAULT_NOOBI_CREW,
@@ -112,9 +113,11 @@ export function Inspector({
     : terminal
       ? 'is-error'
       : 'is-pending';
-  const showExperienceReport = evaluatingExperience
-    || project.status === 'completed'
-    || (project.status === 'failed' && payload.experienceReport !== null);
+  const showExperienceReport = shouldShowExperienceReport(
+    evaluatingExperience,
+    project.status,
+    payload.experienceReport,
+  );
   const showProductionScene = !payload.previewUrl
     || (project.status === 'running' && !showBuildPreview);
   const resolvedNoobiPackId = project.noobiPackOverrideId
@@ -541,6 +544,7 @@ export function Inspector({
           {showExperienceReport ? (
             <ExperienceReport
               report={payload.experienceReport}
+              projectStatus={project.status}
               evaluating={evaluatingExperience}
               disabled={project.status === 'running' || !payload.previewUrl}
               onEvaluate={() => void evaluateExperience()}
@@ -631,6 +635,7 @@ export function Inspector({
 
 export function ExperienceReport({
   report,
+  projectStatus,
   evaluating,
   disabled,
   onEvaluate,
@@ -638,6 +643,7 @@ export function ExperienceReport({
   onOpenReport,
 }: {
   report: GameplayExperienceReport | null;
+  projectStatus: ProjectStatus;
   evaluating: boolean;
   disabled: boolean;
   onEvaluate: () => void;
@@ -646,6 +652,16 @@ export function ExperienceReport({
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
+  const historical = projectStatus === 'running'
+    || projectStatus === 'waiting'
+    || projectStatus === 'stopped';
+  const overallFailureAfterPassingPlaytest = projectStatus === 'failed'
+    && report?.verdict === 'pass';
+  const reportTitle = overallFailureAfterPassingPlaytest
+    ? '试玩通过 · 项目仍需处理'
+    : historical && report
+      ? '上次体验评测'
+      : '体验评测';
   const toggle = (
     <button
       type="button"
@@ -745,8 +761,8 @@ export function ExperienceReport({
     >
       <header className="experience-report-header">
         <div>
-          <span>PLAYTEST / EXPERIENCE</span>
-          <strong>体验评测</strong>
+          <span>{historical ? 'LAST PLAYTEST / EXPERIENCE' : 'PLAYTEST / EXPERIENCE'}</span>
+          <strong>{reportTitle}</strong>
         </div>
         <div className="experience-report-actions">
           <div className="experience-score" aria-label={`体验评分 ${score} 分`}>
@@ -765,6 +781,19 @@ export function ExperienceReport({
 
       {expanded ? (
         <div id={detailsId} className="experience-report-details">
+          {overallFailureAfterPassingPlaytest ? (
+            <p className="experience-status-context is-attention">
+              <Info size={12} aria-hidden="true" />
+              自动试玩已经通过，但项目整体仍未通过 Reviewer 或其他交付检查；请结合左侧失败事件继续处理。
+            </p>
+          ) : historical ? (
+            <p className="experience-status-context">
+              <Info size={12} aria-hidden="true" />
+              {projectStatus === 'running'
+                ? '这是上一版本的试玩结果；当前制作完成后需要重新评测。'
+                : '这是项目停止前保存的最后一次试玩结果。'}
+            </p>
+          ) : null}
           <div className="experience-checks" role="list" aria-label="体验评测检查项">
             {report.checks.map((check) => (
               <ExperienceCheckRow key={check.id} check={check} />
@@ -798,6 +827,14 @@ export function ExperienceReport({
       ) : null}
     </section>
   );
+}
+
+export function shouldShowExperienceReport(
+  evaluating: boolean,
+  projectStatus: ProjectStatus,
+  report: GameplayExperienceReport | null,
+): boolean {
+  return evaluating || report !== null || projectStatus === 'completed';
 }
 
 function ExperienceCheckRow({ check }: { check: GameplayExperienceCheck }) {

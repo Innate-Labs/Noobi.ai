@@ -192,6 +192,7 @@ async function launch(): Promise<void> {
   projectStore = new ProjectStore({
     storageFile: join(userData, 'projects.json'),
     defaultWorkspace,
+    legacyWorkspaces: smokeCapture ? [] : [join(homedir(), 'LoopSeed Games')],
   });
   eventLog = new EventLog(join(userData, 'events'));
   assetPlanStore = new AssetPlanStore(join(userData, 'asset-plans.json'));
@@ -2374,6 +2375,47 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     );
     await delay(350);
+  }
+  if (process.env.NOOBI_SMOKE_EXPERIENCE_REPORT === 'expand') {
+    const collapsed = await window.webContents.executeJavaScript(
+      `(() => {
+        const report = document.querySelector('.experience-report');
+        const toggle = document.querySelector('.experience-report-toggle');
+        if (!(report instanceof HTMLElement) || !(toggle instanceof HTMLButtonElement)) return null;
+        const height = Math.round(report.getBoundingClientRect().height);
+        toggle.click();
+        return { height, expanded: toggle.getAttribute('aria-expanded') };
+      })()`,
+      true,
+    ) as { height: number; expanded: string | null } | null;
+    await delay(250);
+    const expanded = await window.webContents.executeJavaScript(
+      `(() => {
+        const report = document.querySelector('.experience-report');
+        const toggle = document.querySelector('.experience-report-toggle');
+        const details = document.querySelector('.experience-report-details');
+        if (!(report instanceof HTMLElement) || !(toggle instanceof HTMLButtonElement)) return null;
+        report.scrollIntoView({ block: 'center' });
+        return {
+          height: Math.round(report.getBoundingClientRect().height),
+          expanded: toggle.getAttribute('aria-expanded'),
+          details: details instanceof HTMLElement,
+        };
+      })()`,
+      true,
+    ) as { height: number; expanded: string | null; details: boolean } | null;
+    if (!collapsed
+      || !expanded
+      || collapsed.expanded !== 'false'
+      || expanded.expanded !== 'true'
+      || !expanded.details
+      || expanded.height <= collapsed.height) {
+      throw new Error(`Experience report did not expand correctly: ${JSON.stringify({ collapsed, expanded })}`);
+    }
+    process.stdout.write(
+      `Noobi experience report expanded from ${collapsed.height}px to ${expanded.height}px\n`,
+    );
+    await delay(250);
   }
   const image = await window.webContents.capturePage();
   const output = resolve(target);

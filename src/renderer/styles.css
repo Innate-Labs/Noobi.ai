@@ -1474,6 +1474,30 @@ a {
   scrollbar-gutter: stable;
 }
 
+.experience-status-context {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 7px 10px;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.experience-status-context > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.experience-status-context.is-attention {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .experience-verdict.is-pass {
   background: var(--green-soft);
   color: var(--green);

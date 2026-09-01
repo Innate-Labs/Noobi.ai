@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GameplayExperienceReport } from '../../shared/contracts';
-import { ExperienceReport } from './Inspector';
+import { ExperienceReport, shouldShowExperienceReport } from './Inspector';
 
 const report: GameplayExperienceReport = {
   version: 1,
@@ -28,6 +28,7 @@ describe('ExperienceReport', () => {
   it('defaults to a compact score summary so the game preview keeps its space', () => {
     const markup = renderToStaticMarkup(createElement(ExperienceReport, {
       report,
+      projectStatus: 'completed',
       evaluating: false,
       disabled: false,
       onEvaluate: vi.fn(),
@@ -41,5 +42,27 @@ describe('ExperienceReport', () => {
     expect(markup).toContain('展开');
     expect(markup).not.toContain('加载与启动');
     expect(markup).not.toContain('artifacts/playtest/latest/report.json');
+  });
+
+  it('keeps existing reports available for stopped and running projects', () => {
+    expect(shouldShowExperienceReport(false, 'stopped', report)).toBe(true);
+    expect(shouldShowExperienceReport(false, 'running', report)).toBe(true);
+    expect(shouldShowExperienceReport(false, 'stopped', null)).toBe(false);
+    expect(shouldShowExperienceReport(false, 'completed', null)).toBe(true);
+  });
+
+  it('distinguishes a passed playtest from a failed overall delivery', () => {
+    const markup = renderToStaticMarkup(createElement(ExperienceReport, {
+      report,
+      projectStatus: 'failed',
+      evaluating: false,
+      disabled: false,
+      onEvaluate: vi.fn(),
+      onCancel: vi.fn(),
+      onOpenReport: vi.fn(),
+    }));
+
+    expect(markup).toContain('试玩通过 · 项目仍需处理');
+    expect(markup).toContain('PASS');
   });
 });

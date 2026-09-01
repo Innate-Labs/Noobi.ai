@@ -8,6 +8,7 @@ import {
   readdir,
   rename,
   rm,
+  rmdir,
   stat,
 } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -90,6 +91,7 @@ interface PersistedProjectStore {
 export interface ProjectStoreOptions {
   storageFile: string;
   defaultWorkspace: string;
+  legacyWorkspaces?: readonly string[];
 }
 
 export type ProjectPatch = Partial<
@@ -113,6 +115,7 @@ export interface FileReadOptions {
 export class ProjectStore {
   readonly storageFile: string;
   readonly initialDefaultWorkspace: string;
+  readonly legacyWorkspaces: readonly string[];
 
   #state: PersistedProjectStore | null = null;
   #initializing: Promise<void> | null = null;
@@ -121,9 +124,9 @@ export class ProjectStore {
   constructor(storageFile: string, defaultWorkspace: string);
   constructor(options: ProjectStoreOptions);
   constructor(storageFileOrOptions: string | ProjectStoreOptions, defaultWorkspace?: string) {
-    const options =
+    const options: ProjectStoreOptions =
       typeof storageFileOrOptions === 'string'
-        ? { storageFile: storageFileOrOptions, defaultWorkspace }
+        ? { storageFile: storageFileOrOptions, defaultWorkspace: defaultWorkspace ?? '' }
         : storageFileOrOptions;
     if (!isNonEmptyString(options.storageFile) || !isAbsolute(options.storageFile)) {
       throw new Error('Project store file must be an absolute path');
@@ -133,6 +136,12 @@ export class ProjectStore {
     }
     this.storageFile = resolve(options.storageFile);
     this.initialDefaultWorkspace = resolve(options.defaultWorkspace);
+    this.legacyWorkspaces = [...new Set((options.legacyWorkspaces ?? []).map((workspace) => {
+      if (!isNonEmptyString(workspace) || !isAbsolute(workspace)) {
+        throw new Error('Legacy workspace must be an absolute path');
+      }
+      return resolve(workspace);
+    }))].filter((workspace) => workspace !== this.initialDefaultWorkspace);
   }
 
   async init(): Promise<void> {
@@ -265,8 +274,18 @@ export class ProjectStore {
     try {
       const source = await readFile(this.storageFile, 'utf8');
       const loaded = parsePersistedStore(source);
-      if (loaded.needsMigration) {
-        await atomicWriteJson(this.storageFile, loaded.store);
+      const workspaceMigration = await migrateLegacyWorkspaces(
+        loaded.store,
+        this.initialDefaultWorkspace,
+        this.legacyWorkspaces,
+      );
+      if (loaded.needsMigration || workspaceMigration.changed) {
+        try {
+          await atomicWriteJson(this.storageFile, loaded.store);
+        } catch (error) {
+          await workspaceMigration.rollback();
+          throw error;
+        }
       }
       this.#state = loaded.store;
     } catch (error) {
@@ -318,6 +337,76 @@ export class ProjectStore {
   #requireState(): PersistedProjectStore {
     if (!this.#state) throw new Error('Project store is not initialized');
     return this.#state;
+  }
+}
+
+async function migrateLegacyWorkspaces(
+  store: PersistedProjectStore,
+  currentWorkspace: string,
+  legacyWorkspaces: readonly string[],
+): Promise<{ changed: boolean; rollback: () => Promise<void> }> {
+  let changed = false;
+  const moves: Array<{ source: string; target: string }> = [];
+
+  for (const legacyWorkspace of legacyWorkspaces) {
+    if (store.settings.defaultWorkspace === legacyWorkspace) {
+      store.settings.defaultWorkspace = currentWorkspace;
+      changed = true;
+    }
+
+    const legacyInfo = await lstat(legacyWorkspace).catch((error: unknown) => {
+      if (isNodeError(error, 'ENOENT')) return null;
+      throw error;
+    });
+    if (!legacyInfo?.isDirectory() || legacyInfo.isSymbolicLink()) continue;
+
+    for (const project of store.projects) {
+      const source = resolve(project.root);
+      if (resolve(dirname(source)) !== legacyWorkspace) continue;
+
+      const sourceInfo = await lstat(source).catch((error: unknown) => {
+        if (isNodeError(error, 'ENOENT')) return null;
+        throw error;
+      });
+      if (!sourceInfo?.isDirectory() || sourceInfo.isSymbolicLink()) continue;
+
+      const target = join(currentWorkspace, basename(source));
+      if (await pathExists(target)) continue;
+
+      try {
+        await rename(source, target);
+      } catch {
+        // Migration is best-effort. Keep the original catalog entry when the
+        // volume, permissions, or a concurrent filesystem change prevents it.
+        continue;
+      }
+      moves.push({ source, target });
+      project.root = resolve(target);
+      changed = true;
+    }
+
+    await rmdir(legacyWorkspace).catch(() => undefined);
+  }
+
+  return {
+    changed,
+    rollback: async () => {
+      for (const move of moves.reverse()) {
+        if (!(await pathExists(move.target)) || await pathExists(move.source)) continue;
+        await mkdir(dirname(move.source), { recursive: true, mode: 0o755 });
+        await rename(move.target, move.source).catch(() => undefined);
+      }
+    },
+  };
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) return false;
+    throw error;
   }
 }
 
