@@ -3,7 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GameplayExperienceReport } from '../../shared/contracts';
-import { ExperienceReport, shouldShowExperienceReport } from './Inspector';
+import {
+  ExperienceReport,
+  ExperienceReportTrigger,
+  shouldShowExperienceReport,
+} from './Inspector';
 
 const report: GameplayExperienceReport = {
   version: 1,
@@ -25,23 +29,40 @@ const report: GameplayExperienceReport = {
 };
 
 describe('ExperienceReport', () => {
-  it('defaults to a compact score summary so the game preview keeps its space', () => {
+  it('keeps the collapsed score summary in the preview toolbar', () => {
+    const markup = renderToStaticMarkup(createElement(ExperienceReportTrigger, {
+      report,
+      projectStatus: 'completed',
+      evaluating: false,
+      expanded: false,
+      onToggle: vi.fn(),
+    }));
+
+    expect(markup).toContain('experience-report-trigger is-pass');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain('100');
+    expect(markup).toContain('PASS');
+    expect(markup).not.toContain('加载与启动');
+    expect(markup).not.toContain('artifacts/playtest/latest/report.json');
+  });
+
+  it('renders the complete report in an independently scrollable drawer', () => {
     const markup = renderToStaticMarkup(createElement(ExperienceReport, {
       report,
       projectStatus: 'completed',
       evaluating: false,
       disabled: false,
+      onClose: vi.fn(),
       onEvaluate: vi.fn(),
       onCancel: vi.fn(),
       onOpenReport: vi.fn(),
     }));
 
-    expect(markup).toContain('experience-report is-pass is-collapsed');
-    expect(markup).toContain('aria-expanded="false"');
-    expect(markup).toContain('aria-label="体验评分 100 分"');
-    expect(markup).toContain('展开');
-    expect(markup).not.toContain('加载与启动');
-    expect(markup).not.toContain('artifacts/playtest/latest/report.json');
+    expect(markup).toContain('experience-report is-pass');
+    expect(markup).toContain('experience-report-details');
+    expect(markup).toContain('加载与启动');
+    expect(markup).toContain('artifacts/playtest/latest/report.json');
+    expect(markup).toContain('收起');
   });
 
   it('keeps existing reports available for stopped and running projects', () => {
@@ -57,6 +78,7 @@ describe('ExperienceReport', () => {
       projectStatus: 'failed',
       evaluating: false,
       disabled: false,
+      onClose: vi.fn(),
       onEvaluate: vi.fn(),
       onCancel: vi.fn(),
       onOpenReport: vi.fn(),

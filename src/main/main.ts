@@ -2163,8 +2163,14 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     );
     await delay(650);
+    const hasPlayablePreview = await window.webContents.executeJavaScript(
+      `document.querySelector('.preview-pane iframe') instanceof HTMLIFrameElement`,
+      true,
+    ) as boolean;
     const expectedScene = process.env.NOOBI_SMOKE_SCENE?.trim();
-    if (isNoobiSceneId(expectedScene)) {
+    if (hasPlayablePreview) {
+      process.stdout.write('Noobi workbench loaded a playable game preview\n');
+    } else if (isNoobiSceneId(expectedScene)) {
       const sceneState = await window.webContents.executeJavaScript(
         `(() => {
           const scene = document.querySelector('.production-diorama');
@@ -2380,40 +2386,58 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     const collapsed = await window.webContents.executeJavaScript(
       `(() => {
         const report = document.querySelector('.experience-report');
-        const toggle = document.querySelector('.experience-report-toggle');
-        if (!(report instanceof HTMLElement) || !(toggle instanceof HTMLButtonElement)) return null;
-        const height = Math.round(report.getBoundingClientRect().height);
+        const toggle = document.querySelector('.experience-report-trigger');
+        const preview = document.querySelector('.preview-pane iframe');
+        if (!(toggle instanceof HTMLButtonElement) || !(preview instanceof HTMLElement)) return null;
+        const previewHeight = Math.round(preview.getBoundingClientRect().height);
         toggle.click();
-        return { height, expanded: toggle.getAttribute('aria-expanded') };
+        return {
+          reportVisible: report instanceof HTMLElement,
+          previewHeight,
+          expanded: toggle.getAttribute('aria-expanded'),
+        };
       })()`,
       true,
-    ) as { height: number; expanded: string | null } | null;
+    ) as { reportVisible: boolean; previewHeight: number; expanded: string | null } | null;
     await delay(250);
     const expanded = await window.webContents.executeJavaScript(
       `(() => {
         const report = document.querySelector('.experience-report');
-        const toggle = document.querySelector('.experience-report-toggle');
+        const toggle = document.querySelector('.experience-report-trigger');
         const details = document.querySelector('.experience-report-details');
-        if (!(report instanceof HTMLElement) || !(toggle instanceof HTMLButtonElement)) return null;
+        const preview = document.querySelector('.preview-pane iframe');
+        if (!(report instanceof HTMLElement)
+          || !(toggle instanceof HTMLButtonElement)
+          || !(preview instanceof HTMLElement)) return null;
         report.scrollIntoView({ block: 'center' });
         return {
           height: Math.round(report.getBoundingClientRect().height),
+          width: Math.round(report.getBoundingClientRect().width),
+          previewHeight: Math.round(preview.getBoundingClientRect().height),
           expanded: toggle.getAttribute('aria-expanded'),
           details: details instanceof HTMLElement,
         };
       })()`,
       true,
-    ) as { height: number; expanded: string | null; details: boolean } | null;
+    ) as {
+      height: number;
+      width: number;
+      previewHeight: number;
+      expanded: string | null;
+      details: boolean;
+    } | null;
     if (!collapsed
       || !expanded
+      || collapsed.reportVisible
       || collapsed.expanded !== 'false'
       || expanded.expanded !== 'true'
       || !expanded.details
-      || expanded.height <= collapsed.height) {
+      || expanded.height < 200
+      || Math.abs(expanded.previewHeight - collapsed.previewHeight) > 1) {
       throw new Error(`Experience report did not expand correctly: ${JSON.stringify({ collapsed, expanded })}`);
     }
     process.stdout.write(
-      `Noobi experience report expanded from ${collapsed.height}px to ${expanded.height}px\n`,
+      `Noobi experience report opened as ${expanded.width}x${expanded.height}px without resizing the ${expanded.previewHeight}px preview\n`,
     );
     await delay(250);
   }

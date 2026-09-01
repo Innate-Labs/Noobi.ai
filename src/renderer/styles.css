@@ -1301,6 +1301,10 @@ a {
   flex-direction: column;
 }
 
+.preview-pane {
+  position: relative;
+}
+
 .preview-pane iframe {
   width: 100%;
   min-height: 330px;
@@ -1340,16 +1344,21 @@ a {
 }
 
 .experience-report {
-  flex: 0 0 auto;
-  max-height: min(42vh, 360px);
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  right: 8px;
+  bottom: 46px;
+  display: flex;
+  width: min(560px, calc(100% - 16px));
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
-  border-top: 1px solid var(--line-strong);
+  border: 1px solid var(--line-strong);
   border-left: 3px solid var(--accent);
   background: var(--panel-raised);
-}
-
-.experience-report.is-collapsed {
-  max-height: 42px;
+  box-shadow: 0 18px 46px color-mix(in srgb, #000 24%, transparent);
+  animation: experience-report-drawer-in 140ms ease-out;
 }
 
 .experience-report.is-pass {
@@ -1375,12 +1384,6 @@ a {
   align-items: center;
   gap: 6px 12px;
   padding: 7px 10px 7px 12px;
-}
-
-.experience-report.is-collapsed .experience-report-header {
-  min-height: 42px;
-  padding-top: 5px;
-  padding-bottom: 5px;
 }
 
 .experience-report-header > div:first-child {
@@ -1442,7 +1445,8 @@ a {
   letter-spacing: 0.08em;
 }
 
-.experience-report-toggle {
+.experience-report-trigger,
+.experience-report-close {
   display: inline-flex;
   min-height: 26px;
   align-items: center;
@@ -1457,18 +1461,51 @@ a {
   white-space: nowrap;
 }
 
-.experience-report-toggle:hover {
+.experience-report-trigger {
+  gap: 5px;
+  padding: 0 7px;
+}
+
+.experience-report-trigger > strong {
+  color: var(--text);
+  font: 700 12px/1 var(--mono);
+  letter-spacing: -0.04em;
+}
+
+.experience-report-trigger > i {
+  font-style: normal;
+}
+
+.experience-report-trigger.is-pass {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.experience-report-trigger.is-repair {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.experience-report-trigger.is-running {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.experience-report-toggle:focus-visible {
+.experience-report-trigger:hover,
+.experience-report-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.experience-report-trigger:focus-visible,
+.experience-report-close:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 .experience-report-details {
-  max-height: min(36vh, 310px);
+  min-height: 0;
+  flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -1668,6 +1705,12 @@ a {
 }
 
 @media (max-width: 680px) {
+  .experience-report {
+    right: 6px;
+    bottom: 44px;
+    width: calc(100% - 12px);
+  }
+
   .experience-report-header {
     gap: 6px;
     padding-right: 7px;
@@ -1677,10 +1720,14 @@ a {
     gap: 5px;
   }
 
-  .experience-report-toggle {
+  .experience-report-close {
     width: 28px;
     padding: 0;
     font-size: 0;
+  }
+
+  .experience-report-trigger > span {
+    display: none;
   }
 
   .experience-score strong {
@@ -1693,6 +1740,17 @@ a {
 
   .experience-report-meta span:nth-child(2) {
     display: none;
+  }
+}
+
+@keyframes experience-report-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -8304,6 +8362,7 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .experience-report,
   .production-assistant,
   .production-assistant *,
   .pixel-station,
