@@ -615,6 +615,7 @@ function godotMainScript(project: WorkspaceProject): string {
     'var state: StringName = &"ready"',
     'var elapsed_seconds: float = 0.0',
     'var action_flash: float = 0.0',
+    'var navigation_probe_offset: float = 0.0',
     '',
     'func _ready() -> void:',
     '    Engine.max_fps = TARGET_FRAME_RATE',
@@ -635,6 +636,10 @@ function godotMainScript(project: WorkspaceProject): string {
     '    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:',
     '        _reset_game()',
     '        return',
+    '    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_D and state == &"active":',
+    '        navigation_probe_offset = -72.0 if navigation_probe_offset > 0.0 else 72.0',
+    '        queue_redraw()',
+    '        return',
     '    if event.is_action_pressed("ui_accept"):',
     '        if state == &"ready":',
     '            state = &"active"',
@@ -653,6 +658,7 @@ function godotMainScript(project: WorkspaceProject): string {
     '    state = &"ready"',
     '    elapsed_seconds = 0.0',
     '    action_flash = 0.0',
+    '    navigation_probe_offset = 0.0',
     '    queue_redraw()',
     '',
     'func _draw() -> void:',
@@ -670,8 +676,9 @@ function godotMainScript(project: WorkspaceProject): string {
     '    var pulse := 0.55 + sin(elapsed_seconds * 3.0) * 0.2',
     '    var bar_color := Color("f5d787") if action_flash > 0.0 else Color("82aaff")',
     '    bar_color.a = 0.35 if state == &"paused" else pulse',
+    '    draw_rect(Rect2(Vector2(618.0 + navigation_probe_offset, 362.0), Vector2(44.0, 44.0)), bar_color)',
     '    draw_rect(Rect2(Vector2(550.0, 390.0), Vector2(180.0, 4.0)), bar_color)',
-    '    var status_label := "ENTER activate preview" if state == &"ready" else ("Paused · ESC resume" if state == &"paused" else "Placeholder active · SPACE feedback · R reset")',
+    '    var status_label := "ENTER activate preview" if state == &"ready" else ("Paused · ESC resume" if state == &"paused" else "Placeholder active · D navigation probe · SPACE feedback · R reset")',
     '    draw_string(font, Vector2(0.0, 440.0), status_label, HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 15, Color("aeb5c5"))',
     '',
   ].join('\n');
@@ -720,7 +727,7 @@ function playtestSpec(project: WorkspaceProject): string {
         id: 'move-player',
         action: 'move',
         inputs: [{ type: 'key', code: 'KeyD', holdMs: 650 }],
-        observe: [{ kind: 'screen-change', description: 'The controlled player or focus visibly changes position.', baselineStepId: 'start-game' }],
+        observe: [{ kind: 'screen-change', description: 'The neutral navigation probe visibly changes position.', baselineStepId: 'start-game' }],
         capture: '02-move-player.png',
       },
       {
@@ -748,13 +755,13 @@ function playtestSpec(project: WorkspaceProject): string {
         id: 'restart-game',
         action: 'restart',
         inputs: [{ type: 'key', code: 'KeyR', holdMs: 60 }],
-        observe: [{ kind: 'screen-change', description: 'Restart returns to a fresh playable state without reloading Noobi.ai.', baselineStepId: 'resume-game' }],
+        observe: [{ kind: 'screen-change', description: 'Reset returns the neutral starter to its ready state without reloading Noobi.ai.', baselineStepId: 'resume-game' }],
         capture: '06-restart-game.png',
       },
     ],
     success: [
-      { kind: 'canvas-not-blank', description: 'The final restarted game remains visibly rendered and playable.' },
-      { kind: 'screen-change', description: 'Movement changed the visible game state.', baselineStepId: 'start-game' },
+      { kind: 'canvas-not-blank', description: 'The final reset starter remains visibly rendered and ready.' },
+      { kind: 'screen-change', description: 'The neutral navigation input exposed visible placeholder feedback.', baselineStepId: 'start-game' },
       { kind: 'screen-change', description: 'The primary action exposed player-visible feedback.', baselineStepId: 'move-player' },
     ],
     limits: { maxRunMs: 60_000, stepTimeoutMs: 8_000 },
@@ -893,6 +900,7 @@ const state = {
   status: 'ready',
   elapsedSeconds: 0,
   actionFlashSeconds: 0,
+  navigationProbeOffset: 0,
   lastTime: performance.now(),
   accumulatorSeconds: 0,
   lastPresentedAt: 0,
@@ -902,6 +910,7 @@ function reset() {
   state.status = 'ready';
   state.elapsedSeconds = 0;
   state.actionFlashSeconds = 0;
+  state.navigationProbeOffset = 0;
   state.lastTime = performance.now();
   state.accumulatorSeconds = 0;
   state.lastPresentedAt = 0;
@@ -952,6 +961,7 @@ function draw() {
   const pulse = 0.55 + Math.sin(state.elapsedSeconds * 3) * 0.2;
   context.globalAlpha = state.status === 'paused' ? 0.35 : pulse;
   context.fillStyle = state.actionFlashSeconds > 0 ? '#f5d787' : '#82aaff';
+  context.fillRect(canvas.width / 2 - 22 + state.navigationProbeOffset, 337, 44, 44);
   context.fillRect(canvas.width / 2 - 90, 365, 180, 4);
   context.globalAlpha = 1;
   context.fillStyle = '#aeb5c5';
@@ -960,7 +970,7 @@ function draw() {
     ? 'ENTER 激活预览'
     : state.status === 'paused'
       ? '已暂停 · ESC 继续'
-      : '占位预览运行中 · SPACE 测试反馈 · R 重置';
+      : '占位预览运行中 · D 导航探针 · SPACE 测试反馈 · R 重置';
   context.fillText(statusLabel, canvas.width / 2, 410);
   context.textAlign = 'left';
 }
@@ -1000,6 +1010,10 @@ window.addEventListener('keydown', (event) => {
   }
   if (event.code === 'KeyR') {
     reset();
+    return;
+  }
+  if (event.code === 'KeyD' && state.status === 'active' && !event.repeat) {
+    state.navigationProbeOffset = state.navigationProbeOffset > 0 ? -72 : 72;
     return;
   }
   if (event.code === 'Space' && state.status === 'active') {

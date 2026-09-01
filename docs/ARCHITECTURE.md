@@ -61,9 +61,9 @@ Renderer 永远不直接获得 shell、任意文件系统或 child process 能�
 
 Godot starter 由宿主直接生成，包含：
 
-- `.noobi/project.json`：记录 `engine=godot`、`starter=noobi-godot-4` 和宿主管理的内部 FPS 目标。
+- `.noobi/project.json`：记录 `engine=godot`、`starter=noobi-godot-4-neutral` 和宿主管理的内部 FPS 目标。
 - `project.godot`：主场景、1280×720 viewport、Compatibility renderer，以及内部目标对应的 physics tick；新项目为 60 Hz。
-- `scenes/main.tscn`、`scripts/main.gd`：具有移动、收集、碰撞、胜负和重开状态的可运行起点；`Engine.max_fps` 使用项目内部目标。
+- `scenes/main.tscn`、`scripts/main.gd`：仅提供启动、导航输入探针、主操作反馈、暂停/恢复与重置的中性可运行脚手架，不预设移动、收集、碰撞或胜负玩法；`Engine.max_fps` 使用项目内部目标。
 - `export_presets.cfg`：名为 `Web` 的单线程 Web 预设，输出 `build/web/index.html`。
 - `public/assets/asset-pack.json` 和素材目录：继续通过现有 AssetStore、SHA-256 ledger 与生产引用门禁管理；Godot 使用 `res://public/assets/...` 引用。
 - `AGENTS.md`、项目 Skill、`GAME_DESIGN.md` 与项目 README：注入 Godot 资源、动画、FPS、headless 验证与交付约束。

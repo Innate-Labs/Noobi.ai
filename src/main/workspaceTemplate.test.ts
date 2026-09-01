@@ -68,7 +68,15 @@ describe('createWorkspaceTemplate', () => {
     });
     expect((playtest as { journey: unknown[] }).journey).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'launch-ready', capture: '00-launch-ready.png' }),
-      expect.objectContaining({ id: 'move-player', action: 'move' }),
+      expect.objectContaining({
+        id: 'move-player',
+        action: 'move',
+        observe: [expect.objectContaining({
+          kind: 'screen-change',
+          description: 'The neutral navigation probe visibly changes position.',
+          baselineStepId: 'start-game',
+        })],
+      }),
       expect.objectContaining({ id: 'primary-action', action: 'primary' }),
       expect.objectContaining({
         id: 'pause-game',
@@ -205,6 +213,8 @@ describe('createWorkspaceTemplate', () => {
     expect(starter).toContain('const FIXED_STEP_SECONDS = 1 / TARGET_FRAME_RATE');
     expect(starter).toContain('const MAX_CATCH_UP_STEPS = 8');
     expect(starter).toContain('state.accumulatorSeconds %= FIXED_STEP_SECONDS');
+    expect(starter).toContain("event.code === 'KeyD'");
+    expect(starter).toContain('state.navigationProbeOffset');
     expect(agents).toContain('They are not prior user code, implemented gameplay, or product requirements');
   });
 
@@ -233,6 +243,8 @@ describe('createWorkspaceTemplate', () => {
     expect(starter).not.toContain('TARGET_SCORE');
     expect(starter).not.toContain('hazard_positions');
     expect(starter).not.toContain('goal_position');
+    expect(starter).toContain('event.keycode == KEY_D');
+    expect(starter).toContain('navigation_probe_offset');
     expect(agents).toContain('res://public/assets/models/...');
     expect(agents).toContain('Three.js is build-time asset authoring only');
     expect(skill).toContain('Godot must import/instantiate that GLB');
