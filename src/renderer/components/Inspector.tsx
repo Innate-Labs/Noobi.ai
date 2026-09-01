@@ -13,6 +13,8 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Info,
+  Maximize2,
+  Minimize2,
   Music2,
   MonitorPlay,
   PackageOpen,
@@ -24,7 +26,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { DragEvent, ReactNode } from 'react';
 
 import type {
@@ -627,7 +629,7 @@ export function Inspector({
   );
 }
 
-function ExperienceReport({
+export function ExperienceReport({
   report,
   evaluating,
   disabled,
@@ -642,60 +644,93 @@ function ExperienceReport({
   onCancel: () => void;
   onOpenReport: (relativePath: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
+  const toggle = (
+    <button
+      type="button"
+      className="experience-report-toggle"
+      aria-expanded={expanded}
+      aria-controls={detailsId}
+      aria-label={expanded ? '收起体验评测，扩大游戏预览' : '展开完整体验评测'}
+      title={expanded ? '收起评测' : '展开评测'}
+      onClick={() => setExpanded((value) => !value)}
+    >
+      {expanded
+        ? <Minimize2 size={12} aria-hidden="true" />
+        : <Maximize2 size={12} aria-hidden="true" />}
+      {expanded ? '收起' : '展开'}
+    </button>
+  );
+
   if (evaluating) {
     return (
-      <section className="experience-report is-running" aria-label="体验评测运行中" aria-busy="true">
+      <section className={`experience-report is-running ${expanded ? 'is-expanded' : 'is-collapsed'}`} aria-label="体验评测运行中" aria-busy="true">
         <header className="experience-report-header">
           <div>
             <span>PLAYTEST / EXPERIENCE</span>
             <strong>体验评测</strong>
           </div>
-          <span className="experience-verdict is-running">
-            <CircleDashed size={12} className="spin" aria-hidden="true" /> RUNNING
-          </span>
-        </header>
-        <div className="experience-report-empty" role="status" aria-live="polite">
-          <PlayCircle size={18} aria-hidden="true" />
-          <div>
-            <strong>正在自动试玩正式构建</strong>
-            <span>{report ? `上次结果 ${report.score}/100；本次完成前不沿用旧结论。` : '正在执行操作、动画、暂停与重开检查。'}</span>
+          <div className="experience-report-actions">
+            <span className="experience-verdict is-running">
+              <CircleDashed size={12} className="spin" aria-hidden="true" /> RUNNING
+            </span>
+            {toggle}
           </div>
-          <button type="button" className="experience-evaluate-button is-stop" onClick={onCancel}>
-            <Square size={10} fill="currentColor" aria-hidden="true" /> 停止评测
-          </button>
-        </div>
+        </header>
+        {expanded ? (
+          <div id={detailsId} className="experience-report-details">
+            <div className="experience-report-empty" role="status" aria-live="polite">
+              <PlayCircle size={18} aria-hidden="true" />
+              <div>
+                <strong>正在自动试玩正式构建</strong>
+                <span>{report ? `上次结果 ${report.score}/100；本次完成前不沿用旧结论。` : '正在执行操作、动画、暂停与重开检查。'}</span>
+              </div>
+              <button type="button" className="experience-evaluate-button is-stop" onClick={onCancel}>
+                <Square size={10} fill="currentColor" aria-hidden="true" /> 停止评测
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     );
   }
 
   if (!report) {
     return (
-      <section className="experience-report is-waiting" aria-label="体验评测">
+      <section className={`experience-report is-waiting ${expanded ? 'is-expanded' : 'is-collapsed'}`} aria-label="体验评测">
         <header className="experience-report-header">
           <div>
             <span>PLAYTEST / EXPERIENCE</span>
             <strong>体验评测</strong>
           </div>
-          <span className="experience-verdict is-waiting">
-            <CircleDashed size={12} aria-hidden="true" /> WAITING
-          </span>
-        </header>
-        <div className="experience-report-empty" role="status">
-          <PlayCircle size={18} aria-hidden="true" />
-          <div>
-            <strong>等待首次体验评测</strong>
-            <span>可运行版本就绪后，Agent 会自动加载、操作并重新开始游戏。</span>
+          <div className="experience-report-actions">
+            <span className="experience-verdict is-waiting">
+              <CircleDashed size={12} aria-hidden="true" /> WAITING
+            </span>
+            {toggle}
           </div>
-          <button
-            type="button"
-            className="experience-evaluate-button"
-            disabled={disabled}
-            onClick={onEvaluate}
-          >
-            <PlayCircle size={11} aria-hidden="true" />
-            立即评测
-          </button>
-        </div>
+        </header>
+        {expanded ? (
+          <div id={detailsId} className="experience-report-details">
+            <div className="experience-report-empty" role="status">
+              <PlayCircle size={18} aria-hidden="true" />
+              <div>
+                <strong>等待首次体验评测</strong>
+                <span>可运行版本就绪后，Agent 会自动加载、操作并重新开始游戏。</span>
+              </div>
+              <button
+                type="button"
+                className="experience-evaluate-button"
+                disabled={disabled}
+                onClick={onEvaluate}
+              >
+                <PlayCircle size={11} aria-hidden="true" />
+                立即评测
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -705,7 +740,7 @@ function ExperienceReport({
 
   return (
     <section
-      className={`experience-report is-${report.verdict}`}
+      className={`experience-report is-${report.verdict} ${expanded ? 'is-expanded' : 'is-collapsed'}`}
       aria-label={`体验评测：${report.verdict === 'pass' ? '通过' : '需要修复'}`}
     >
       <header className="experience-report-header">
@@ -713,47 +748,54 @@ function ExperienceReport({
           <span>PLAYTEST / EXPERIENCE</span>
           <strong>体验评测</strong>
         </div>
-        <div className="experience-score" aria-label={`体验评分 ${score} 分`}>
-          <strong>{score}</strong>
-          <span>/100</span>
+        <div className="experience-report-actions">
+          <div className="experience-score" aria-label={`体验评分 ${score} 分`}>
+            <strong>{score}</strong>
+            <span>/100</span>
+          </div>
+          <span className={`experience-verdict is-${report.verdict}`}>
+            {report.verdict === 'pass'
+              ? <CheckCircle2 size={12} aria-hidden="true" />
+              : <AlertTriangle size={12} aria-hidden="true" />}
+            {report.verdict === 'pass' ? 'PASS' : 'REPAIR'}
+          </span>
+          {toggle}
         </div>
-        <span className={`experience-verdict is-${report.verdict}`}>
-          {report.verdict === 'pass'
-            ? <CheckCircle2 size={12} aria-hidden="true" />
-            : <AlertTriangle size={12} aria-hidden="true" />}
-          {report.verdict === 'pass' ? 'PASS' : 'REPAIR'}
-        </span>
       </header>
 
-      <div className="experience-checks" role="list" aria-label="体验评测检查项">
-        {report.checks.map((check) => (
-          <ExperienceCheckRow key={check.id} check={check} />
-        ))}
-      </div>
+      {expanded ? (
+        <div id={detailsId} className="experience-report-details">
+          <div className="experience-checks" role="list" aria-label="体验评测检查项">
+            {report.checks.map((check) => (
+              <ExperienceCheckRow key={check.id} check={check} />
+            ))}
+          </div>
 
-      {report.summary ? <p className="experience-summary">{report.summary}</p> : null}
+          {report.summary ? <p className="experience-summary">{report.summary}</p> : null}
 
-      <footer className="experience-report-meta">
-        <span>{checkedAt}{formatExperienceDuration(report.durationMs)}</span>
-        <span title={report.reportPath}>REPORT · {report.reportPath}</span>
-        <button
-          type="button"
-          className="experience-evaluate-button"
-          onClick={() => onOpenReport(report.reportPath)}
-        >
-          <File size={10} aria-hidden="true" />
-          查看报告
-        </button>
-        <button
-          type="button"
-          className="experience-evaluate-button"
-          disabled={disabled}
-          onClick={onEvaluate}
-        >
-          <RefreshCw size={10} aria-hidden="true" />
-          重新评测
-        </button>
-      </footer>
+          <footer className="experience-report-meta">
+            <span>{checkedAt}{formatExperienceDuration(report.durationMs)}</span>
+            <span title={report.reportPath}>REPORT · {report.reportPath}</span>
+            <button
+              type="button"
+              className="experience-evaluate-button"
+              onClick={() => onOpenReport(report.reportPath)}
+            >
+              <File size={10} aria-hidden="true" />
+              查看报告
+            </button>
+            <button
+              type="button"
+              className="experience-evaluate-button"
+              disabled={disabled}
+              onClick={onEvaluate}
+            >
+              <RefreshCw size={10} aria-hidden="true" />
+              重新评测
+            </button>
+          </footer>
+        </div>
+      ) : null}
     </section>
   );
 }

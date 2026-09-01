@@ -1341,9 +1341,15 @@ a {
 
 .experience-report {
   flex: 0 0 auto;
+  max-height: min(42vh, 360px);
+  overflow: hidden;
   border-top: 1px solid var(--line-strong);
   border-left: 3px solid var(--accent);
   background: var(--panel-raised);
+}
+
+.experience-report.is-collapsed {
+  max-height: 42px;
 }
 
 .experience-report.is-pass {
@@ -1369,6 +1375,12 @@ a {
   align-items: center;
   gap: 6px 12px;
   padding: 7px 10px 7px 12px;
+}
+
+.experience-report.is-collapsed .experience-report-header {
+  min-height: 42px;
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
 .experience-report-header > div:first-child {
@@ -1397,10 +1409,16 @@ a {
   line-height: 1;
 }
 
+.experience-report-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .experience-score {
   display: flex;
-  grid-column: 2;
-  grid-row: 1;
   align-items: baseline;
   color: var(--muted);
   font: 8px/1 var(--mono);
@@ -1415,7 +1433,6 @@ a {
 .experience-verdict {
   display: inline-flex;
   min-height: 24px;
-  grid-column: 2;
   align-items: center;
   justify-content: center;
   gap: 5px;
@@ -1423,6 +1440,38 @@ a {
   padding: 0 7px;
   font: 700 8px/1 var(--mono);
   letter-spacing: 0.08em;
+}
+
+.experience-report-toggle {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-soft);
+  padding: 0 8px;
+  font: 700 8px/1 var(--mono);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.experience-report-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.experience-report-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.experience-report-details {
+  max-height: min(36vh, 310px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .experience-verdict.is-pass {
@@ -1591,6 +1640,35 @@ a {
 
   .experience-check:nth-child(odd) {
     border-right: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 680px) {
+  .experience-report-header {
+    gap: 6px;
+    padding-right: 7px;
+  }
+
+  .experience-report-actions {
+    gap: 5px;
+  }
+
+  .experience-report-toggle {
+    width: 28px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .experience-score strong {
+    font-size: 19px;
+  }
+
+  .experience-report-meta {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .experience-report-meta span:nth-child(2) {
+    display: none;
   }
 }
 
