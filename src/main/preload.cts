@@ -24,6 +24,7 @@ import type {
   PromptTemplateId,
   PromptTemplateSetting,
   ProjectInspectorPayload,
+  ProjectIconData,
   ProjectRecord,
   RunProjectInput,
   RuntimeStatus,
@@ -88,6 +89,8 @@ const api: NoobiApi = {
     ipcRenderer.invoke('noobi:project:experience:cancel', projectId) as Promise<void>,
   readProjectFile: (projectId: string, relativePath: string) =>
     ipcRenderer.invoke('noobi:project:read', projectId, relativePath) as Promise<FileReadResult>,
+  getProjectIcon: (projectId: string) =>
+    ipcRenderer.invoke('noobi:project:icon', projectId) as Promise<ProjectIconData | null>,
   saveProjectNoobiPack: (projectId: string, packId: NoobiPackId | null) =>
     ipcRenderer.invoke('noobi:project:noobi-pack:save', projectId, packId) as Promise<ProjectRecord>,
   saveProjectNoobiCrew: (projectId: string, crew: readonly NoobiCrewMember[] | null) =>

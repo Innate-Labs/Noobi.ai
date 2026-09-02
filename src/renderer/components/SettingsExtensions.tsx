@@ -695,6 +695,18 @@ export function SkillsSettings({ controller }: { controller: ExtensionSettingsCo
     return controller.snapshot.skills.filter((item) => `${item.name} ${item.description} ${item.source}`.toLowerCase().includes(term));
   }, [controller.snapshot.skills, query]);
 
+  const groups = useMemo(() => {
+    const required: SkillSetting[] = [];
+    const mine: SkillSetting[] = [];
+    const builtin: SkillSetting[] = [];
+    for (const item of skills) {
+      if (item.name.trim().toLowerCase() === 'imagegen') required.push(item);
+      else if (item.source === 'user' || item.source === 'workspace') mine.push(item);
+      else builtin.push(item);
+    }
+    return { required, mine, builtin };
+  }, [skills]);
+
   async function toggle(item: SkillSetting) {
     setPending(item.id);
     try {
@@ -704,12 +716,58 @@ export function SkillsSettings({ controller }: { controller: ExtensionSettingsCo
     }
   }
 
+  function renderSkillRow(item: SkillSetting) {
+    const requiredByNoobi = item.name.trim().toLowerCase() === 'imagegen';
+    return (
+      <article className={`extension-row${requiredByNoobi ? ' is-required' : ''}`} key={item.id}>
+        <span className="extension-glyph"><FileCode2 size={16} /></span>
+        <div className="extension-copy">
+          <div>
+            <strong>{item.name}</strong>
+            <span className={`source-badge source-${item.source}`}>{sourceLabel(item.source)}</span>
+            {requiredByNoobi ? <span className="source-badge noobi-required-badge">NOOBI REQUIRED</span> : null}
+          </div>
+          <p>{requiredByNoobi ? 'Noobi 的默认图片生成与 API 失败回退依赖此 Skill；游戏制作流程中始终保持启用。' : item.description || '此 Skill 未提供说明。'}</p>
+          {item.path ? <code title={item.path}>{item.path}</code> : null}
+        </div>
+        <label className="switch-control compact-switch" title={requiredByNoobi ? 'Noobi 游戏制作必需，无法在这里停用' : undefined}>
+          <span className="sr-only">{requiredByNoobi ? `${item.name} 是 Noobi 必需 Skill，始终启用` : `${item.enabled ? '停用' : '启用'} ${item.name}`}</span>
+          <input
+            type="checkbox"
+            checked={requiredByNoobi || item.enabled}
+            disabled={requiredByNoobi || !controller.supported || pending === item.id}
+            onChange={() => void toggle(item)}
+          />
+          <span aria-hidden="true" />
+        </label>
+      </article>
+    );
+  }
+
+  function renderGroup(
+    label: string,
+    hint: string,
+    items: readonly SkillSetting[],
+  ) {
+    if (!items.length) return null;
+    return (
+      <div className="extension-group" key={label}>
+        <header className="extension-group-heading">
+          <span>{label}</span>
+          <small>{hint}</small>
+          <em>{items.length}</em>
+        </header>
+        {items.map(renderSkillRow)}
+      </div>
+    );
+  }
+
   return (
     <section>
       <SettingsPanelHeading
         eyebrow="AGENT CAPABILITY RACK"
         title="Skills"
-        description="决定游戏 Agent 可以主动调用的专业工作流。关闭 Skill 不会删除本地文件。"
+        description="Skills 是 Codex 运行时的能力工作流。制作游戏只需要 imagegen（图片生成）；Codex 官方插件缓存（Canva、Figma、GitHub 等）与游戏制作无关，已自动停用并隐藏，不会加载进游戏制作流程。关闭 Skill 不会删除本地文件。"
       />
       {!controller.supported ? <BridgeNotice /> : null}
       <div className="settings-toolbar">
@@ -721,34 +779,10 @@ export function SkillsSettings({ controller }: { controller: ExtensionSettingsCo
         <span className="settings-count">{skills.length.toString().padStart(2, '0')} / {controller.snapshot.skills.length.toString().padStart(2, '0')}</span>
       </div>
       <div className="extension-list" aria-live="polite">
-        {skills.map((item) => {
-          const requiredByNoobi = item.name.trim().toLowerCase() === 'imagegen';
-          return (
-            <article className={`extension-row${requiredByNoobi ? ' is-required' : ''}`} key={item.id}>
-              <span className="extension-glyph"><FileCode2 size={16} /></span>
-              <div className="extension-copy">
-                <div>
-                  <strong>{item.name}</strong>
-                  <span className={`source-badge source-${item.source}`}>{sourceLabel(item.source)}</span>
-                  {requiredByNoobi ? <span className="source-badge noobi-required-badge">NOOBI REQUIRED</span> : null}
-                </div>
-                <p>{requiredByNoobi ? 'Noobi 的默认图片生成与 API 失败回退依赖此 Skill；游戏制作流程中始终保持启用。' : item.description || '此 Skill 未提供说明。'}</p>
-                {item.path ? <code title={item.path}>{item.path}</code> : null}
-              </div>
-              <label className="switch-control compact-switch" title={requiredByNoobi ? 'Noobi 游戏制作必需，无法在这里停用' : undefined}>
-                <span className="sr-only">{requiredByNoobi ? `${item.name} 是 Noobi 必需 Skill，始终启用` : `${item.enabled ? '停用' : '启用'} ${item.name}`}</span>
-                <input
-                  type="checkbox"
-                  checked={requiredByNoobi || item.enabled}
-                  disabled={requiredByNoobi || !controller.supported || pending === item.id}
-                  onChange={() => void toggle(item)}
-                />
-                <span aria-hidden="true" />
-              </label>
-            </article>
-          );
-        })}
-        {!skills.length ? <EmptyExtensionState icon={FileCode2} title={query ? '没有匹配的 Skill' : '尚未发现 Skills'} description={query ? '换一个名称或来源关键词。' : 'Host Bridge 接通后会列出 Codex、本地与插件 Skills。'} /> : null}
+        {renderGroup('Noobi 必需', '游戏制作依赖的核心能力', groups.required)}
+        {renderGroup('我的 Skills', '你自己安装或项目内定义的 Skill', groups.mine)}
+        {renderGroup('系统内置', 'Codex 运行时自带的基础能力', groups.builtin)}
+        {!skills.length ? <EmptyExtensionState icon={FileCode2} title={query ? '没有匹配的 Skill' : '尚未发现 Skills'} description={query ? '换一个名称或来源关键词。' : 'Host Bridge 接通后会列出 Codex 系统与你的 Skills。'} /> : null}
       </div>
     </section>
   );

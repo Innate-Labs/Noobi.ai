@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +34,7 @@ import type {
   PromptTemplateId,
   PromptTemplateSetting,
   ProjectInspectorPayload,
+  ProjectIconData,
   ProjectRecord,
   ProjectStatus,
   RunProjectInput,
@@ -95,6 +96,11 @@ import {
 } from './mediaProviderStore.js';
 import { MEDIA_DYNAMIC_TOOLS, MediaToolBroker } from './mediaToolBroker.js';
 import { PreviewServer } from './previewServer.js';
+import {
+  generateAiProjectIcon,
+  generateProceduralProjectIcon,
+} from './projectIcon.js';
+import { generateCodexProjectIcon } from './projectIconAgent.js';
 import {
   importProjectReferences,
   isProjectReferencePath,
@@ -275,6 +281,7 @@ async function launch(): Promise<void> {
     promptTemplateStore.init(),
   ]);
   await recoverInterruptedProjects();
+  void backfillProjectIcons();
 
   bindRuntimeEvents();
   bindHarnessEvents();
@@ -423,6 +430,7 @@ function bindIpc(): void {
     const projects = await projectStore.list();
     const settings = await projectStore.getSettings();
     await runtime.start().catch(() => runtime.status);
+    void suppressPluginSkills();
     const events = Object.fromEntries(
       await Promise.all(projects.map(async (project) => [project.id, await eventLog.read(project.id)] as const)),
     );
@@ -480,7 +488,10 @@ function bindIpc(): void {
     const exportGodotStarter = decision.engine === 'godot'
       && godot.canExportProjects
       && godot.exportTemplates.targets.web;
-    const project = await projectStore.create({ ...input, engine: decision.engine });
+    const project = await withProceduralIcon(
+      await projectStore.create({ ...input, engine: decision.engine }),
+    );
+    void maybeGenerateGameIcon(project.id);
     const initialEvent: AgentEvent = {
       id: randomUUID(),
       projectId: project.id,
@@ -765,6 +776,27 @@ function bindIpc(): void {
       throw new Error('无效的项目文件路径');
     }
     return projectStore.readProjectFile(projectId, relativePath);
+  });
+  handle('noobi:project:icon', async (_event, projectId: string): Promise<ProjectIconData | null> => {
+    const id = validateProjectId(projectId);
+    const project = await projectStore.get(id);
+    if (!project.icon) return null;
+    const root = resolve(project.root);
+    const absolute = resolve(root, project.icon.path);
+    const fromRoot = relative(root, absolute);
+    if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+      return null;
+    }
+    try {
+      const bytes = await readFile(absolute);
+      if (!bytes.length || bytes.length > 8 * 1024 * 1024) return null;
+      return {
+        dataUrl: `data:image/png;base64,${bytes.toString('base64')}`,
+        updatedAt: project.icon.updatedAt,
+      };
+    } catch {
+      return null;
+    }
   });
   handle('noobi:project:noobi-pack:save', (
     _event,
@@ -1121,16 +1153,17 @@ function validateMediaProviderInput(input: SaveMediaProviderInput): SaveMediaPro
 
 async function listSkillSettings(): Promise<SkillSetting[]> {
   const skills = await runtime.listSkills({ forceReload: false });
+  await suppressPluginSkills(skills);
   const unique = new Map<string, SkillSetting>();
   for (const skill of skills) {
     if (!skill.path || unique.has(skill.path)) continue;
-    const source: SkillSetting['source'] = skill.path.includes(`${sep}plugins${sep}`)
-      ? 'plugin'
-      : skill.scope === 'system' || skill.scope === 'admin'
-        ? 'built-in'
-        : skill.scope === 'repo'
-          ? 'workspace'
-          : 'user';
+    // Codex 官方插件缓存（Canva/Figma 等）与游戏制作无关：不展示、不加载。
+    if (skill.path.includes(`${sep}plugins${sep}`)) continue;
+    const source: SkillSetting['source'] = skill.scope === 'system' || skill.scope === 'admin'
+      ? 'built-in'
+      : skill.scope === 'repo'
+        ? 'workspace'
+        : 'user';
     unique.set(skill.path, {
       id: skill.path,
       name: skill.name,
@@ -1142,6 +1175,28 @@ async function listSkillSettings(): Promise<SkillSetting[]> {
   }
   return [...unique.values()].sort((left, right) =>
     Number(right.enabled) - Number(left.enabled) || left.name.localeCompare(right.name));
+}
+
+/**
+ * Codex downloads its official plugin cache (Canva, Figma, GitHub, …) into the
+ * app codex-home. None of it serves game production, so Noobi disables every
+ * plugin skill once per listing/boot — they are never loaded into a turn.
+ */
+async function suppressPluginSkills(skills?: Awaited<ReturnType<CodexAppServer['listSkills']>>): Promise<void> {
+  try {
+    const list = skills ?? await runtime.listSkills({ forceReload: false });
+    await Promise.all(
+      list
+        .filter((skill) => skill.enabled && skill.path?.includes(`${sep}plugins${sep}`))
+        .map((skill) =>
+          runtime.setSkillEnabled({ path: skill.path as string }, false).catch(() => undefined),
+        ),
+    );
+  } catch (error) {
+    if (process.env.NOOBI_DEBUG === '1') {
+      process.stderr.write(`[skills] plugin suppression failed: ${asError(error).message}\n`);
+    }
+  }
 }
 
 async function listMcpSettings(): Promise<McpServerSetting[]> {
@@ -1294,6 +1349,7 @@ async function executeHarness(
       activeTurnId: null,
       lastError: null,
     });
+    void maybeGenerateGameIcon(project.id);
   } catch (error) {
     if (error instanceof GameHarnessStoppedError) return;
     const message = asError(error).message;
@@ -1838,6 +1894,93 @@ async function updateProject(
   const project = await projectStore.update(projectId, patch);
   broadcast('noobi:event:project', project);
   return project;
+}
+
+/**
+ * Projects created before icons existed receive their deterministic procedural
+ * pixel icon once at startup; failures never block the app.
+ */
+async function backfillProjectIcons(): Promise<void> {
+  try {
+    const projects = await projectStore.list();
+    for (const project of projects) {
+      if (project.icon) continue;
+      try {
+        const icon = await generateProceduralProjectIcon(project);
+        await updateProject(project.id, { icon });
+      } catch (error) {
+        if (process.env.NOOBI_DEBUG === '1') {
+          process.stderr.write(`[project-icon] backfill failed for ${project.id}: ${asError(error).message}\n`);
+        }
+      }
+    }
+  } catch (error) {
+    if (process.env.NOOBI_DEBUG === '1') {
+      process.stderr.write(`[project-icon] backfill failed: ${asError(error).message}\n`);
+    }
+  }
+}
+
+/**
+ * Every new game immediately receives its deterministic procedural pixel icon;
+ * failures never block project creation.
+ */
+async function withProceduralIcon(project: ProjectRecord): Promise<ProjectRecord> {
+  try {
+    const icon = await generateProceduralProjectIcon(project);
+    return await projectStore.update(project.id, { icon });
+  } catch (error) {
+    if (process.env.NOOBI_DEBUG === '1') {
+      process.stderr.write(`[project-icon] procedural generation failed: ${asError(error).message}\n`);
+    }
+    return project;
+  }
+}
+
+const gameIconRuns = new Set<string>();
+
+/**
+ * Replaces the procedural placeholder with a pixel avatar that actually
+ * represents the game: a configured image API when available, otherwise a
+ * short Codex turn with the $imagegen skill. Never throws; the placeholder
+ * stays on any failure.
+ */
+async function maybeGenerateGameIcon(projectId: string): Promise<void> {
+  if (gameIconRuns.has(projectId)) return;
+  gameIconRuns.add(projectId);
+  try {
+    const current = await projectStore.get(projectId);
+    if (current.icon?.source === 'ai') return;
+    let icon = await generateAiProjectIcon(current, mediaGenerationService);
+    if (!icon) {
+      const status = runtime.status;
+      const skill = status.capabilities.imageGeneration
+        ? await resolveImageGenerationSkill()
+        : null;
+      if (!skill) return;
+      icon = await generateCodexProjectIcon(current, runtime, skill);
+    }
+    if (!icon) return;
+    const latest = await projectStore.get(projectId);
+    if (latest.icon?.source === 'ai' && latest.icon.updatedAt > icon.updatedAt) return;
+    await updateProject(projectId, { icon });
+    emitAgentEvent({
+      id: randomUUID(),
+      projectId,
+      kind: 'file',
+      title: '游戏图标已生成',
+      message: `根据「${current.name}」生成的像素风图标已保存：${icon.path}`,
+      stage: latest.stage,
+      timestamp: new Date().toISOString(),
+      method: 'project/icon-generated',
+    });
+  } catch (error) {
+    if (process.env.NOOBI_DEBUG === '1') {
+      process.stderr.write(`[project-icon] generation failed: ${asError(error).message}\n`);
+    }
+  } finally {
+    gameIconRuns.delete(projectId);
+  }
 }
 
 function emitAgentEvent(event: AgentEvent): void {

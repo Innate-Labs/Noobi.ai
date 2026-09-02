@@ -106,6 +106,20 @@ export function isTargetFrameRate(value: unknown): value is TargetFrameRate {
     && TARGET_FRAME_RATES.some((frameRate) => frameRate === value);
 }
 
+export type ProjectIconSource = 'procedural' | 'ai';
+
+export interface ProjectIcon {
+  /** Icon PNG path relative to the project root (host-owned, e.g. `.noobi/icon.png`). */
+  path: string;
+  source: ProjectIconSource;
+  updatedAt: string;
+}
+
+export interface ProjectIconData {
+  dataUrl: string;
+  updatedAt: string;
+}
+
 export interface ProjectRecord {
   id: string;
   name: string;
@@ -129,6 +143,8 @@ export interface ProjectRecord {
   toolsetVersion: number;
   activeTurnId: string | null;
   lastError: string | null;
+  /** Pixel-style game icon. Null until the host generates one; existing projects migrate to null. */
+  icon: ProjectIcon | null;
 }
 
 export type AgentEventKind =
@@ -541,6 +557,8 @@ export interface NoobiApi {
   /** Cancels a manually requested experience playtest, if one is active. */
   cancelProjectExperience(projectId: string): Promise<void>;
   readProjectFile(projectId: string, relativePath: string): Promise<FileReadResult>;
+  /** Returns the project icon as a PNG data URL, or null when no icon exists yet. */
+  getProjectIcon(projectId: string): Promise<ProjectIconData | null>;
   /** Pass null to make the project follow the app-wide Noobi production pack again. */
   saveProjectNoobiPack(projectId: string, packId: NoobiPackId | null): Promise<ProjectRecord>;
   /** Pass null to make the project follow the app-wide Noobi crew again. */

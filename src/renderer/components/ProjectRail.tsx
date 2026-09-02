@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import type { ProjectRecord, RuntimeStatus } from '../../shared/contracts';
+import { ProjectIconImage } from './ProjectIcon';
 import type { SettingsSection } from './SettingsModal';
 import {
   formatRelative,
@@ -118,7 +119,11 @@ export function ProjectRail({
               aria-label={`打开 ${project.name}`}
               onClick={() => onSelect(project)}
             >
-              <span>{project.name.trim().slice(0, 1).toUpperCase() || 'N'}</span>
+              {project.icon ? (
+                <ProjectIconImage project={project} className="project-icon-img" />
+              ) : (
+                <span>{project.name.trim().slice(0, 1).toUpperCase() || 'N'}</span>
+              )}
               <i className={`status-dot status-${project.status}`} />
             </button>
           ))}
