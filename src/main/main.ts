@@ -2521,11 +2521,21 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     await delay(350);
   }
   if (process.env.NOOBI_SMOKE_EXPERIENCE_REPORT === 'expand') {
+    let reportControlsReady = false;
+    for (let attempt = 0; attempt < 20 && !reportControlsReady; attempt += 1) {
+      reportControlsReady = await window.webContents.executeJavaScript(
+        `document.querySelector('.experience-report-trigger') instanceof HTMLButtonElement
+          && document.querySelector('.preview-pane iframe, .production-diorama') instanceof HTMLElement`,
+        true,
+      ) as boolean;
+      if (!reportControlsReady) await delay(250);
+    }
+    if (!reportControlsReady) throw new Error('Experience report controls were not available');
     const collapsed = await window.webContents.executeJavaScript(
       `(() => {
         const report = document.querySelector('.experience-report');
         const toggle = document.querySelector('.experience-report-trigger');
-        const preview = document.querySelector('.preview-pane iframe');
+        const preview = document.querySelector('.preview-pane iframe, .production-diorama');
         if (!(toggle instanceof HTMLButtonElement) || !(preview instanceof HTMLElement)) return null;
         const previewHeight = Math.round(preview.getBoundingClientRect().height);
         toggle.click();
@@ -2543,7 +2553,7 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
         const report = document.querySelector('.experience-report');
         const toggle = document.querySelector('.experience-report-trigger');
         const details = document.querySelector('.experience-report-details');
-        const preview = document.querySelector('.preview-pane iframe');
+        const preview = document.querySelector('.preview-pane iframe, .production-diorama');
         if (!(report instanceof HTMLElement)
           || !(toggle instanceof HTMLButtonElement)
           || !(preview instanceof HTMLElement)) return null;
