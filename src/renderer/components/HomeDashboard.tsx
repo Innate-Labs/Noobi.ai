@@ -1,6 +1,8 @@
 import {
   ArrowRight,
   Bot,
+  CheckCircle2,
+  CircleAlert,
   FileText,
   Gamepad2,
   ImagePlus,
@@ -27,6 +29,10 @@ import type {
   ProjectRecord,
   RuntimeStatus,
 } from '../../shared/contracts';
+import {
+  completedReadinessCount,
+  homeReadinessChecklist,
+} from '../homeReadiness';
 import { formatRelative, PROJECT_STATUS_LABELS } from '../ui';
 import { ModelPicker } from './ModelPicker';
 import { RotatingIdeaInput } from './RotatingIdeaInput';
@@ -114,8 +120,13 @@ export function HomeDashboard({
     [model, models],
   );
   const accountName = accountDisplayName(runtime);
-  const runtimeReady = runtime.state === 'ready' && Boolean(runtime.account);
-  const launchReady = runtimeReady && imageGenerationAvailable && idea.trim().length > 0 && !busy;
+  const readinessItems = useMemo(
+    () => homeReadinessChecklist(runtime, imageGenerationAvailable),
+    [imageGenerationAvailable, runtime],
+  );
+  const readinessCount = completedReadinessCount(readinessItems);
+  const productionReady = readinessCount === readinessItems.length;
+  const launchReady = productionReady && idea.trim().length > 0 && !busy;
 
   useEffect(() => {
     if (models.length === 0) {
@@ -221,11 +232,42 @@ export function HomeDashboard({
       <div className="home-scroll">
         <section className="home-hero" aria-labelledby="home-title">
           <div className="home-hero-content">
-            <span className={`home-loop-status ${runtimeReady ? 'is-ready' : 'is-attention'}`}>
-              <i /> {runtimeReady ? 'LOOP MODE 已就绪' : '完成运行时设置后开始'} <ArrowRight size={13} />
+            <span className={`home-loop-status ${productionReady ? 'is-ready' : 'is-attention'}`}>
+              <i /> {productionReady ? 'LOOP MODE 已就绪' : `完成 ${readinessItems.length - readinessCount} 项设置后开始`} <ArrowRight size={13} />
             </span>
             <h1 id="home-title">今天想做什么游戏，{accountName}？</h1>
             <p>描述玩法、美术和你最在意的体验。Noobi 会持续制作、试玩、评测和修复，直到得到可交付成品。</p>
+
+            <section className="home-readiness" aria-labelledby="home-readiness-title">
+              <header>
+                <div>
+                  <span>STARTUP CHECK</span>
+                  <strong id="home-readiness-title">开始前检查</strong>
+                </div>
+                <em className={readinessCount === readinessItems.length ? 'is-ready' : ''}>
+                  {readinessCount}/{readinessItems.length} 已就绪
+                </em>
+              </header>
+              <div className="home-readiness-grid">
+                {readinessItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={item.ready ? 'is-ready' : 'needs-action'}
+                    disabled={item.ready}
+                    aria-label={item.ready ? `${item.title}已就绪` : `${item.title}未就绪，${item.actionLabel}`}
+                    onClick={() => onOpenSettings(item.settingsSection)}
+                  >
+                    {item.ready ? <CheckCircle2 size={18} /> : <CircleAlert size={18} />}
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                    <em>{item.ready ? '已就绪' : item.actionLabel}</em>
+                  </button>
+                ))}
+              </div>
+            </section>
 
             <div
               className={`home-prompt-card${dragActive ? ' is-dragging' : ''}`}
@@ -313,11 +355,9 @@ export function HomeDashboard({
                   className="home-create-button"
                   type="button"
                   disabled={!launchReady}
-                  title={!runtimeReady
-                    ? '请先让 Codex 运行时就绪并完成登录'
-                    : !imageGenerationAvailable
-                      ? '请先配置图像服务或修复 Codex ImageGen'
-                      : idea.trim() ? '创建项目并启动 Agent' : '先描述游戏创意'}
+                  title={!productionReady
+                    ? '请先完成上方的开始前检查'
+                    : idea.trim() ? '创建项目并启动 Agent' : '先描述游戏创意'}
                   onClick={() => void submit()}
                 >
                   <Sparkles size={16} /> {busy ? 'Agent 判断中…' : '开始制作'}
