@@ -109,6 +109,8 @@ export function isTargetFrameRate(value: unknown): value is TargetFrameRate {
 export interface ProjectRecord {
   id: string;
   name: string;
+  /** Pinned projects stay above recently updated projects in navigation. */
+  pinned: boolean;
   idea: string;
   root: string;
   createdAt: string;
@@ -527,6 +529,10 @@ export interface NoobiApi {
   chooseDirectory(): Promise<string | null>;
   /** Files stay opaque in Renderer; Preload resolves their native paths for Main. */
   createProject(input: CreateProjectInput, files?: readonly unknown[]): Promise<ProjectRecord>;
+  renameProject(projectId: string, name: string): Promise<ProjectRecord>;
+  setProjectPinned(projectId: string, pinned: boolean): Promise<ProjectRecord>;
+  /** Permanently removes the catalog record and its verified workspace directory. */
+  deleteProject(projectId: string): Promise<ProjectRecord>;
   runProject(input: RunProjectInput): Promise<ProjectRecord>;
   stopProject(projectId: string): Promise<ProjectRecord>;
   revealProject(projectId: string): Promise<void>;

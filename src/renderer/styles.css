@@ -288,11 +288,12 @@ a {
   width: min(88vw, 292px);
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   border-right: 1px solid var(--line-strong);
   background: var(--panel);
   padding: 18px 14px 14px;
   transform: translateX(-101%);
-  transition: transform 180ms ease;
+  transition: transform 180ms ease, width 180ms ease, min-width 180ms ease;
 }
 
 .project-rail.is-open {
@@ -387,6 +388,10 @@ a {
   padding-top: 5px;
 }
 
+.project-item-row {
+  position: relative;
+}
+
 .project-item {
   display: grid;
   width: 100%;
@@ -436,6 +441,19 @@ a {
 
 .project-item-copy small {
   margin-top: 4px;
+}
+
+.project-item-meta {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.project-pin {
+  flex: 0 0 auto;
+  color: var(--accent);
 }
 
 .status-dot,
@@ -6043,10 +6061,14 @@ a {
 
 .project-rail .project-item {
   min-height: 62px;
-  margin-bottom: 4px;
   border: 0;
   border-radius: 12px;
-  padding: 8px 10px;
+  padding: 8px 38px 8px 10px;
+}
+
+.project-rail .project-item-row {
+  margin-bottom: 4px;
+  border-radius: 12px;
 }
 
 .project-rail .project-item:hover,
@@ -6056,6 +6078,185 @@ a {
 
 .project-rail .project-item.is-active {
   box-shadow: none;
+}
+
+.project-item-more {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: grid;
+  width: 29px;
+  height: 29px;
+  min-height: 0;
+  transform: translateY(-50%);
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--studio-muted);
+  opacity: 0;
+}
+
+.project-item-row:hover .project-item-more,
+.project-item-row:focus-within .project-item-more,
+.project-item-row.has-open-menu .project-item-more {
+  opacity: 1;
+}
+
+.project-item-more:hover,
+.project-item-more[aria-expanded='true'] {
+  background: var(--studio-surface);
+  color: var(--studio-text);
+}
+
+.project-menu-layer {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  pointer-events: none;
+}
+
+.project-menu-dismiss {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.project-actions-menu {
+  position: fixed;
+  display: grid;
+  width: 214px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  background: var(--panel-raised);
+  padding: 5px;
+  box-shadow: 0 18px 45px var(--shadow);
+  pointer-events: auto;
+}
+
+.project-actions-menu button {
+  display: grid;
+  min-height: 40px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 0 10px;
+  text-align: left;
+}
+
+.project-actions-menu button:hover,
+.project-actions-menu button:focus-visible {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.project-actions-menu button.is-danger {
+  color: var(--red);
+}
+
+.project-actions-menu button.is-danger:hover,
+.project-actions-menu button.is-danger:focus-visible {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.project-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+@media (hover: none) {
+  .project-item-more {
+    opacity: 1;
+  }
+}
+
+.project-action-modal {
+  width: min(100%, 520px);
+  border-radius: 18px;
+}
+
+.project-action-form {
+  position: relative;
+}
+
+.project-action-form > label {
+  margin-bottom: 0;
+}
+
+.project-action-form > small {
+  display: block;
+  margin-top: 8px;
+  color: var(--faint);
+  font: 9px/1 var(--mono);
+  text-align: right;
+}
+
+.delete-project-content {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.delete-project-warning,
+.delete-project-path {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 11px;
+  border: 1px solid color-mix(in srgb, var(--red) 42%, var(--line));
+  background: color-mix(in srgb, var(--red) 7%, transparent);
+  padding: 14px;
+}
+
+.delete-project-warning > svg {
+  color: var(--red);
+}
+
+.delete-project-warning strong,
+.delete-project-warning span,
+.delete-project-path span,
+.delete-project-path code {
+  display: block;
+}
+
+.delete-project-warning span,
+.delete-project-path span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.delete-project-path {
+  border-color: var(--line);
+  background: var(--bg);
+}
+
+.delete-project-path > svg {
+  color: var(--muted);
+}
+
+.delete-project-path code {
+  overflow: hidden;
+  margin-top: 7px;
+  color: var(--text-soft);
+  font: 10px/1.45 var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delete-project-button {
+  background: var(--red);
+  color: white;
 }
 
 .project-rail .project-item-copy strong {
@@ -8296,44 +8497,36 @@ a {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .view-workbench .project-rail.mode-workbench {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) {
     width: 74px;
     min-width: 74px;
     align-items: center;
     padding: 18px 10px 12px;
   }
 
-  .view-workbench .project-rail.mode-workbench .rail-brand-row {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .rail-brand-row {
     display: block;
   }
 
-  .view-workbench .project-rail.mode-workbench .brand {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .brand {
     display: grid;
     width: 46px;
     height: 46px;
     place-items: center;
   }
 
-  .view-workbench .project-rail.mode-workbench .brand-monogram {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    place-items: center;
+  .view-workbench .project-rail.mode-workbench .brand-toggle-icon {
     color: var(--studio-accent);
-    font: 400 16px/1 var(--pixel);
-    text-shadow: 1px 1px 0 color-mix(in srgb, var(--studio-accent) 24%, transparent);
-    text-rendering: geometricPrecision;
-    -webkit-font-smoothing: none;
   }
 
-  .view-workbench .project-rail.mode-workbench .brand-copy,
-  .view-workbench .project-rail.mode-workbench .rail-primary-navigation,
-  .view-workbench .project-rail.mode-workbench > .rail-section-heading,
-  .view-workbench .project-rail.mode-workbench > .project-list {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .brand-copy,
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .rail-primary-navigation,
+  .view-workbench .project-rail.mode-workbench:not(.is-open) > .rail-section-heading,
+  .view-workbench .project-rail.mode-workbench:not(.is-open) > .project-list {
     display: none;
   }
 
-  .view-workbench .compact-project-list {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .compact-project-list {
     display: flex;
     width: 100%;
     min-height: 0;
@@ -8343,6 +8536,21 @@ a {
     flex-direction: column;
     gap: 9px;
     overflow-y: auto;
+  }
+
+  .view-workbench .project-rail.mode-workbench.is-open {
+    width: 280px;
+    min-width: 280px;
+    align-items: stretch;
+    padding: 24px 14px 14px;
+  }
+
+  .view-workbench .project-rail.mode-workbench.is-open .rail-close {
+    display: grid;
+  }
+
+  .view-workbench .project-rail.mode-workbench.is-open .compact-project-list {
+    display: none;
   }
 
   .compact-project-list button {
@@ -8397,7 +8605,7 @@ a {
     color: var(--studio-muted);
   }
 
-  .view-workbench .project-rail.mode-workbench .rail-footer {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .rail-footer {
     display: grid;
     width: 100%;
     justify-items: center;
@@ -8405,19 +8613,20 @@ a {
     padding-top: 10px;
   }
 
-  .view-workbench .project-rail.mode-workbench .runtime-mini,
-  .view-workbench .project-rail.mode-workbench .rail-settings {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .runtime-mini,
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .rail-settings {
     display: grid;
     width: 44px;
     height: 44px;
     min-height: 44px;
+    justify-content: center;
     place-items: center;
     padding: 0;
   }
 
-  .view-workbench .project-rail.mode-workbench .runtime-mini > span,
-  .view-workbench .project-rail.mode-workbench .runtime-mini > i,
-  .view-workbench .project-rail.mode-workbench .rail-settings > span {
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .runtime-mini > span,
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .runtime-mini > i,
+  .view-workbench .project-rail.mode-workbench:not(.is-open) .rail-settings > span {
     display: none;
   }
 }

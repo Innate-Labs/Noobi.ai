@@ -532,6 +532,33 @@ function bindIpc(): void {
     return project;
   });
 
+  handle('noobi:project:rename', async (_event, projectId: string, name: string) => {
+    return updateProject(validateProjectId(projectId), { name });
+  });
+  handle('noobi:project:pin', async (_event, projectId: string, pinned: boolean) => {
+    if (typeof pinned !== 'boolean') throw new Error('无效的置顶状态');
+    return updateProject(validateProjectId(projectId), { pinned });
+  });
+  handle('noobi:project:delete', async (_event, projectId: string) => {
+    const project = await projectStore.get(validateProjectId(projectId));
+    if (isProjectBusyForMutation(project.id)) {
+      throw new Error('项目仍在运行或写入，请停止当前任务后再删除');
+    }
+    await Promise.allSettled([previews.stop(project.id), playtestPreviews.stop(project.id)]);
+    const deleted = await projectStore.delete(project.id);
+    await Promise.all([
+      eventLog.remove(project.id),
+      assetPlanStore.removeProject(project.id),
+      imageGenerationAttestations.removeProject(project.id),
+    ]);
+    for (const [threadId, route] of threadRoutes) {
+      if (route.projectId !== project.id) continue;
+      threadRoutes.delete(threadId);
+      threadActivityStages.delete(threadId);
+    }
+    return deleted;
+  });
+
   handle('noobi:project:run', async (_event, input: RunProjectInput) => {
     validateRunInput(input);
     const project = await projectStore.get(input.projectId);
@@ -1313,7 +1340,8 @@ function isExternalDeliveryBlocker(message: string): boolean {
 function isProjectBusyForMutation(projectId: string): boolean {
   return harness.isRunning(projectId)
     || projectRunReservations.has(projectId)
-    || experienceEvaluationRuns.has(projectId);
+    || experienceEvaluationRuns.has(projectId)
+    || assetIngestionRuns.has(projectId);
 }
 
 function startProductionPreview(project: ProjectRecord): Promise<string> {
@@ -2237,6 +2265,117 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       process.stdout.write('Noobi solo default loaded one character in the classic studio\n');
     }
   }
+  if (process.env.NOOBI_SMOKE_PROJECT_RAIL === '1') {
+    const opened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector(
+          '[aria-label="打开项目列表"], [aria-label="打开项目导航"]',
+        );
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!opened) throw new Error('Project rail trigger was not available');
+    await delay(350);
+    const railState = await window.webContents.executeJavaScript(
+      `(() => {
+        const rail = document.querySelector('.project-rail.mode-workbench');
+        if (!(rail instanceof HTMLElement)) return null;
+        const rect = rail.getBoundingClientRect();
+        const style = getComputedStyle(rail);
+        return {
+          open: rail.classList.contains('is-open'),
+          width: Math.round(rect.width),
+          visible: style.display !== 'none' && style.visibility !== 'hidden',
+          projectRows: rail.querySelectorAll('.project-list .project-item').length,
+          closeVisible: Boolean(rail.querySelector('[aria-label="关闭项目导航"]')),
+        };
+      })()`,
+      true,
+    ) as {
+      open: boolean;
+      width: number;
+      visible: boolean;
+      projectRows: number;
+      closeVisible: boolean;
+    } | null;
+    if (!railState
+      || !railState.open
+      || railState.width < 260
+      || !railState.visible
+      || railState.projectRows < 1
+      || !railState.closeVisible) {
+      throw new Error(`Project rail did not open correctly: ${JSON.stringify(railState)}`);
+    }
+    process.stdout.write(`Noobi project rail opened ${JSON.stringify(railState)}\n`);
+  }
+  if (process.env.NOOBI_SMOKE_PROJECT_MENU === '1') {
+    const opened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('.project-item-more');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!opened) throw new Error('Project action menu trigger was not available');
+    await delay(250);
+    const menuState = await window.webContents.executeJavaScript(
+      `(() => {
+        const menu = document.querySelector('.project-actions-menu');
+        if (!(menu instanceof HTMLElement)) return null;
+        const rect = menu.getBoundingClientRect();
+        return {
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          labels: Array.from(menu.querySelectorAll('[role="menuitem"]'))
+            .map((item) => item.textContent?.trim() ?? ''),
+          insideViewport: rect.left >= 0 && rect.top >= 0
+            && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+        };
+      })()`,
+      true,
+    ) as { width: number; height: number; labels: string[]; insideViewport: boolean } | null;
+    if (!menuState
+      || menuState.width < 190
+      || menuState.height < 120
+      || !menuState.insideViewport
+      || !['重命名', '置顶', '删除'].every((label) => menuState.labels.includes(label))) {
+      throw new Error(`Project action menu did not open correctly: ${JSON.stringify(menuState)}`);
+    }
+    process.stdout.write(`Noobi project action menu opened ${JSON.stringify(menuState)}\n`);
+  }
+  if (process.env.NOOBI_SMOKE_GEAR_ALIGNMENT === '1') {
+    const alignment = await window.webContents.executeJavaScript(
+      `(() => {
+        const rail = document.querySelector('.project-rail.mode-workbench');
+        const settingsIcon = document.querySelector('.rail-settings svg');
+        const runtimeIcon = document.querySelector('.runtime-mini svg');
+        if (!(rail instanceof HTMLElement)
+          || !(settingsIcon instanceof SVGElement)
+          || !(runtimeIcon instanceof SVGElement)) return null;
+        const center = (element) => {
+          const rect = element.getBoundingClientRect();
+          return Math.round((rect.left + rect.width / 2) * 10) / 10;
+        };
+        return {
+          railCenter: center(rail),
+          settingsCenter: center(settingsIcon),
+          runtimeCenter: center(runtimeIcon),
+        };
+      })()`,
+      true,
+    ) as { railCenter: number; settingsCenter: number; runtimeCenter: number } | null;
+    if (!alignment
+      || Math.abs(alignment.settingsCenter - alignment.railCenter) > 1
+      || Math.abs(alignment.settingsCenter - alignment.runtimeCenter) > 1) {
+      throw new Error(`Collapsed settings icon is not centered: ${JSON.stringify(alignment)}`);
+    }
+    process.stdout.write(`Noobi collapsed settings icon aligned ${JSON.stringify(alignment)}\n`);
+  }
   if (process.env.NOOBI_SMOKE_CREW === '1') {
     const crewState = await window.webContents.executeJavaScript(
       `(() => {
@@ -2381,6 +2520,10 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
   const { writeFile } = await import('node:fs/promises');
   await writeFile(output, image.toPNG());
   process.stdout.write(`Noobi UI smoke captured ${output}\n`);
+  if (process.env.NOOBI_SMOKE_HOLD === '1') {
+    process.stdout.write('Noobi UI smoke window left open for inspection\n');
+    return;
+  }
   app.quit();
 }
 
