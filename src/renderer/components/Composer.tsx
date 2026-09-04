@@ -24,6 +24,13 @@ interface ComposerProps {
 
 export type ComposerActionMode = 'send' | 'stop' | 'resume';
 
+interface QueuedRun {
+  projectId: string;
+  prompt: string;
+  model: string | null;
+  effort: string | null;
+}
+
 export function composerActionMode(
   running: boolean,
   prompt: string,
@@ -52,7 +59,7 @@ export function Composer({
     [model, models],
   );
   const [effort, setEffort] = useState(settings.defaultEffort);
-  const [queuedPrompt, setQueuedPrompt] = useState('');
+  const [queuedRun, setQueuedRun] = useState<QueuedRun | null>(null);
   const queuedRunRef = useRef(false);
   const running = project.status === 'running';
   const resumable = Boolean(project.threadId) || project.status === 'stopped';
@@ -60,7 +67,8 @@ export function Composer({
 
   useEffect(() => {
     setPrompt('');
-    setQueuedPrompt('');
+    setQueuedRun(null);
+    queuedRunRef.current = false;
   }, [project.id]);
 
   useEffect(() => {
@@ -87,22 +95,39 @@ export function Composer({
   }, [activeModel, effort]);
 
   useEffect(() => {
-    if (running || disabled || !queuedPrompt || queuedRunRef.current) return;
-    const nextPrompt = queuedPrompt;
+    if (running || disabled || !queuedRun || queuedRunRef.current) return;
+    if (queuedRun.projectId !== project.id) {
+      setQueuedRun(null);
+      return;
+    }
+    const nextRun = queuedRun;
     queuedRunRef.current = true;
-    setQueuedPrompt('');
-    void onRun(nextPrompt, activeModel?.model ?? null, effort || null)
+    void onRun(nextRun.prompt, nextRun.model, nextRun.effort)
+      .then(() => {
+        setQueuedRun((current) => (current === nextRun ? null : current));
+      })
+      .catch(() => {
+        setPrompt((current) => current || nextRun.prompt);
+        setQueuedRun((current) => (current === nextRun ? null : current));
+      })
       .finally(() => {
         queuedRunRef.current = false;
       });
-  }, [activeModel?.model, disabled, effort, onRun, queuedPrompt, running]);
+  }, [disabled, onRun, project.id, queuedRun, running]);
 
   async function submit() {
     if (disabled || models.length === 0) return;
     if (running) {
       const nextPrompt = prompt.trim();
       if (!nextPrompt) return;
-      setQueuedPrompt((current) => current ? `${current}\n\n${nextPrompt}` : nextPrompt);
+      setQueuedRun((current) => ({
+        projectId: project.id,
+        prompt: current?.projectId === project.id
+          ? `${current.prompt}\n\n${nextPrompt}`
+          : nextPrompt,
+        model: activeModel?.model ?? null,
+        effort: effort || null,
+      }));
       setPrompt('');
       return;
     }
@@ -125,7 +150,7 @@ export function Composer({
           </span>
           <span title={project.threadId ?? undefined}>
             {running
-              ? (queuedPrompt ? '下一条要求已排队' : '正在制作，可先输入下一条要求')
+              ? (queuedRun ? '下一条要求已排队' : '正在制作，可先输入下一条要求')
               : (project.threadId
                   ? `THREAD ${project.threadId.slice(0, 8).toUpperCase()}`
                   : 'NEW THREAD')}
@@ -195,7 +220,13 @@ export function Composer({
                 type="button"
                 aria-label="暂停当前制作"
                 title="暂停当前制作"
-                onClick={() => void onStop()}
+                onClick={() => {
+                  if (queuedRun?.projectId === project.id) {
+                    setPrompt((current) => current || queuedRun.prompt);
+                  }
+                  setQueuedRun(null);
+                  void onStop();
+                }}
               >
                 <Square size={11} fill="currentColor" />
               </button>

@@ -245,7 +245,20 @@ export class ProjectStore {
         if (stagedRoot) await rename(stagedRoot, project.root).catch(() => undefined);
         throw error;
       }
-      if (stagedRoot) await rm(stagedRoot, { recursive: true, force: false });
+      if (stagedRoot) {
+        await rm(stagedRoot, {
+          recursive: true,
+          force: false,
+          maxRetries: 3,
+          retryDelay: 100,
+        }).catch((error) => {
+          if (process.env.NOOBI_DEBUG === '1') {
+            process.stderr.write(
+              `[project-store] staged workspace cleanup failed for ${id}: ${asError(error).message}\n`,
+            );
+          }
+        });
+      }
       return structuredClone(project);
     });
   }
@@ -789,6 +802,9 @@ function validatedProjectIcon(value: unknown, projectId: string): ProjectIcon {
     path = normalizeRelativeProjectPath(value.path);
   } catch {
     throw new Error(`Project ${projectId} has an invalid icon path`);
+  }
+  if (path !== '.noobi/icon.png') {
+    throw new Error(`Project ${projectId} has an unexpected icon path`);
   }
   if (value.source !== 'procedural' && value.source !== 'ai') {
     throw new Error(`Project ${projectId} has an invalid icon source`);

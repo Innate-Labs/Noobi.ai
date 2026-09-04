@@ -12,7 +12,7 @@ import {
   Settings,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import React, { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { ProjectRecord, RuntimeStatus } from '../../shared/contracts';

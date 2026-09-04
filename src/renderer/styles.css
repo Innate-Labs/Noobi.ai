@@ -7611,6 +7611,12 @@ a {
   user-select: none;
 }
 
+.project-icon-fallback {
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
 .home-project-art.art-1 {
   background: #b8dcda;
   color: #245957;
@@ -10478,7 +10484,7 @@ a {
 
 .app-shell.is-page-transitioning.phase-covering > .project-rail,
 .app-shell.is-page-transitioning.phase-covering > .workspace {
-  animation: pixel-page-exit var(--pixel-phase-duration, 600ms) steps(8, end) both;
+  animation: pixel-page-exit var(--pixel-phase-duration, 420ms) steps(6, end) both;
 }
 
 .app-shell.is-page-transitioning.phase-covering.direction-backward > .project-rail,
@@ -10488,7 +10494,7 @@ a {
 
 .app-shell.is-page-transitioning.phase-revealing > .project-rail,
 .app-shell.is-page-transitioning.phase-revealing > .workspace {
-  animation: pixel-page-enter var(--pixel-phase-duration, 600ms) steps(8, end) both;
+  animation: pixel-page-enter var(--pixel-phase-duration, 420ms) steps(6, end) both;
 }
 
 .app-shell.is-page-transitioning.phase-revealing.direction-backward > .project-rail,
@@ -10497,7 +10503,7 @@ a {
 }
 
 .pixel-page-transition {
-  --pixel-phase-duration: 600ms;
+  --pixel-phase-duration: 420ms;
   position: fixed;
   z-index: 12000;
   inset: 0;
@@ -10522,8 +10528,8 @@ a {
   z-index: 0;
   inset: -1px;
   display: grid;
-  grid-template-columns: repeat(14, minmax(0, 1fr));
-  grid-template-rows: repeat(9, minmax(0, 1fr));
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(7, minmax(0, 1fr));
 }
 
 .pixel-transition-grid > i {
@@ -10548,11 +10554,11 @@ a {
 }
 
 .pixel-page-transition.phase-covering .pixel-transition-grid > i {
-  animation: pixel-curtain-cover 92ms steps(2, end) var(--pixel-cell-delay) both;
+  animation: pixel-curtain-cover 86ms steps(2, end) var(--pixel-cell-delay) both;
 }
 
 .pixel-page-transition.phase-revealing .pixel-transition-grid > i {
-  animation: pixel-curtain-reveal 74ms steps(2, end) var(--pixel-cell-delay) both;
+  animation: pixel-curtain-reveal 70ms steps(2, end) var(--pixel-cell-delay) both;
 }
 
 .pixel-transition-scene {
@@ -10631,23 +10637,23 @@ a {
 }
 
 @keyframes pixel-page-exit {
-  from { opacity: 1; filter: saturate(1); transform: translateX(0); }
-  to { opacity: 0.62; filter: saturate(0.62); transform: translateX(-16px); }
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0.62; transform: translateX(-16px); }
 }
 
 @keyframes pixel-page-exit-backward {
-  from { opacity: 1; filter: saturate(1); transform: translateX(0); }
-  to { opacity: 0.62; filter: saturate(0.62); transform: translateX(16px); }
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0.62; transform: translateX(16px); }
 }
 
 @keyframes pixel-page-enter {
-  from { opacity: 0.62; filter: saturate(0.62); transform: translateX(16px); }
-  to { opacity: 1; filter: saturate(1); transform: translateX(0); }
+  from { opacity: 0.62; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes pixel-page-enter-backward {
-  from { opacity: 0.62; filter: saturate(0.62); transform: translateX(-16px); }
-  to { opacity: 1; filter: saturate(1); transform: translateX(0); }
+  from { opacity: 0.62; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 /* The workbench keeps long-form production copy readable while its identity,
@@ -10722,7 +10728,7 @@ a {
 
 @media (max-width: 620px) {
   .pixel-transition-grid {
-    grid-template-columns: repeat(14, minmax(0, 1fr));
+    grid-template-columns: repeat(10, minmax(0, 1fr));
   }
 
   .pixel-transition-scene {

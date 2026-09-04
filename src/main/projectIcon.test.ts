@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
@@ -8,6 +8,7 @@ import {
   encodePngRgba,
   generateAiProjectIcon,
   generateProceduralProjectIcon,
+  readProjectIconBytes,
   PROJECT_ICON_GRID_SIZE,
   PROJECT_ICON_RELATIVE_PATH,
   renderProceduralIconPixels,
@@ -27,6 +28,7 @@ async function fakeProject(name = 'Star Drifters'): Promise<ProjectRecord> {
   return {
     id: '11111111-2222-4333-8444-555555555555',
     name,
+    pinned: false,
     idea: '在星空中收集能量节点的街机游戏',
     root,
     createdAt: new Date(0).toISOString(),
@@ -138,7 +140,17 @@ describe('generateAiProjectIcon', () => {
     await writeFile(join(project.root, 'assets/project-icon.png'), sourcePng);
     const result = {
       outcome: 'asset',
-      asset: { relativePath: 'assets/project-icon.png' },
+      asset: {
+        id: 'asset-1',
+        name: 'project-icon',
+        kind: 'image',
+        source: 'generated',
+        relativePath: 'assets/project-icon.png',
+        mimeType: 'image/png',
+        size: sourcePng.length,
+        sha256: 'a'.repeat(64),
+        createdAt: new Date(0).toISOString(),
+      },
       provider: {
         id: 'p1',
         presetId: 'openai-image',
@@ -151,5 +163,73 @@ describe('generateAiProjectIcon', () => {
     expect(icon?.source).toBe('ai');
     const bytes = await readFile(join(project.root, PROJECT_ICON_RELATIVE_PATH));
     expect(bytes.equals(sourcePng)).toBe(true);
+  });
+
+  it('keeps the procedural icon when the provider returns a non-PNG image', async () => {
+    const project = await fakeProject();
+    const procedural = await generateProceduralProjectIcon(project);
+    const original = await readFile(join(project.root, procedural.path));
+    await mkdir(join(project.root, 'assets'), { recursive: true });
+    await writeFile(join(project.root, 'assets/project-icon.jpg'), Buffer.alloc(256, 1));
+    const result = {
+      outcome: 'asset',
+      asset: {
+        id: 'asset-2',
+        name: 'project-icon',
+        kind: 'image',
+        source: 'generated',
+        relativePath: 'assets/project-icon.jpg',
+        mimeType: 'image/jpeg',
+        size: 256,
+        sha256: 'b'.repeat(64),
+        createdAt: new Date(0).toISOString(),
+      },
+      provider: {
+        id: 'p1',
+        presetId: 'openai-image',
+        displayName: 'OpenAI Images',
+        model: 'gpt-image-2',
+        route: 'configured-api',
+      },
+    } as unknown as MediaGenerationResult;
+
+    expect(await generateAiProjectIcon(project, { generate: async () => result })).toBeNull();
+    expect(await readFile(join(project.root, procedural.path))).toEqual(original);
+  });
+});
+
+describe('project icon path safety', () => {
+  it('never follows a symlinked .noobi directory', async () => {
+    const project = await fakeProject();
+    const outside = await mkdtemp(join(tmpdir(), 'noobi-icon-outside-'));
+    roots.push(outside);
+    await symlink(outside, join(project.root, '.noobi'));
+
+    await expect(generateProceduralProjectIcon(project)).rejects.toThrow(/real directory/u);
+    await expect(readFile(join(outside, 'icon.png'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('atomically replaces an icon symlink without modifying its target', async () => {
+    const project = await fakeProject();
+    const outside = join(project.root, 'outside.png');
+    const sentinel = Buffer.from('do-not-overwrite');
+    await writeFile(outside, sentinel);
+    await mkdir(join(project.root, '.noobi'));
+    await symlink(outside, join(project.root, PROJECT_ICON_RELATIVE_PATH));
+
+    await generateProceduralProjectIcon(project);
+
+    expect(await readFile(outside)).toEqual(sentinel);
+    expect(await readProjectIconBytes(project)).not.toBeNull();
+  });
+
+  it('refuses to read an icon symlink', async () => {
+    const project = await fakeProject();
+    const outside = join(project.root, 'outside.png');
+    await writeFile(outside, encodePngRgba(2, 2, new Uint8Array(16).fill(64)));
+    await mkdir(join(project.root, '.noobi'));
+    await symlink(outside, join(project.root, PROJECT_ICON_RELATIVE_PATH));
+
+    expect(await readProjectIconBytes(project)).toBeNull();
   });
 });

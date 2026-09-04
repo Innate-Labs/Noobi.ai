@@ -20,6 +20,7 @@ async function fakeProject(): Promise<ProjectRecord> {
   return {
     id: '99999999-8888-4777-8666-555555555555',
     name: '像素钓鱼佬',
+    pinned: false,
     idea: '在湖边钓鱼、升级鱼竿、收集图鉴',
     root,
     createdAt: new Date(0).toISOString(),
@@ -60,9 +61,14 @@ function mockRuntime(options: {
     async startThread() {
       return 'thread-icon-1';
     },
-    async runTurn(turnOptions: { prompt: string; skills?: unknown[] }) {
+    async runTurn(turnOptions: { prompt: string; skills?: unknown[]; cwd: string }) {
       calls.prompts.push(turnOptions.prompt);
       calls.skills.push(turnOptions.skills);
+      if (options.writesIcon) {
+        const absolute = join(turnOptions.cwd, PROJECT_ICON_RELATIVE_PATH);
+        await mkdir(dirname(absolute), { recursive: true });
+        await writeFile(absolute, options.iconBytes ?? PNG_BYTES);
+      }
       return { status: options.turnStatus ?? 'completed', text: 'ICON_READY' } as TurnResult;
     },
     async unsubscribeThread(threadId: string) {
@@ -75,9 +81,7 @@ function mockRuntime(options: {
 describe('generateCodexProjectIcon', () => {
   it('returns the icon record when the agent saves a valid PNG', async () => {
     const project = await fakeProject();
-    const { runtime, calls } = mockRuntime({});
-    await mkdir(dirname(join(project.root, PROJECT_ICON_RELATIVE_PATH)), { recursive: true });
-    await writeFile(join(project.root, PROJECT_ICON_RELATIVE_PATH), PNG_BYTES);
+    const { runtime, calls } = mockRuntime({ writesIcon: true });
 
     const icon = await generateCodexProjectIcon(project, runtime, SKILL);
 
@@ -91,19 +95,20 @@ describe('generateCodexProjectIcon', () => {
 
   it('returns null when the turn fails or no PNG is written', async () => {
     const failed = await fakeProject();
-    const { runtime: failedRuntime } = mockRuntime({ turnStatus: 'failed' });
-    await mkdir(dirname(join(failed.root, PROJECT_ICON_RELATIVE_PATH)), { recursive: true });
-    await writeFile(join(failed.root, PROJECT_ICON_RELATIVE_PATH), PNG_BYTES);
+    const { runtime: failedRuntime } = mockRuntime({ turnStatus: 'failed', writesIcon: true });
     expect(await generateCodexProjectIcon(failed, failedRuntime, SKILL)).toBeNull();
 
     const missing = await fakeProject();
     const { runtime: missingRuntime } = mockRuntime({});
+    await mkdir(dirname(join(missing.root, PROJECT_ICON_RELATIVE_PATH)), { recursive: true });
+    await writeFile(join(missing.root, PROJECT_ICON_RELATIVE_PATH), PNG_BYTES);
     expect(await generateCodexProjectIcon(missing, missingRuntime, SKILL)).toBeNull();
 
     const notPng = await fakeProject();
-    const { runtime: notPngRuntime } = mockRuntime({});
-    await mkdir(dirname(join(notPng.root, PROJECT_ICON_RELATIVE_PATH)), { recursive: true });
-    await writeFile(join(notPng.root, PROJECT_ICON_RELATIVE_PATH), Buffer.alloc(256, 1));
+    const { runtime: notPngRuntime } = mockRuntime({
+      writesIcon: true,
+      iconBytes: Buffer.alloc(256, 1),
+    });
     expect(await generateCodexProjectIcon(notPng, notPngRuntime, SKILL)).toBeNull();
   });
 });
