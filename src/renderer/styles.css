@@ -1301,6 +1301,10 @@ a {
   flex-direction: column;
 }
 
+.preview-pane {
+  position: relative;
+}
+
 .preview-pane iframe {
   width: 100%;
   min-height: 330px;
@@ -1340,10 +1344,21 @@ a {
 }
 
 .experience-report {
-  flex: 0 0 auto;
-  border-top: 1px solid var(--line-strong);
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  right: 8px;
+  bottom: 46px;
+  display: flex;
+  width: min(560px, calc(100% - 16px));
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
   border-left: 3px solid var(--accent);
   background: var(--panel-raised);
+  box-shadow: 0 18px 46px color-mix(in srgb, #000 24%, transparent);
+  animation: experience-report-drawer-in 140ms ease-out;
 }
 
 .experience-report.is-pass {
@@ -1397,10 +1412,16 @@ a {
   line-height: 1;
 }
 
+.experience-report-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .experience-score {
   display: flex;
-  grid-column: 2;
-  grid-row: 1;
   align-items: baseline;
   color: var(--muted);
   font: 8px/1 var(--mono);
@@ -1415,7 +1436,6 @@ a {
 .experience-verdict {
   display: inline-flex;
   min-height: 24px;
-  grid-column: 2;
   align-items: center;
   justify-content: center;
   gap: 5px;
@@ -1423,6 +1443,96 @@ a {
   padding: 0 7px;
   font: 700 8px/1 var(--mono);
   letter-spacing: 0.08em;
+}
+
+.experience-report-trigger,
+.experience-report-close {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-soft);
+  padding: 0 8px;
+  font: 700 8px/1 var(--mono);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.experience-report-trigger {
+  gap: 5px;
+  padding: 0 7px;
+}
+
+.experience-report-trigger > strong {
+  color: var(--text);
+  font: 700 12px/1 var(--mono);
+  letter-spacing: -0.04em;
+}
+
+.experience-report-trigger > i {
+  font-style: normal;
+}
+
+.experience-report-trigger.is-pass {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.experience-report-trigger.is-repair {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.experience-report-trigger.is-running {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.experience-report-trigger:hover,
+.experience-report-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.experience-report-trigger:focus-visible,
+.experience-report-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.experience-report-details {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.experience-status-context {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 7px 10px;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.experience-status-context > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.experience-status-context.is-attention {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .experience-verdict.is-pass {
@@ -1591,6 +1701,56 @@ a {
 
   .experience-check:nth-child(odd) {
     border-right: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 680px) {
+  .experience-report {
+    right: 6px;
+    bottom: 44px;
+    width: calc(100% - 12px);
+  }
+
+  .experience-report-header {
+    gap: 6px;
+    padding-right: 7px;
+  }
+
+  .experience-report-actions {
+    gap: 5px;
+  }
+
+  .experience-report-close {
+    width: 28px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .experience-report-trigger > span {
+    display: none;
+  }
+
+  .experience-score strong {
+    font-size: 19px;
+  }
+
+  .experience-report-meta {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .experience-report-meta span:nth-child(2) {
+    display: none;
+  }
+}
+
+@keyframes experience-report-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -8325,6 +8485,7 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .experience-report,
   .production-assistant,
   .production-assistant *,
   .pixel-station,

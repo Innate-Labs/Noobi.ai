@@ -2162,6 +2162,10 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     );
     await delay(650);
+    const hasPlayablePreview = await window.webContents.executeJavaScript(
+      `document.querySelector('.preview-pane iframe') instanceof HTMLIFrameElement`,
+      true,
+    ) as boolean;
     const expectedScene = process.env.NOOBI_SMOKE_SCENE?.trim();
     if (isNoobiSceneId(expectedScene)) {
       const sceneState = await window.webContents.executeJavaScript(
@@ -2200,6 +2204,8 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
         throw new Error(`Noobi runtime background did not load correctly: ${JSON.stringify(sceneState)}`);
       }
       process.stdout.write(`Noobi runtime background loaded: ${sceneState.id}\n`);
+    } else if (process.env.NOOBI_SMOKE_EXPERIENCE_REPORT === 'expand' && hasPlayablePreview) {
+      process.stdout.write('Noobi workbench loaded a playable game preview\n');
     } else if (process.env.NOOBI_SMOKE_CREW !== '1') {
       const soloState = await window.webContents.executeJavaScript(
         `(() => {
@@ -2374,6 +2380,65 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     );
     await delay(350);
+  }
+  if (process.env.NOOBI_SMOKE_EXPERIENCE_REPORT === 'expand') {
+    const collapsed = await window.webContents.executeJavaScript(
+      `(() => {
+        const report = document.querySelector('.experience-report');
+        const toggle = document.querySelector('.experience-report-trigger');
+        const preview = document.querySelector('.preview-pane iframe');
+        if (!(toggle instanceof HTMLButtonElement) || !(preview instanceof HTMLElement)) return null;
+        const previewHeight = Math.round(preview.getBoundingClientRect().height);
+        toggle.click();
+        return {
+          reportVisible: report instanceof HTMLElement,
+          previewHeight,
+          expanded: toggle.getAttribute('aria-expanded'),
+        };
+      })()`,
+      true,
+    ) as { reportVisible: boolean; previewHeight: number; expanded: string | null } | null;
+    await delay(250);
+    const expanded = await window.webContents.executeJavaScript(
+      `(() => {
+        const report = document.querySelector('.experience-report');
+        const toggle = document.querySelector('.experience-report-trigger');
+        const details = document.querySelector('.experience-report-details');
+        const preview = document.querySelector('.preview-pane iframe');
+        if (!(report instanceof HTMLElement)
+          || !(toggle instanceof HTMLButtonElement)
+          || !(preview instanceof HTMLElement)) return null;
+        report.scrollIntoView({ block: 'center' });
+        return {
+          height: Math.round(report.getBoundingClientRect().height),
+          width: Math.round(report.getBoundingClientRect().width),
+          previewHeight: Math.round(preview.getBoundingClientRect().height),
+          expanded: toggle.getAttribute('aria-expanded'),
+          details: details instanceof HTMLElement,
+        };
+      })()`,
+      true,
+    ) as {
+      height: number;
+      width: number;
+      previewHeight: number;
+      expanded: string | null;
+      details: boolean;
+    } | null;
+    if (!collapsed
+      || !expanded
+      || collapsed.reportVisible
+      || collapsed.expanded !== 'false'
+      || expanded.expanded !== 'true'
+      || !expanded.details
+      || expanded.height < 200
+      || Math.abs(expanded.previewHeight - collapsed.previewHeight) > 1) {
+      throw new Error(`Experience report did not expand correctly: ${JSON.stringify({ collapsed, expanded })}`);
+    }
+    process.stdout.write(
+      `Noobi experience report opened as ${expanded.width}x${expanded.height}px without resizing the ${expanded.previewHeight}px preview\n`,
+    );
+    await delay(250);
   }
   const image = await window.webContents.capturePage();
   const output = resolve(target);
