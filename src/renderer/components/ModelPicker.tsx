@@ -6,6 +6,7 @@ import {
   Zap,
 } from 'lucide-react';
 import {
+  default as React,
   useEffect,
   useRef,
   useState,
@@ -54,6 +55,7 @@ export function ModelPicker({
   const [section, setSection] = useState<PickerSection | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const activeModel =
     models.find((item) => item.model === value) ?? models[0] ?? null;
@@ -103,7 +105,17 @@ export function ModelPicker({
   }
 
   function toggleSection(next: PickerSection) {
-    setSection((current) => (current === next ? null : next));
+    setSection((current) => {
+      const opening = current !== next;
+      if (opening) {
+        requestAnimationFrame(() => {
+          menuRef.current
+            ?.querySelector<HTMLButtonElement>('[role="option"]:not(:disabled)')
+            ?.focus();
+        });
+      }
+      return opening ? next : null;
+    });
   }
 
   function chooseModel(model: string) {
@@ -129,6 +141,40 @@ export function ModelPicker({
       return;
     }
     if (event.key === 'Tab') setOpen(false);
+    if (
+      open
+      && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)
+    ) {
+      const items = Array.from(
+        menuRef.current?.querySelectorAll<HTMLButtonElement>(
+          'button[role="menuitem"]:not(:disabled), button[role="option"]:not(:disabled)',
+        ) ?? [],
+      );
+      if (items.length === 0) return;
+      event.preventDefault();
+      const activeIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (activeIndex + 1 + items.length) % items.length
+            : (activeIndex - 1 + items.length) % items.length;
+      items[nextIndex]?.focus();
+    }
+  }
+
+  function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    if (!open) setOpen(true);
+    requestAnimationFrame(() => {
+      const items = menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        'button[role="menuitem"]:not(:disabled)',
+      );
+      if (!items?.length) return;
+      items[event.key === 'ArrowUp' ? items.length - 1 : 0]?.focus();
+    });
   }
 
   return (
@@ -143,6 +189,7 @@ export function ModelPicker({
         aria-expanded={open}
         title={activeModel?.description ?? '登录后读取模型'}
         onClick={toggleMenu}
+        onKeyDown={handleTriggerKeyDown}
       >
         <Zap size={14} />
         <strong>{activeModel?.displayName ?? '登录后读取模型'}</strong>
@@ -151,7 +198,7 @@ export function ModelPicker({
       </button>
 
       {open && models.length > 0 ? (
-        <div className="home-model-menu" role="menu" aria-label="模型与推理设置">
+        <div ref={menuRef} className="home-model-menu" role="menu" aria-label="模型与推理设置">
           <div className="home-model-section">
             <button
               className={`home-model-row ${section === 'model' ? 'is-open' : ''}`}

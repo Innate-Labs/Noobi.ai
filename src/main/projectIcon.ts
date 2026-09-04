@@ -1,6 +1,15 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
+import {
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  rename,
+  rm,
+} from 'node:fs/promises';
+import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 
 import type { MediaGenerationService } from './mediaGenerationService.js';
@@ -8,8 +17,11 @@ import type { ProjectIcon, ProjectRecord } from '../shared/contracts.js';
 
 export const PROJECT_ICON_RELATIVE_PATH = '.noobi/icon.png';
 export const PROJECT_ICON_GRID_SIZE = 16;
+export const MAX_PROJECT_ICON_BYTES = 8 * 1024 * 1024;
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const MIN_PROJECT_ICON_BYTES = 64;
+const READ_ONLY_NOFOLLOW = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 
 interface Rgb {
   r: number;
@@ -191,15 +203,107 @@ function buildAiIconPrompt(project: ProjectRecord): string {
   ].filter(Boolean).join(' ');
 }
 
-async function writeIcon(project: ProjectRecord, bytes: Buffer, source: ProjectIcon['source']): Promise<ProjectIcon> {
-  const absolute = join(project.root, PROJECT_ICON_RELATIVE_PATH);
-  await mkdir(dirname(absolute), { recursive: true });
-  await writeFile(absolute, bytes, { mode: 0o600 });
+export function isValidProjectIconPng(bytes: Buffer): boolean {
+  return bytes.length >= MIN_PROJECT_ICON_BYTES
+    && bytes.length <= MAX_PROJECT_ICON_BYTES
+    && bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE);
+}
+
+async function verifiedIconDirectory(
+  project: Pick<ProjectRecord, 'root'>,
+  create: boolean,
+): Promise<{ directory: string; absolute: string } | null> {
+  const root = await realpath(project.root);
+  const directory = join(root, '.noobi');
+  if (create) {
+    try {
+      await mkdir(directory, { mode: 0o700 });
+    } catch (error) {
+      if (!isNodeError(error, 'EEXIST')) throw error;
+    }
+  }
+  let info;
+  try {
+    info = await lstat(directory);
+  } catch (error) {
+    if (!create && isNodeError(error, 'ENOENT')) return null;
+    throw error;
+  }
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    throw new Error('Project icon directory must be a real directory');
+  }
+  if (await realpath(directory) !== directory) {
+    throw new Error('Project icon directory escapes the project workspace');
+  }
+  return { directory, absolute: join(directory, 'icon.png') };
+}
+
+export async function writeProjectIcon(
+  project: ProjectRecord,
+  bytes: Buffer,
+  source: ProjectIcon['source'],
+): Promise<ProjectIcon> {
+  if (!isValidProjectIconPng(bytes)) throw new Error('Project icon must be a valid PNG under 8 MB');
+  const paths = await verifiedIconDirectory(project, true);
+  if (!paths) throw new Error('Project icon directory is unavailable');
+  const temporary = join(paths.directory, `.icon-${process.pid}-${randomUUID()}.tmp`);
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(
+      temporary,
+      constants.O_CREAT
+        | constants.O_EXCL
+        | constants.O_WRONLY
+        | (constants.O_NOFOLLOW ?? 0),
+      0o600,
+    );
+    await handle.writeFile(bytes);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await rename(temporary, paths.absolute);
+    const written = await lstat(paths.absolute);
+    if (written.isSymbolicLink() || !written.isFile()) {
+      throw new Error('Project icon target is not a regular file');
+    }
+  } finally {
+    await handle?.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
   return {
     path: PROJECT_ICON_RELATIVE_PATH,
     source,
     updatedAt: new Date().toISOString(),
   };
+}
+
+export async function readProjectIconBytes(
+  project: Pick<ProjectRecord, 'root'>,
+): Promise<Buffer | null> {
+  try {
+    const paths = await verifiedIconDirectory(project, false);
+    if (!paths) return null;
+    const info = await lstat(paths.absolute);
+    if (
+      info.isSymbolicLink()
+      || !info.isFile()
+      || info.size < MIN_PROJECT_ICON_BYTES
+      || info.size > MAX_PROJECT_ICON_BYTES
+    ) {
+      return null;
+    }
+    const handle = await open(paths.absolute, READ_ONLY_NOFOLLOW);
+    try {
+      const opened = await handle.stat();
+      if (!opened.isFile() || opened.size !== info.size) return null;
+      const bytes = await handle.readFile();
+      return isValidProjectIconPng(bytes) ? bytes : null;
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -208,7 +312,7 @@ async function writeIcon(project: ProjectRecord, bytes: Buffer, source: ProjectI
  */
 export async function generateProceduralProjectIcon(project: ProjectRecord): Promise<ProjectIcon> {
   const { width, height, rgba } = renderProceduralIconPixels(`${project.id}:${project.name}`);
-  return writeIcon(project, encodePngRgba(width, height, rgba), 'procedural');
+  return writeProjectIcon(project, encodePngRgba(width, height, rgba), 'procedural');
 }
 
 /**
@@ -227,6 +331,20 @@ export async function generateAiProjectIcon(
     prompt: buildAiIconPrompt(project),
   });
   if (result.outcome !== 'asset') return null;
+  if (
+    result.asset.kind !== 'image'
+    || result.asset.mimeType !== 'image/png'
+    || !Number.isSafeInteger(result.asset.size)
+    || result.asset.size < MIN_PROJECT_ICON_BYTES
+    || result.asset.size > MAX_PROJECT_ICON_BYTES
+  ) {
+    return null;
+  }
   const bytes = await readFile(join(project.root, result.asset.relativePath));
-  return writeIcon(project, bytes, 'ai');
+  if (!isValidProjectIconPng(bytes)) return null;
+  return writeProjectIcon(project, bytes, 'ai');
+}
+
+function isNodeError(value: unknown, code: string): boolean {
+  return value instanceof Error && 'code' in value && value.code === code;
 }

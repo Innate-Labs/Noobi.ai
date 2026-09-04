@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 import type { ProjectRecord } from '../../shared/contracts';
 
@@ -20,25 +20,30 @@ export function ProjectIconImage({
   className?: string;
 }) {
   const key = cacheKey(project);
-  const [url, setUrl] = useState(() => (key ? iconCache.get(key) ?? '' : ''));
+  const [loaded, setLoaded] = useState(() => ({
+    key,
+    url: key ? iconCache.get(key) ?? '' : '',
+  }));
+  const url = loaded.key === key ? loaded.url : '';
 
   useEffect(() => {
     if (!key) {
-      setUrl('');
+      setLoaded({ key: null, url: '' });
       return undefined;
     }
     const cached = iconCache.get(key);
     if (cached) {
-      setUrl(cached);
+      setLoaded({ key, url: cached });
       return undefined;
     }
+    setLoaded({ key, url: '' });
     let alive = true;
     window.noobi
       .getProjectIcon(project.id)
       .then((data) => {
         if (!alive || !data) return;
         iconCache.set(key, data.dataUrl);
-        setUrl(data.dataUrl);
+        setLoaded({ key, url: data.dataUrl });
       })
       .catch(() => undefined);
     return () => {
@@ -46,6 +51,12 @@ export function ProjectIconImage({
     };
   }, [key, project.id]);
 
-  if (!key || !url) return null;
+  if (!key || !url) {
+    return (
+      <span className={`${className ?? ''} project-icon-fallback`.trim()} aria-hidden="true">
+        {project.name.trim().slice(0, 1).toUpperCase() || 'N'}
+      </span>
+    );
+  }
   return <img className={className} src={url} alt="" draggable={false} />;
 }
