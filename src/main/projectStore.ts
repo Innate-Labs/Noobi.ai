@@ -148,9 +148,7 @@ export class ProjectStore {
   async list(): Promise<ProjectRecord[]> {
     await this.init();
     await this.#mutationTail;
-    return cloneProjects(this.#requireState().projects).sort(
-      (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
-    );
+    return cloneProjects(this.#requireState().projects).sort(compareProjects);
   }
 
   async listProjects(): Promise<ProjectRecord[]> {
@@ -176,6 +174,7 @@ export class ProjectStore {
       const project: ProjectRecord = {
         id: randomUUID(),
         name: normalized.name,
+        pinned: false,
         idea: normalized.idea,
         root: projectRoot,
         createdAt: timestamp,
@@ -223,6 +222,29 @@ export class ProjectStore {
 
   async updateProject(projectId: string, patch: ProjectPatch): Promise<ProjectRecord> {
     return this.update(projectId, patch);
+  }
+
+  async delete(projectId: string): Promise<ProjectRecord> {
+    return this.#mutate(async (state) => {
+      const id = validatedId(projectId);
+      const index = state.projects.findIndex((project) => project.id === id);
+      if (index < 0) throw new Error(`Unknown project: ${id}`);
+      const project = state.projects[index]!;
+      const stagedRoot = await stageVerifiedWorkspaceForDeletion(project);
+      state.projects.splice(index, 1);
+      try {
+        await this.#persist(state);
+      } catch (error) {
+        if (stagedRoot) await rename(stagedRoot, project.root).catch(() => undefined);
+        throw error;
+      }
+      if (stagedRoot) await rm(stagedRoot, { recursive: true, force: false });
+      return structuredClone(project);
+    });
+  }
+
+  async deleteProject(projectId: string): Promise<ProjectRecord> {
+    return this.delete(projectId);
   }
 
   async getSettings(): Promise<AppSettings> {
@@ -465,6 +487,57 @@ export async function atomicWriteJson(targetPath: string, value: unknown): Promi
   }
 }
 
+async function stageVerifiedWorkspaceForDeletion(project: ProjectRecord): Promise<string | null> {
+  const lexicalRoot = resolve(project.root);
+  if (dirname(lexicalRoot) === lexicalRoot) {
+    throw new Error('Refusing to delete a filesystem root');
+  }
+  let rootInfo;
+  try {
+    rootInfo = await lstat(lexicalRoot);
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) return null;
+    throw error;
+  }
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
+    throw new Error('Project workspace is not a safe directory');
+  }
+  const canonicalRoot = await realpath(lexicalRoot);
+  if (canonicalRoot !== lexicalRoot) {
+    throw new Error('Project workspace path does not match its canonical directory');
+  }
+
+  const metadataPath = join(lexicalRoot, '.noobi', 'project.json');
+  const handle = await open(metadataPath, READ_ONLY_NOFOLLOW);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > MAX_FILE_BYTES) {
+      throw new Error('Project workspace metadata is invalid');
+    }
+    const metadata = JSON.parse(await handle.readFile('utf8')) as unknown;
+    if (!isRecord(metadata) || metadata.id !== project.id) {
+      throw new Error('Project workspace identity does not match the selected project');
+    }
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error('Project workspace metadata contains invalid JSON');
+    throw error;
+  } finally {
+    await handle.close();
+  }
+
+  const stagedRoot = join(
+    dirname(lexicalRoot),
+    `.${basename(lexicalRoot)}.noobi-delete-${randomUUID()}`,
+  );
+  await rename(lexicalRoot, stagedRoot);
+  return stagedRoot;
+}
+
+function compareProjects(left: ProjectRecord, right: ProjectRecord): number {
+  return Number(right.pinned) - Number(left.pinned)
+    || Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+}
+
 function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   name: string;
   idea: string;
@@ -499,6 +572,7 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
   }
   const allowed = new Set([
     'name',
+    'pinned',
     'idea',
     'status',
     'stage',
@@ -516,6 +590,10 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
   }
   const next: ProjectRecord = { ...current, updatedAt: new Date().toISOString() };
   if (patch.name !== undefined) next.name = validatedText(patch.name, 'Project name', MAX_PROJECT_NAME_LENGTH);
+  if (patch.pinned !== undefined) {
+    if (typeof patch.pinned !== 'boolean') throw new Error('Project pinned must be a boolean');
+    next.pinned = patch.pinned;
+  }
   if (patch.idea !== undefined) next.idea = validatedText(patch.idea, 'Game idea', MAX_PROJECT_IDEA_LENGTH);
   if (patch.status !== undefined) {
     if (!PROJECT_STATUSES.has(patch.status)) throw new Error(`Invalid project status: ${String(patch.status)}`);
@@ -592,6 +670,7 @@ function parsePersistedStore(source: string): {
         && (
           project.targetFrameRate === undefined
           || project.engine === undefined
+          || project.pinned === undefined
           || project.noobiPackOverrideId === undefined
           || project.noobiCrewOverride === undefined
         ),
@@ -624,6 +703,7 @@ function validateProjectRecord(value: unknown): ProjectRecord {
   return {
     id,
     name,
+    pinned: value.pinned === undefined ? false : validatedPinned(value.pinned, id),
     idea,
     root: resolve(value.root),
     createdAt: value.createdAt,
@@ -650,6 +730,11 @@ function validateProjectRecord(value: unknown): ProjectRecord {
     activeTurnId: nullableString(value.activeTurnId, `Project ${id} active turn id`),
     lastError: nullableString(value.lastError, `Project ${id} last error`),
   };
+}
+
+function validatedPinned(value: unknown, projectId: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`Project ${projectId} has an invalid pinned state`);
+  return value;
 }
 
 function validatedTargetFrameRate(value: unknown, projectId: string): TargetFrameRate {

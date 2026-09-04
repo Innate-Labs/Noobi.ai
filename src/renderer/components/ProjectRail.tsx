@@ -2,10 +2,18 @@ import {
   FolderKanban,
   Gauge,
   Home,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Pin,
+  PinOff,
   Plus,
   Settings,
-  X,
+  Trash2,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { ProjectRecord, RuntimeStatus } from '../../shared/contracts';
 import type { SettingsSection } from './SettingsModal';
@@ -21,9 +29,13 @@ interface ProjectRailProps {
   runtime: RuntimeStatus;
   open: boolean;
   variant: 'dashboard' | 'workbench';
+  onOpen: () => void;
   onClose: () => void;
   onHome: () => void;
   onSelect: (project: ProjectRecord) => void;
+  onRename: (project: ProjectRecord) => void;
+  onTogglePinned: (project: ProjectRecord) => void;
+  onDelete: (project: ProjectRecord) => void;
   onCreate: () => void;
   onSettings: (section?: SettingsSection) => void;
 }
@@ -34,12 +46,54 @@ export function ProjectRail({
   runtime,
   open,
   variant,
+  onOpen,
   onClose,
   onHome,
   onSelect,
+  onRename,
+  onTogglePinned,
+  onDelete,
   onCreate,
   onSettings,
 }: ProjectRailProps) {
+  const [menu, setMenu] = useState<{ project: ProjectRecord; top: number; left: number } | null>(null);
+  const firstMenuItemRef = useRef<HTMLButtonElement>(null);
+  const collapsedWorkbench = variant === 'workbench' && !open;
+
+  useEffect(() => {
+    if (!menu) return;
+    const frame = requestAnimationFrame(() => firstMenuItemRef.current?.focus());
+    const close = () => setMenu(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menu]);
+
+  function openProjectMenu(project: ProjectRecord, trigger: HTMLButtonElement) {
+    const rect = trigger.getBoundingClientRect();
+    const width = 214;
+    const estimatedHeight = 146;
+    setMenu({
+      project,
+      top: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - estimatedHeight - 8)),
+      left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
+    });
+  }
+
+  function choose(action: (project: ProjectRecord) => void) {
+    if (!menu) return;
+    const project = menu.project;
+    setMenu(null);
+    action(project);
+  }
+
   return (
     <>
       <button
@@ -51,20 +105,31 @@ export function ProjectRail({
       />
       <aside className={`project-rail mode-${variant} ${open ? 'is-open' : ''}`}>
         <div className="rail-brand-row">
-          <button className="brand" type="button" aria-label="返回首页" title="返回首页" onClick={onHome}>
-            {variant === 'workbench' ? <span className="brand-monogram" aria-hidden="true">N</span> : null}
-            <span className="brand-copy">
-              <strong>Noobi.ai</strong>
-              <small>AI GAME STUDIO</small>
-            </span>
+          <button
+            className={`brand${collapsedWorkbench ? ' compact-brand-toggle' : ''}`}
+            type="button"
+            aria-label={collapsedWorkbench ? '打开项目列表' : '返回首页'}
+            title={collapsedWorkbench ? '打开项目列表' : '返回首页'}
+            aria-expanded={variant === 'workbench' ? open : undefined}
+            onClick={collapsedWorkbench ? onOpen : onHome}
+          >
+            {collapsedWorkbench ? (
+              <PanelLeftOpen className="brand-toggle-icon" size={19} aria-hidden="true" />
+            ) : (
+              <span className="brand-copy">
+                <strong>Noobi.ai</strong>
+                <small>AI GAME STUDIO</small>
+              </span>
+            )}
           </button>
           <button
             className="icon-button rail-close"
             type="button"
             aria-label="关闭项目导航"
+            title="收起项目列表"
             onClick={onClose}
           >
-            <X size={17} />
+            <PanelLeftClose size={17} />
           </button>
         </div>
 
@@ -83,18 +148,40 @@ export function ProjectRail({
         <nav className="project-list" aria-label="游戏项目">
           {projects.length ? (
             projects.map((project) => (
-              <button
+              <div
                 key={project.id}
-                type="button"
-                className={`project-item ${project.id === selectedId ? 'is-active' : ''}`}
-                onClick={() => onSelect(project)}
+                className={`project-item-row ${project.id === selectedId ? 'is-active' : ''} ${menu?.project.id === project.id ? 'has-open-menu' : ''}`}
               >
-                <span className="project-item-copy">
-                  <strong>{project.name}</strong>
-                  <small>{project.engine === 'godot' ? 'GODOT 4' : 'WEB'} · {PROJECT_STATUS_LABELS[project.status]}</small>
-                </span>
-                <time dateTime={project.updatedAt}>{formatRelative(project.updatedAt)}</time>
-              </button>
+                <button
+                  type="button"
+                  className={`project-item ${project.id === selectedId ? 'is-active' : ''}`}
+                  onClick={() => onSelect(project)}
+                >
+                  <span className="project-item-copy">
+                    <strong>{project.name}</strong>
+                    <small>{project.engine === 'godot' ? 'GODOT 4' : 'WEB'} · {PROJECT_STATUS_LABELS[project.status]}</small>
+                  </span>
+                  <span className="project-item-meta">
+                    {project.pinned ? <Pin className="project-pin" size={11} aria-label="已置顶" /> : null}
+                    <time dateTime={project.updatedAt}>{formatRelative(project.updatedAt)}</time>
+                  </span>
+                </button>
+                <button
+                  className="project-item-more"
+                  type="button"
+                  aria-label={`打开“${project.name}”的项目菜单`}
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.project.id === project.id}
+                  title="项目操作"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (menu?.project.id === project.id) setMenu(null);
+                    else openProjectMenu(project, event.currentTarget);
+                  }}
+                >
+                  <MoreHorizontal size={17} />
+                </button>
+              </div>
             ))
           ) : (
             <div className="project-empty">
@@ -144,6 +231,37 @@ export function ProjectRail({
           </button>
         </div>
       </aside>
+      {menu ? createPortal(
+        <div className="project-menu-layer">
+          <button
+            className="project-menu-dismiss"
+            type="button"
+            aria-label="关闭项目菜单"
+            onClick={() => setMenu(null)}
+          />
+          <div
+            className="project-actions-menu"
+            role="menu"
+            aria-label={`“${menu.project.name}”项目操作`}
+            style={{ top: menu.top, left: menu.left }}
+          >
+            <button ref={firstMenuItemRef} type="button" role="menuitem" onClick={() => choose(onRename)}>
+              <Pencil size={16} />
+              <span>重命名</span>
+            </button>
+            <button type="button" role="menuitem" onClick={() => choose(onTogglePinned)}>
+              {menu.project.pinned ? <PinOff size={16} /> : <Pin size={16} />}
+              <span>{menu.project.pinned ? '取消置顶' : '置顶'}</span>
+            </button>
+            <div className="project-menu-separator" role="separator" />
+            <button className="is-danger" type="button" role="menuitem" onClick={() => choose(onDelete)}>
+              <Trash2 size={16} />
+              <span>删除</span>
+            </button>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
     </>
   );
 }

@@ -147,6 +147,17 @@ export class ImageGenerationAttestationStore {
     });
   }
 
+  removeProject(projectId: string): Promise<void> {
+    return this.#exclusive(async () => {
+      await this.#ensureLoaded();
+      if (!PROJECT_ID.test(projectId)) throw new Error('Invalid attestation project ID');
+      const next = this.#attestations.filter((item) => item.projectId !== projectId);
+      if (next.length === this.#attestations.length) return;
+      this.#attestations = next;
+      await this.#persist();
+    });
+  }
+
   /**
    * One-time compatibility path for assets ingested before the private ledger
    * existed. Proof comes from a byte-identical file with the same basename in

@@ -108,6 +108,17 @@ export class AssetPlanStore {
     });
   }
 
+  removeProject(projectId: string): Promise<void> {
+    return this.#exclusive(async () => {
+      await this.#ensureLoaded();
+      assertProjectId(projectId);
+      const next = this.#plans.filter((plan) => plan.projectId !== projectId);
+      if (next.length === this.#plans.length) return;
+      this.#plans = next;
+      await this.#persist();
+    });
+  }
+
   upsert(input: AssetPlanUpsertInput): Promise<AssetPlanRecord> {
     return this.#exclusive(async () => {
       await this.#ensureLoaded();

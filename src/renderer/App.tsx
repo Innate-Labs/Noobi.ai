@@ -26,11 +26,13 @@ import type {
 } from '../shared/contracts';
 import { ApprovalModal } from './components/ApprovalModal';
 import { Composer } from './components/Composer';
+import { DeleteProjectModal } from './components/DeleteProjectModal';
 import { EventStream } from './components/EventStream';
 import { HomeDashboard, type HomeLaunchInput } from './components/HomeDashboard';
 import { Inspector } from './components/Inspector';
 import { Pipeline } from './components/Pipeline';
 import { ProjectRail } from './components/ProjectRail';
+import { RenameProjectModal } from './components/RenameProjectModal';
 import { SettingsModal, type SettingsSection } from './components/SettingsModal';
 import { PROJECT_STATUS_LABELS, runtimeLabel, toMessage } from './ui';
 
@@ -52,6 +54,9 @@ export function App() {
   const [error, setError] = useState('');
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [loadingError, setLoadingError] = useState('');
+  const [renameTarget, setRenameTarget] = useState<ProjectRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
+  const [projectActionBusy, setProjectActionBusy] = useState(false);
 
   const selected = useMemo(
     () => projects.find((project) => project.id === selectedId),
@@ -271,6 +276,53 @@ export function App() {
     }
   }
 
+  async function renameProject(name: string) {
+    if (!renameTarget || projectActionBusy) return;
+    setProjectActionBusy(true);
+    setError('');
+    try {
+      const project = await window.noobi.renameProject(renameTarget.id, name);
+      setProjects((current) => upsertProject(current, project));
+      setRenameTarget(null);
+    } catch (reason) {
+      setError(toMessage(reason));
+    } finally {
+      setProjectActionBusy(false);
+    }
+  }
+
+  async function toggleProjectPinned(project: ProjectRecord) {
+    setError('');
+    try {
+      const updated = await window.noobi.setProjectPinned(project.id, !project.pinned);
+      setProjects((current) => upsertProject(current, updated));
+    } catch (reason) {
+      setError(toMessage(reason));
+    }
+  }
+
+  async function deleteProject() {
+    if (!deleteTarget || projectActionBusy) return;
+    const projectId = deleteTarget.id;
+    setProjectActionBusy(true);
+    setError('');
+    try {
+      await window.noobi.deleteProject(projectId);
+      setProjects((current) => current.filter((project) => project.id !== projectId));
+      setEvents((current) => {
+        const next = { ...current };
+        delete next[projectId];
+        return next;
+      });
+      setSelectedId((current) => (current === projectId ? undefined : current));
+      setDeleteTarget(null);
+    } catch (reason) {
+      setError(toMessage(reason));
+    } finally {
+      setProjectActionBusy(false);
+    }
+  }
+
   async function resolveApproval(
     token: string,
     decision: ApprovalDecision,
@@ -309,6 +361,7 @@ export function App() {
         runtime={runtime}
         open={railOpen}
         variant={selected ? 'workbench' : 'dashboard'}
+        onOpen={() => setRailOpen(true)}
         onClose={() => setRailOpen(false)}
         onHome={() => {
           setSelectedId(undefined);
@@ -316,8 +369,11 @@ export function App() {
         }}
         onSelect={(project) => {
           setSelectedId(project.id);
-          setRailOpen(false);
+          if (!window.matchMedia('(min-width: 800px)').matches) setRailOpen(false);
         }}
+        onRename={setRenameTarget}
+        onTogglePinned={(project) => void toggleProjectPinned(project)}
+        onDelete={setDeleteTarget}
         onCreate={openHomeCreator}
         onSettings={openSettings}
       />
@@ -460,6 +516,24 @@ export function App() {
         />
       ) : null}
 
+      {renameTarget ? (
+        <RenameProjectModal
+          project={renameTarget}
+          busy={projectActionBusy}
+          onClose={() => setRenameTarget(null)}
+          onRename={(name) => void renameProject(name)}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <DeleteProjectModal
+          project={deleteTarget}
+          busy={projectActionBusy}
+          onClose={() => setDeleteTarget(null)}
+          onDelete={() => void deleteProject()}
+        />
+      ) : null}
+
       {approvals[0] ? (
         <ApprovalModal
           key={approvals[0].token}
@@ -488,7 +562,8 @@ function upsertProject(
   const next = projects.some((item) => item.id === project.id)
     ? projects.map((item) => (item.id === project.id ? project : item))
     : [project, ...projects];
-  return [...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return [...next].sort((a, b) => Number(b.pinned) - Number(a.pinned)
+    || b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function mergeEvent(events: readonly AgentEvent[], incoming: AgentEvent): AgentEvent[] {

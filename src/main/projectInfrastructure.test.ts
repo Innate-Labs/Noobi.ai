@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -37,6 +37,63 @@ describe('project infrastructure', () => {
     await expect(store.update(project.id, { engine: 'godot' } as never)).rejects.toThrow(
       'Project field cannot be updated: engine',
     );
+  });
+
+  it('renames, pins, and safely deletes a project with its workspace', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-project-actions-test-'));
+    roots.push(root);
+    const storageFile = join(root, 'data/projects.json');
+    const workspace = join(root, 'games');
+    const store = new ProjectStore(storageFile, workspace);
+    const first = await store.create({
+      name: 'First Project',
+      idea: 'Keep this project above newer unpinned projects.',
+      parentDirectory: workspace,
+      model: null,
+    });
+    const second = await store.create({
+      name: 'Second Project',
+      idea: 'A second project for sorting.',
+      parentDirectory: workspace,
+      model: null,
+    });
+
+    await expect(store.update(first.id, { name: 'Pinned Project', pinned: true })).resolves.toMatchObject({
+      name: 'Pinned Project',
+      pinned: true,
+    });
+    await expect(store.list()).resolves.toMatchObject([
+      { id: first.id, pinned: true },
+      { id: second.id, pinned: false },
+    ]);
+
+    await expect(store.delete(first.id)).resolves.toMatchObject({ id: first.id });
+    await expect(stat(first.root)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(store.get(first.id)).rejects.toThrow('Unknown project');
+
+    const reloaded = new ProjectStore(storageFile, workspace);
+    await expect(reloaded.list()).resolves.toMatchObject([{ id: second.id, pinned: false }]);
+  });
+
+  it('refuses to delete a workspace whose host-owned identity was changed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-project-delete-guard-test-'));
+    roots.push(root);
+    const storageFile = join(root, 'data/projects.json');
+    const workspace = join(root, 'games');
+    const store = new ProjectStore(storageFile, workspace);
+    const project = await store.create({
+      name: 'Guarded Project',
+      idea: 'Protect unrelated directories from deletion.',
+      parentDirectory: workspace,
+      model: null,
+    });
+    const metadataPath = join(project.root, '.noobi/project.json');
+    const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as Record<string, unknown>;
+    await writeFile(metadataPath, `${JSON.stringify({ ...metadata, id: 'different-project' }, null, 2)}\n`);
+
+    await expect(store.delete(project.id)).rejects.toThrow('identity does not match');
+    await expect(stat(project.root)).resolves.toMatchObject({});
+    await expect(store.get(project.id)).resolves.toMatchObject({ id: project.id });
   });
 
   it('persists global and project Noobi packs while validating their ids', async () => {
