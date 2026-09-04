@@ -1,4 +1,5 @@
 import {
+  ArrowUp,
   ArrowRight,
   Bot,
   CheckCircle2,
@@ -11,6 +12,7 @@ import {
   Paperclip,
   Settings,
   Sparkles,
+  Square,
   Sun,
   X,
 } from 'lucide-react';
@@ -354,13 +356,16 @@ export function HomeDashboard({
                 <button
                   className="home-create-button"
                   type="button"
+                  aria-label={busy ? '正在创建游戏' : '发送游戏创意'}
                   disabled={!launchReady}
                   title={!productionReady
                     ? '请先完成上方的开始前检查'
                     : idea.trim() ? '创建项目并启动 Agent' : '先描述游戏创意'}
                   onClick={() => void submit()}
                 >
-                  <Sparkles size={16} /> {busy ? 'Agent 判断中…' : '开始制作'}
+                  {busy
+                    ? <Square size={12} fill="currentColor" />
+                    : <ArrowUp size={20} strokeWidth={2.2} />}
                 </button>
               </div>
               {dragActive ? (

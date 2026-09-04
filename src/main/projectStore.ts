@@ -168,8 +168,13 @@ export class ProjectStore {
   async create(input: ProjectStoreCreateInput): Promise<ProjectRecord> {
     return this.#mutate(async (state) => {
       const normalized = validateCreateProjectInput(input);
-      const parent = await ensureDirectory(normalized.parentDirectory);
-      const projectRoot = await createUniqueWorkspaceDirectory(parent, normalized.name);
+      const usesSelectedDirectory = Boolean(normalized.projectDirectory);
+      const parent = normalized.projectDirectory
+        ? await canonicalDirectory(dirname(normalized.projectDirectory))
+        : await ensureDirectory(normalized.parentDirectory!);
+      const projectRoot = normalized.projectDirectory
+        ? await resolveEmptyProjectDirectory(normalized.projectDirectory)
+        : await createUniqueWorkspaceDirectory(parent, normalized.name);
       const timestamp = new Date().toISOString();
       const project: ProjectRecord = {
         id: randomUUID(),
@@ -197,7 +202,7 @@ export class ProjectStore {
         state.projects.push(project);
         await this.#persist(state);
       } catch (error) {
-        await removeNewWorkspace(parent, projectRoot);
+        if (!usesSelectedDirectory) await removeNewWorkspace(parent, projectRoot);
         throw error;
       }
       return structuredClone(project);
@@ -247,6 +252,25 @@ export class ProjectStore {
     return this.delete(projectId);
   }
 
+  async relocate(projectId: string, projectDirectory: string): Promise<ProjectRecord> {
+    return this.#mutate(async (state) => {
+      const id = validatedId(projectId);
+      const index = state.projects.findIndex((project) => project.id === id);
+      if (index < 0) throw new Error(`Unknown project: ${id}`);
+      const root = await resolveExistingProjectDirectory(projectDirectory, id);
+      const duplicate = state.projects.find((project) => project.id !== id && project.root === root);
+      if (duplicate) throw new Error('这个文件夹已经绑定到另一个 NooBi 游戏。');
+      const next: ProjectRecord = {
+        ...state.projects[index]!,
+        root,
+        updatedAt: new Date().toISOString(),
+        lastError: null,
+      };
+      state.projects[index] = next;
+      await this.#persist(state);
+      return structuredClone(next);
+    });
+  }
   async getSettings(): Promise<AppSettings> {
     await this.init();
     await this.#mutationTail;
@@ -541,15 +565,24 @@ function compareProjects(left: ProjectRecord, right: ProjectRecord): number {
 function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   name: string;
   idea: string;
-  parentDirectory: string;
+  parentDirectory: string | null;
+  projectDirectory: string | null;
   model: string | null;
   engine: GameEngine;
 } {
   if (!input || typeof input !== 'object') throw new Error('Project input is required');
   const name = validatedText(input.name, 'Project name', MAX_PROJECT_NAME_LENGTH);
   const idea = validatedText(input.idea, 'Game idea', MAX_PROJECT_IDEA_LENGTH);
-  if (!isNonEmptyString(input.parentDirectory) || !isAbsolute(input.parentDirectory)) {
+  const hasParentDirectory = isNonEmptyString(input.parentDirectory);
+  const hasProjectDirectory = isNonEmptyString(input.projectDirectory);
+  if (hasParentDirectory === hasProjectDirectory) {
+    throw new Error('Provide exactly one project parent directory or selected project directory');
+  }
+  if (hasParentDirectory && !isAbsolute(input.parentDirectory!)) {
     throw new Error('Project parent directory must be an absolute path');
+  }
+  if (hasProjectDirectory && !isAbsolute(input.projectDirectory!)) {
+    throw new Error('Selected project directory must be an absolute path');
   }
   if (input.model !== undefined && input.model !== null && !isNonEmptyString(input.model)) {
     throw new Error('Project model must be a non-empty string or null');
@@ -560,7 +593,8 @@ function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   return {
     name,
     idea,
-    parentDirectory: resolve(input.parentDirectory),
+    parentDirectory: hasParentDirectory ? resolve(input.parentDirectory!) : null,
+    projectDirectory: hasProjectDirectory ? resolve(input.projectDirectory!) : null,
     model: input.model?.trim() || null,
     engine: input.engine ?? DEFAULT_GAME_ENGINE,
   };
@@ -872,6 +906,45 @@ async function canonicalDirectory(directory: string): Promise<string> {
   const canonical = await realpath(lexical);
   const info = await stat(canonical);
   if (!info.isDirectory()) throw new Error(`Path is not a directory: ${directory}`);
+  return canonical;
+}
+
+export async function resolveEmptyProjectDirectory(directory: string): Promise<string> {
+  const canonical = await canonicalDirectory(directory);
+  const entries = (await readdir(canonical)).filter((name) => name !== '.DS_Store');
+  if (entries.length > 0) {
+    throw new Error('请选择一个空文件夹，避免覆盖其中已有的文件。');
+  }
+  return canonical;
+}
+
+export async function resolveExistingProjectDirectory(
+  directory: string,
+  projectId: string,
+): Promise<string> {
+  const canonical = await canonicalDirectory(directory);
+  const metadataPath = join(canonical, '.noobi', 'project.json');
+  let metadataInfo;
+  try {
+    metadataInfo = await lstat(metadataPath);
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) {
+      throw new Error('所选文件夹不是 NooBi 游戏文件夹：缺少 .noobi/project.json。');
+    }
+    throw error;
+  }
+  if (metadataInfo.isSymbolicLink() || !metadataInfo.isFile() || metadataInfo.size > MAX_FILE_BYTES) {
+    throw new Error('所选文件夹的 NooBi 项目标记无效。');
+  }
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+  } catch {
+    throw new Error('所选文件夹的 NooBi 项目标记无法读取。');
+  }
+  if (!metadata || typeof metadata !== 'object' || (metadata as { id?: unknown }).id !== validatedId(projectId)) {
+    throw new Error('所选文件夹不属于当前游戏，请选择改名前的同一个游戏文件夹。');
+  }
   return canonical;
 }
 

@@ -148,11 +148,18 @@ interface CodexNotification {
   params?: unknown;
 }
 
-const TURN_TIMEOUT_MS = 20 * 60 * 1_000;
+const STANDARD_TURN_TIMEOUT_MS = 20 * 60 * 1_000;
+const BUILD_TURN_TIMEOUT_MS = 60 * 60 * 1_000;
 const MAX_EVENT_MESSAGE_CHARS = 30_000;
 const MAX_PROMPT_SECTION_CHARS = 32_000;
 export const MAX_GAME_HARNESS_REPAIR_ATTEMPTS = 3;
 export const GAME_HARNESS_TOOLSET_VERSION = 8;
+
+export function gameHarnessTurnTimeoutMs(phase: GameHarnessPhase): number {
+  return phase === 'implementer' || phase === 'repair'
+    ? BUILD_TURN_TIMEOUT_MS
+    : STANDARD_TURN_TIMEOUT_MS;
+}
 
 export function reusableImplementerThreadId(
   threadId: string | null,
@@ -861,7 +868,7 @@ export class GameHarness extends EventEmitter {
               timer = nextTimer;
             },
           );
-        }, TURN_TIMEOUT_MS);
+        }, gameHarnessTurnTimeoutMs(active.phase));
         timer.unref();
         statusListener = (status: RuntimeStatus) => {
           if (status.state === 'error' || status.state === 'stopped') {

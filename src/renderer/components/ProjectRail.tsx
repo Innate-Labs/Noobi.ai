@@ -12,7 +12,7 @@ import {
   Settings,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 
 import type { ProjectRecord, RuntimeStatus } from '../../shared/contracts';
@@ -28,9 +28,11 @@ interface ProjectRailProps {
   selectedId?: string;
   runtime: RuntimeStatus;
   open: boolean;
+  collapsed: boolean;
   variant: 'dashboard' | 'workbench';
   onOpen: () => void;
   onClose: () => void;
+  onToggleCollapse: () => void;
   onHome: () => void;
   onSelect: (project: ProjectRecord) => void;
   onRename: (project: ProjectRecord) => void;
@@ -40,14 +42,37 @@ interface ProjectRailProps {
   onSettings: (section?: SettingsSection) => void;
 }
 
+interface ProjectMenuState {
+  project: ProjectRecord;
+  top: number;
+  left: number;
+}
+
+const PROJECT_MENU_WIDTH = 214;
+const PROJECT_MENU_HEIGHT = 146;
+
+export function projectContextMenuPosition(
+  x: number,
+  y: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): { x: number; y: number } {
+  return {
+    x: Math.max(8, Math.min(x, viewportWidth - PROJECT_MENU_WIDTH - 8)),
+    y: Math.max(8, Math.min(y, viewportHeight - PROJECT_MENU_HEIGHT - 8)),
+  };
+}
+
 export function ProjectRail({
   projects,
   selectedId,
   runtime,
   open,
+  collapsed,
   variant,
   onOpen,
   onClose,
+  onToggleCollapse,
   onHome,
   onSelect,
   onRename,
@@ -56,7 +81,7 @@ export function ProjectRail({
   onCreate,
   onSettings,
 }: ProjectRailProps) {
-  const [menu, setMenu] = useState<{ project: ProjectRecord; top: number; left: number } | null>(null);
+  const [menu, setMenu] = useState<ProjectMenuState | null>(null);
   const firstMenuItemRef = useRef<HTMLButtonElement>(null);
   const collapsedWorkbench = variant === 'workbench' && !open;
 
@@ -76,15 +101,19 @@ export function ProjectRail({
     };
   }, [menu]);
 
+  function openProjectMenuAt(project: ProjectRecord, x: number, y: number) {
+    const position = projectContextMenuPosition(x, y, window.innerWidth, window.innerHeight);
+    setMenu({ project, top: position.y, left: position.x });
+  }
+
   function openProjectMenu(project: ProjectRecord, trigger: HTMLButtonElement) {
     const rect = trigger.getBoundingClientRect();
-    const width = 214;
-    const estimatedHeight = 146;
-    setMenu({
-      project,
-      top: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - estimatedHeight - 8)),
-      left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
-    });
+    openProjectMenuAt(project, rect.right - PROJECT_MENU_WIDTH, rect.bottom + 6);
+  }
+
+  function openContextMenu(event: ReactMouseEvent, project: ProjectRecord) {
+    event.preventDefault();
+    openProjectMenuAt(project, event.clientX, event.clientY);
   }
 
   function choose(action: (project: ProjectRecord) => void) {
@@ -103,25 +132,55 @@ export function ProjectRail({
         tabIndex={open ? 0 : -1}
         onClick={onClose}
       />
-      <aside className={`project-rail mode-${variant} ${open ? 'is-open' : ''}`}>
+      <aside className={`project-rail mode-${variant}${collapsed ? ' is-collapsed' : ''} ${open ? 'is-open' : ''}`}>
         <div className="rail-brand-row">
-          <button
-            className={`brand${collapsedWorkbench ? ' compact-brand-toggle' : ''}`}
-            type="button"
-            aria-label={collapsedWorkbench ? '打开项目列表' : '返回首页'}
-            title={collapsedWorkbench ? '打开项目列表' : '返回首页'}
-            aria-expanded={variant === 'workbench' ? open : undefined}
-            onClick={collapsedWorkbench ? onOpen : onHome}
-          >
-            {collapsedWorkbench ? (
-              <PanelLeftOpen className="brand-toggle-icon" size={19} aria-hidden="true" />
+          {variant === 'workbench' ? (
+            collapsedWorkbench ? (
+              <button
+                className="brand compact-brand-toggle"
+                type="button"
+                aria-label="打开项目列表"
+                title="打开项目列表"
+                aria-expanded={open}
+                onClick={onOpen}
+              >
+                <PanelLeftOpen className="brand-toggle-icon" size={19} aria-hidden="true" />
+              </button>
             ) : (
+              <div className="brand is-static" aria-label="Noobi.ai">
+                <span className="brand-monogram" aria-hidden="true">N</span>
+                <span className="brand-copy">
+                  <strong>Noobi.ai</strong>
+                  <small>AI GAME STUDIO</small>
+                </span>
+              </div>
+            )
+          ) : (
+            <button
+              className="brand"
+              type="button"
+              aria-label={collapsed ? '展开首页侧栏' : '返回首页'}
+              title={collapsed ? '展开首页侧栏' : '返回首页'}
+              onClick={collapsed ? onToggleCollapse : onHome}
+            >
+              {collapsed ? <span className="brand-monogram" aria-hidden="true">N</span> : null}
               <span className="brand-copy">
                 <strong>Noobi.ai</strong>
                 <small>AI GAME STUDIO</small>
               </span>
-            )}
-          </button>
+            </button>
+          )}
+          {variant === 'dashboard' && !collapsed ? (
+            <button
+              className="rail-collapse"
+              type="button"
+              aria-label="收起首页侧栏"
+              title="收起首页侧栏"
+              onClick={onToggleCollapse}
+            >
+              <PanelLeftClose size={17} strokeWidth={1.7} />
+            </button>
+          ) : null}
           <button
             className="icon-button rail-close"
             type="button"
@@ -151,6 +210,7 @@ export function ProjectRail({
               <div
                 key={project.id}
                 className={`project-item-row ${project.id === selectedId ? 'is-active' : ''} ${menu?.project.id === project.id ? 'has-open-menu' : ''}`}
+                onContextMenu={(event) => openContextMenu(event, project)}
               >
                 <button
                   type="button"
@@ -193,8 +253,14 @@ export function ProjectRail({
         </nav>
 
         <nav className="compact-project-list" aria-label="快速切换项目">
-          <button className="compact-create" type="button" title="新建游戏" onClick={onCreate}>
-            <Plus size={18} />
+          <button
+            className="compact-create"
+            type="button"
+            title={variant === 'dashboard' ? '首页' : '新建游戏'}
+            aria-label={variant === 'dashboard' ? '首页' : '新建游戏'}
+            onClick={variant === 'dashboard' ? onHome : onCreate}
+          >
+            {variant === 'dashboard' ? <Home size={18} /> : <Plus size={18} />}
           </button>
           {projects.slice(0, 8).map((project, index) => (
             <button
@@ -204,6 +270,7 @@ export function ProjectRail({
               title={`${project.name} · ${PROJECT_STATUS_LABELS[project.status]}`}
               aria-label={`打开 ${project.name}`}
               onClick={() => onSelect(project)}
+              onContextMenu={(event) => openContextMenu(event, project)}
             >
               <span>{project.name.trim().slice(0, 1).toUpperCase() || 'N'}</span>
               <i className={`status-dot status-${project.status}`} />
@@ -231,6 +298,7 @@ export function ProjectRail({
           </button>
         </div>
       </aside>
+
       {menu ? createPortal(
         <div className="project-menu-layer">
           <button

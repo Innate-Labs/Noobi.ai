@@ -10,6 +10,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -30,6 +31,7 @@ import { DeleteProjectModal } from './components/DeleteProjectModal';
 import { EventStream } from './components/EventStream';
 import { HomeDashboard, type HomeLaunchInput } from './components/HomeDashboard';
 import { Inspector } from './components/Inspector';
+import { LaunchTransition, type LaunchTransitionPhase } from './components/LaunchTransition';
 import { Pipeline } from './components/Pipeline';
 import { ProjectRail } from './components/ProjectRail';
 import { RenameProjectModal } from './components/RenameProjectModal';
@@ -37,6 +39,10 @@ import { SettingsModal, type SettingsSection } from './components/SettingsModal'
 import { PROJECT_STATUS_LABELS, runtimeLabel, toMessage } from './ui';
 
 type EventMap = Record<string, AgentEvent[]>;
+type LaunchTransitionState = LaunchTransitionPhase | 'hidden';
+
+const MIN_LAUNCH_TRANSITION_MS = 1_600;
+const LAUNCH_TRANSITION_EXIT_MS = 420;
 
 export function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
@@ -48,15 +54,18 @@ export function App() {
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [homeFocusSignal, setHomeFocusSignal] = useState(0);
   const [homeLaunching, setHomeLaunching] = useState(false);
+  const [launchTransition, setLaunchTransition] = useState<LaunchTransitionState>('hidden');
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('account');
   const [railOpen, setRailOpen] = useState(false);
+  const [homeRailCollapsed, setHomeRailCollapsed] = useState(false);
   const [error, setError] = useState('');
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [loadingError, setLoadingError] = useState('');
   const [renameTarget, setRenameTarget] = useState<ProjectRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
   const [projectActionBusy, setProjectActionBusy] = useState(false);
+  const launchTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selected = useMemo(
     () => projects.find((project) => project.id === selectedId),
@@ -142,6 +151,10 @@ export function App() {
       ?.setAttribute('content', settings.theme === 'dark' ? '#151611' : '#f2f1eb');
   }, [settings]);
 
+  useEffect(() => () => {
+    if (launchTransitionTimer.current) clearTimeout(launchTransitionTimer.current);
+  }, []);
+
   function openSettings(initialSection: SettingsSection = 'account') {
     setSettingsInitialSection(initialSection);
     setShowSettings(true);
@@ -208,21 +221,32 @@ export function App() {
 
   async function launchFromHome(input: HomeLaunchInput) {
     if (!settings || homeLaunching || !ensureRunReady()) return;
-    setHomeLaunching(true);
     setError('');
+    let projectDirectory: string | null = null;
+    try {
+      projectDirectory = await window.noobi.chooseProjectDirectory();
+    } catch (reason) {
+      setError(toMessage(reason));
+      return;
+    }
+    if (!projectDirectory) return;
+    const transitionStartedAt = Date.now();
+    setHomeLaunching(true);
+    setLaunchTransition('running');
     try {
       const project = await window.noobi.createProject({
-        name: projectNameFromIdea(input.idea),
         idea: input.idea,
-        parentDirectory: settings.defaultWorkspace,
+        projectDirectory,
         model: input.model,
       }, input.attachments);
       if (project.status === 'failed') {
         throw new Error(project.lastError ?? '项目创建失败');
       }
+      await waitForMinimumDuration(transitionStartedAt, MIN_LAUNCH_TRANSITION_MS);
       setProjects((current) => upsertProject(current, project));
       setSelectedId(project.id);
       setRailOpen(false);
+      finishLaunchTransition();
       await runProjectFor(
         project,
         input.attachments.length > 0
@@ -233,8 +257,28 @@ export function App() {
       );
     } catch (reason) {
       setError(toMessage(reason));
+      finishLaunchTransition();
     } finally {
       setHomeLaunching(false);
+    }
+  }
+
+  function finishLaunchTransition() {
+    setLaunchTransition('leaving');
+    if (launchTransitionTimer.current) clearTimeout(launchTransitionTimer.current);
+    launchTransitionTimer.current = setTimeout(() => {
+      setLaunchTransition('hidden');
+      launchTransitionTimer.current = null;
+    }, LAUNCH_TRANSITION_EXIT_MS);
+  }
+
+  async function revealProject(projectId: string) {
+    setError('');
+    try {
+      const relocated = await window.noobi.revealProject(projectId);
+      if (relocated) setProjects((current) => upsertProject(current, relocated));
+    } catch (reason) {
+      setError(toMessage(reason));
     }
   }
 
@@ -360,9 +404,11 @@ export function App() {
         selectedId={selectedId}
         runtime={runtime}
         open={railOpen}
+        collapsed={!selected && homeRailCollapsed}
         variant={selected ? 'workbench' : 'dashboard'}
         onOpen={() => setRailOpen(true)}
         onClose={() => setRailOpen(false)}
+        onToggleCollapse={() => setHomeRailCollapsed((current) => !current)}
         onHome={() => {
           setSelectedId(undefined);
           setRailOpen(false);
@@ -419,7 +465,7 @@ export function App() {
               aria-label="在 Finder 中打开项目"
               title="在 Finder 中打开项目"
               disabled={!selected}
-              onClick={() => selected && void window.noobi.revealProject(selected.id)}
+              onClick={() => selected && void revealProject(selected.id)}
             >
               <FolderOpen size={15} />
             </button>
@@ -450,7 +496,15 @@ export function App() {
               <header className="agent-pane-heading">
                 <div>
                   <span>NOOBI AGENT</span>
-                  <strong>{selected.name}</strong>
+                  <button
+                    className="agent-project-name"
+                    type="button"
+                    title="重命名游戏"
+                    aria-label={`重命名 ${selected.name}`}
+                    onClick={() => setRenameTarget(selected)}
+                  >
+                    {selected.name}
+                  </button>
                   <small>{selected.status === 'running' ? '正在持续制作与验证' : '可以继续提出修改要求'}</small>
                 </div>
                 <span className={`status-chip status-${selected.status}`}>
@@ -481,6 +535,7 @@ export function App() {
                 refreshSignal={refreshSignal}
                 onError={setError}
                 onRegenerate={regenerateAsset}
+                onRevealProject={() => revealProject(selected.id)}
                 onProjectUpdated={(project) => {
                   setProjects((current) => upsertProject(current, project));
                 }}
@@ -551,6 +606,10 @@ export function App() {
           </button>
         </div>
       ) : null}
+
+      {launchTransition !== 'hidden' ? (
+        <LaunchTransition phase={launchTransition} />
+      ) : null}
     </div>
   );
 }
@@ -586,14 +645,8 @@ function mergeEvent(events: readonly AgentEvent[], incoming: AgentEvent): AgentE
     .slice(-500);
 }
 
-function projectNameFromIdea(idea: string): string {
-  const firstClause = idea
-    .trim()
-    .replace(/^(?:请|帮我|我要|我想|制作|做|创建|生成|开发)\s*/u, '')
-    .split(/[，。！？；,.!?;\n]/u)[0]
-    ?.replace(/[\\/:*?"<>|]/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
-  if (!firstClause) return 'Noobi 新游戏';
-  return firstClause.slice(0, 28);
+async function waitForMinimumDuration(startedAt: number, minimumMs: number): Promise<void> {
+  const remaining = Math.max(0, minimumMs - (Date.now() - startedAt));
+  if (remaining === 0) return;
+  await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, remaining));
 }

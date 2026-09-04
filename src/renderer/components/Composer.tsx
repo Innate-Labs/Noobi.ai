@@ -1,5 +1,5 @@
-import { Play, RotateCcw, Square, WandSparkles } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ArrowUp, Play, Square, WandSparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AppSettings,
@@ -22,6 +22,18 @@ interface ComposerProps {
   onStop: () => Promise<void>;
 }
 
+export type ComposerActionMode = 'send' | 'stop' | 'resume';
+
+export function composerActionMode(
+  running: boolean,
+  prompt: string,
+  resumable: boolean,
+): ComposerActionMode {
+  if (prompt.trim()) return 'send';
+  if (running) return 'stop';
+  return resumable ? 'resume' : 'send';
+}
+
 export function Composer({
   project,
   models,
@@ -40,8 +52,16 @@ export function Composer({
     [model, models],
   );
   const [effort, setEffort] = useState(settings.defaultEffort);
+  const [queuedPrompt, setQueuedPrompt] = useState('');
+  const queuedRunRef = useRef(false);
   const running = project.status === 'running';
-  const resumable = Boolean(project.threadId);
+  const resumable = Boolean(project.threadId) || project.status === 'stopped';
+  const actionMode = composerActionMode(running, prompt, resumable);
+
+  useEffect(() => {
+    setPrompt('');
+    setQueuedPrompt('');
+  }, [project.id]);
 
   useEffect(() => {
     setModel(
@@ -52,9 +72,7 @@ export function Composer({
         '',
     );
     setEffort(settings.defaultEffort);
-    setPrompt('');
   }, [
-    project.id,
     project.model,
     settings.defaultEffort,
     settings.defaultModel,
@@ -68,42 +86,68 @@ export function Composer({
     }
   }, [activeModel, effort]);
 
+  useEffect(() => {
+    if (running || disabled || !queuedPrompt || queuedRunRef.current) return;
+    const nextPrompt = queuedPrompt;
+    queuedRunRef.current = true;
+    setQueuedPrompt('');
+    void onRun(nextPrompt, activeModel?.model ?? null, effort || null)
+      .finally(() => {
+        queuedRunRef.current = false;
+      });
+  }, [activeModel?.model, disabled, effort, onRun, queuedPrompt, running]);
+
   async function submit() {
-    const nextPrompt = prompt.trim() || (project.status === 'draft' ? project.idea : '继续完成并验证当前游戏。');
+    if (disabled || models.length === 0) return;
+    if (running) {
+      const nextPrompt = prompt.trim();
+      if (!nextPrompt) return;
+      setQueuedPrompt((current) => current ? `${current}\n\n${nextPrompt}` : nextPrompt);
+      setPrompt('');
+      return;
+    }
+    const nextPrompt = prompt.trim()
+      || (project.status === 'draft' ? project.idea : '继续完成并验证当前游戏。');
     await onRun(nextPrompt, activeModel?.model ?? null, effort || null);
     setPrompt('');
   }
 
   return (
-    <section className="composer">
-      <header>
-        <div>
-          <WandSparkles size={14} />
-          <strong>{resumable ? '继续制作' : '开始制作'}</strong>
-        </div>
-        <span>
-          {project.threadId
-            ? `THREAD ${project.threadId.slice(0, 10).toUpperCase()}`
-            : 'NEW CODEX THREAD'}
-        </span>
-      </header>
+    <section
+      className={`composer${running ? ' is-running' : ''}`}
+      aria-label={resumable ? '继续制作' : '开始制作'}
+    >
       <div className="composer-body">
+        <div className="composer-context">
+          <span>
+            <WandSparkles size={13} />
+            {resumable ? '继续制作' : '开始制作'}
+          </span>
+          <span title={project.threadId ?? undefined}>
+            {running
+              ? (queuedPrompt ? '下一条要求已排队' : '正在制作，可先输入下一条要求')
+              : (project.threadId
+                  ? `THREAD ${project.threadId.slice(0, 8).toUpperCase()}`
+                  : 'NEW THREAD')}
+          </span>
+        </div>
         <textarea
           value={prompt}
-          rows={3}
-          disabled={running || disabled}
+          rows={2}
+          disabled={disabled}
           aria-label="给 Agent 的制作指令"
           placeholder={
             resumable
               ? '例如：降低敌人速度，补充受击反馈，然后重新构建验证…'
               : '描述你希望制作的游戏，或直接使用项目创意启动…'
           }
-          onChange={(event) => setPrompt(event.target.value)}
+          onChange={(event) => {
+            setPrompt(event.target.value);
+          }}
           onKeyDown={(event) => {
             if (
               (event.metaKey || event.ctrlKey) &&
               event.key === 'Enter' &&
-              !running &&
               !disabled
             ) {
               event.preventDefault();
@@ -111,62 +155,76 @@ export function Composer({
             }
           }}
         />
-        <AssetRequirement
-          variant="compact"
-          imageGenerationAvailable={imageGenerationAvailable}
-        />
-        <div className="composer-controls">
-          <label>
-            <span>MODEL</span>
-            <select
-              value={activeModel?.model ?? ''}
-              disabled={running || disabled || models.length === 0}
-              onChange={(event) => setModel(event.target.value)}
-            >
-              {models.length === 0 ? <option value="">暂无可用模型</option> : null}
-              {models.map((item) => (
-                <option value={item.model} key={item.id}>
-                  {item.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>REASONING</span>
-            <select
-              value={effort}
-              disabled={running || disabled || !activeModel}
-              onChange={(event) => setEffort(event.target.value)}
-            >
-              {(activeModel?.efforts ?? [settings.defaultEffort]).map((item) => (
-                <option value={item} key={item}>
-                  {item.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className="composer-model-note">
-            {activeModel?.description ?? '登录 Codex 后读取模型目录'}
-          </span>
-          <span className="composer-shortcut">⌘/CTRL + ENTER</span>
+        <div className="composer-toolbar">
+          <AssetRequirement variant="chip" imageGenerationAvailable={imageGenerationAvailable} />
+          <div className="composer-controls">
+            <label title={activeModel?.description ?? '模型'}>
+              <span className="sr-only">模型</span>
+              <select
+                aria-label="模型"
+                value={activeModel?.model ?? ''}
+                disabled={running || disabled || models.length === 0}
+                onChange={(event) => setModel(event.target.value)}
+              >
+                {models.length === 0 ? <option value="">暂无可用模型</option> : null}
+                {models.map((item) => (
+                  <option value={item.model} key={item.id}>
+                    {item.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="sr-only">推理强度</span>
+              <select
+                aria-label="推理强度"
+                value={effort}
+                disabled={running || disabled || !activeModel}
+                onChange={(event) => setEffort(event.target.value)}
+              >
+                {(activeModel?.efforts ?? [settings.defaultEffort]).map((item) => (
+                  <option value={item} key={item}>
+                    {item.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {actionMode === 'stop' ? (
+              <button
+                className="composer-action is-stop"
+                type="button"
+                aria-label="暂停当前制作"
+                title="暂停当前制作"
+                onClick={() => void onStop()}
+              >
+                <Square size={11} fill="currentColor" />
+              </button>
+            ) : actionMode === 'resume' ? (
+              <button
+                className="composer-action is-resume"
+                type="button"
+                aria-label="继续制作"
+                title="继续制作"
+                disabled={disabled || models.length === 0}
+                onClick={() => void submit()}
+              >
+                <Play size={13} fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                className="composer-action is-send"
+                type="button"
+                aria-label="发送制作要求"
+                title="发送制作要求（⌘/Ctrl + Enter）"
+                disabled={disabled || models.length === 0}
+                onClick={() => void submit()}
+              >
+                <ArrowUp size={17} strokeWidth={2.4} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
-      {running ? (
-        <button className="stop-button" type="button" onClick={() => void onStop()}>
-          <Square size={14} fill="currentColor" />
-          停止
-        </button>
-      ) : (
-        <button
-          className="run-button"
-          type="button"
-          disabled={disabled || models.length === 0}
-          onClick={() => void submit()}
-        >
-          {resumable ? <RotateCcw size={15} /> : <Play size={15} fill="currentColor" />}
-          {resumable ? '继续执行' : '启动 Agent'}
-        </button>
-      )}
     </section>
   );
 }
