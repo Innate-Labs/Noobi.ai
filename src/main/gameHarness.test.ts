@@ -14,9 +14,19 @@ import {
   GAME_HARNESS_TOOLSET_VERSION,
   GameHarness,
   GameHarnessStoppedError,
+  gameHarnessTurnTimeoutMs,
   MAX_GAME_HARNESS_REPAIR_ATTEMPTS,
   reusableImplementerThreadId,
 } from './gameHarness.js';
+
+describe('game harness timeout policy', () => {
+  it('gives implementation and repair enough time for complex games', () => {
+    expect(gameHarnessTurnTimeoutMs('planner')).toBe(20 * 60 * 1_000);
+    expect(gameHarnessTurnTimeoutMs('reviewer')).toBe(20 * 60 * 1_000);
+    expect(gameHarnessTurnTimeoutMs('implementer')).toBe(60 * 60 * 1_000);
+    expect(gameHarnessTurnTimeoutMs('repair')).toBe(60 * 60 * 1_000);
+  });
+});
 
 class CapturingRuntime extends EventEmitter {
   readonly threads: StartThreadOptions[] = [];

@@ -106,9 +106,25 @@ export function isTargetFrameRate(value: unknown): value is TargetFrameRate {
     && TARGET_FRAME_RATES.some((frameRate) => frameRate === value);
 }
 
+export type ProjectIconSource = 'procedural' | 'ai';
+
+export interface ProjectIcon {
+  /** Icon PNG path relative to the project root (host-owned, e.g. `.noobi/icon.png`). */
+  path: string;
+  source: ProjectIconSource;
+  updatedAt: string;
+}
+
+export interface ProjectIconData {
+  dataUrl: string;
+  updatedAt: string;
+}
+
 export interface ProjectRecord {
   id: string;
   name: string;
+  /** Pinned projects stay above recently updated projects in navigation. */
+  pinned: boolean;
   idea: string;
   root: string;
   createdAt: string;
@@ -129,6 +145,8 @@ export interface ProjectRecord {
   toolsetVersion: number;
   activeTurnId: string | null;
   lastError: string | null;
+  /** Pixel-style game icon. Null until the host generates one; existing projects migrate to null. */
+  icon: ProjectIcon | null;
 }
 
 export type AgentEventKind =
@@ -256,14 +274,20 @@ export interface BootstrapPayload {
 }
 
 export interface CreateProjectInput {
-  name: string;
   idea: string;
-  parentDirectory: string;
+  projectDirectory: string;
   model?: string | null;
 }
 
-/** Main-only store input. Renderer creation requests never choose the engine. */
-export interface ProjectStoreCreateInput extends CreateProjectInput {
+/** Main-only store input. Renderer creation requests never choose the engine or a parent directory. */
+export interface ProjectStoreCreateInput {
+  name: string;
+  idea: string;
+  /** Legacy/internal path: the store creates a unique child directory below this parent. */
+  parentDirectory?: string;
+  /** User-selected path: the store initializes this exact empty directory. */
+  projectDirectory?: string;
+  model?: string | null;
   /** Omitted only by legacy/store tests, where it migrates to the browser engine. */
   engine?: GameEngine;
 }
@@ -525,11 +549,17 @@ export interface NoobiApi {
   startLogin(): Promise<LoginStartResult>;
   logout(): Promise<RuntimeStatus>;
   chooseDirectory(): Promise<string | null>;
+  chooseProjectDirectory(): Promise<string | null>;
   /** Files stay opaque in Renderer; Preload resolves their native paths for Main. */
   createProject(input: CreateProjectInput, files?: readonly unknown[]): Promise<ProjectRecord>;
+  renameProject(projectId: string, name: string): Promise<ProjectRecord>;
+  setProjectPinned(projectId: string, pinned: boolean): Promise<ProjectRecord>;
+  /** Permanently removes the catalog record and its verified workspace directory. */
+  deleteProject(projectId: string): Promise<ProjectRecord>;
   runProject(input: RunProjectInput): Promise<ProjectRecord>;
   stopProject(projectId: string): Promise<ProjectRecord>;
-  revealProject(projectId: string): Promise<void>;
+  /** Opens the project folder, prompting to reconnect it first if it was moved or renamed. */
+  revealProject(projectId: string): Promise<ProjectRecord | null>;
   importProjectAssets(projectId: string): Promise<GameAssetRecord[]>;
   /** Files are resolved to native paths in preload and validated again by AssetStore in Main. */
   importDroppedProjectAssets(projectId: string, files: readonly unknown[]): Promise<GameAssetRecord[]>;
@@ -541,6 +571,8 @@ export interface NoobiApi {
   /** Cancels a manually requested experience playtest, if one is active. */
   cancelProjectExperience(projectId: string): Promise<void>;
   readProjectFile(projectId: string, relativePath: string): Promise<FileReadResult>;
+  /** Returns the project icon as a PNG data URL, or null when no icon exists yet. */
+  getProjectIcon(projectId: string): Promise<ProjectIconData | null>;
   /** Pass null to make the project follow the app-wide Noobi production pack again. */
   saveProjectNoobiPack(projectId: string, packId: NoobiPackId | null): Promise<ProjectRecord>;
   /** Pass null to make the project follow the app-wide Noobi crew again. */

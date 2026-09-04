@@ -1,4 +1,5 @@
 import {
+  ArrowUp,
   ArrowRight,
   Bot,
   CheckCircle2,
@@ -11,6 +12,7 @@ import {
   Paperclip,
   Settings,
   Sparkles,
+  Square,
   Sun,
   X,
 } from 'lucide-react';
@@ -35,6 +37,7 @@ import {
 } from '../homeReadiness';
 import { formatRelative, PROJECT_STATUS_LABELS } from '../ui';
 import { ModelPicker } from './ModelPicker';
+import { ProjectIconImage } from './ProjectIcon';
 import { RotatingIdeaInput } from './RotatingIdeaInput';
 
 const IDEA_STARTERS = [
@@ -72,6 +75,7 @@ const MAX_HOME_ATTACHMENTS = 20;
 export interface HomeLaunchInput {
   idea: string;
   model: string | null;
+  effort: string | null;
   attachments: readonly File[];
 }
 
@@ -115,6 +119,7 @@ export function HomeDashboard({
   const [model, setModel] = useState(
     settings.defaultModel ?? models.find((item) => item.isDefault)?.model ?? models[0]?.model ?? '',
   );
+  const [effort, setEffort] = useState(settings.defaultEffort);
   const activeModel = useMemo(
     () => models.find((item) => item.model === model) ?? models[0] ?? null,
     [model, models],
@@ -144,11 +149,23 @@ export function HomeDashboard({
     ideaInputRef.current?.focus({ preventScroll: true });
   }, [focusSignal]);
 
+  useEffect(() => {
+    if (!activeModel) return;
+    if (!activeModel.efforts.includes(effort)) {
+      setEffort(
+        activeModel.efforts.includes(settings.defaultEffort)
+          ? settings.defaultEffort
+          : activeModel.defaultEffort,
+      );
+    }
+  }, [activeModel, effort, settings.defaultEffort]);
+
   async function submit() {
     if (!launchReady) return;
     await onLaunch({
       idea: idea.trim(),
       model: activeModel?.model ?? null,
+      effort: effort || null,
       attachments,
     });
   }
@@ -342,25 +359,33 @@ export function HomeDashboard({
                     <Paperclip size={15} /> 文件
                   </button>
                 </div>
-                <span className="home-engine-advisor" title="Agent 会根据玩法、维度、动画和物理需求自动选择 Web 或 Godot">
-                  <Bot size={15} /> 引擎由 Agent 判断
-                </span>
                 <ModelPicker
                   models={models}
                   value={activeModel?.model ?? ''}
+                  effort={effort}
+                  defaultModel={settings.defaultModel}
+                  defaultEffort={settings.defaultEffort}
                   disabled={busy}
                   onChange={setModel}
+                  onEffortChange={setEffort}
                 />
+                <span className="home-prompt-spacer" aria-hidden="true" />
+                <span className="home-engine-advisor" title="Agent 会根据玩法、维度、动画和物理需求自动选择 Web 或 Godot">
+                  <Bot size={15} /> 引擎由 Agent 判断
+                </span>
                 <button
                   className="home-create-button"
                   type="button"
+                  aria-label={busy ? '正在创建游戏' : '发送游戏创意'}
                   disabled={!launchReady}
                   title={!productionReady
                     ? '请先完成上方的开始前检查'
                     : idea.trim() ? '创建项目并启动 Agent' : '先描述游戏创意'}
                   onClick={() => void submit()}
                 >
-                  <Sparkles size={16} /> {busy ? 'Agent 判断中…' : '开始制作'}
+                  {busy
+                    ? <Square size={12} fill="currentColor" />
+                    : <ArrowUp size={20} strokeWidth={2.2} />}
                 </button>
               </div>
               {dragActive ? (
@@ -404,7 +429,11 @@ export function HomeDashboard({
               {projects.slice(0, 6).map((project, index) => (
                 <button key={project.id} type="button" onClick={() => onOpenProject(project)}>
                   <span className={`home-project-art art-${index % 4}`}>
-                    <Gamepad2 size={22} />
+                    {project.icon ? (
+                      <ProjectIconImage project={project} className="project-icon-img" />
+                    ) : (
+                      <Gamepad2 size={22} />
+                    )}
                     <i className={`status-dot status-${project.status}`} />
                   </span>
                   <span className="home-project-copy">

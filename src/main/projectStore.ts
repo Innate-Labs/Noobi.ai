@@ -31,6 +31,7 @@ import type {
   NoobiCrewMember,
   NoobiPackId,
   PipelineStage,
+  ProjectIcon,
   ProjectRecord,
   ProjectStatus,
   TargetFrameRate,
@@ -148,9 +149,7 @@ export class ProjectStore {
   async list(): Promise<ProjectRecord[]> {
     await this.init();
     await this.#mutationTail;
-    return cloneProjects(this.#requireState().projects).sort(
-      (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
-    );
+    return cloneProjects(this.#requireState().projects).sort(compareProjects);
   }
 
   async listProjects(): Promise<ProjectRecord[]> {
@@ -170,12 +169,18 @@ export class ProjectStore {
   async create(input: ProjectStoreCreateInput): Promise<ProjectRecord> {
     return this.#mutate(async (state) => {
       const normalized = validateCreateProjectInput(input);
-      const parent = await ensureDirectory(normalized.parentDirectory);
-      const projectRoot = await createUniqueWorkspaceDirectory(parent, normalized.name);
+      const usesSelectedDirectory = Boolean(normalized.projectDirectory);
+      const parent = normalized.projectDirectory
+        ? await canonicalDirectory(dirname(normalized.projectDirectory))
+        : await ensureDirectory(normalized.parentDirectory!);
+      const projectRoot = normalized.projectDirectory
+        ? await resolveEmptyProjectDirectory(normalized.projectDirectory)
+        : await createUniqueWorkspaceDirectory(parent, normalized.name);
       const timestamp = new Date().toISOString();
       const project: ProjectRecord = {
         id: randomUUID(),
         name: normalized.name,
+        pinned: false,
         idea: normalized.idea,
         root: projectRoot,
         createdAt: timestamp,
@@ -191,6 +196,7 @@ export class ProjectStore {
         toolsetVersion: 0,
         activeTurnId: null,
         lastError: null,
+        icon: null,
       };
 
       try {
@@ -198,7 +204,7 @@ export class ProjectStore {
         state.projects.push(project);
         await this.#persist(state);
       } catch (error) {
-        await removeNewWorkspace(parent, projectRoot);
+        if (!usesSelectedDirectory) await removeNewWorkspace(parent, projectRoot);
         throw error;
       }
       return structuredClone(project);
@@ -225,6 +231,61 @@ export class ProjectStore {
     return this.update(projectId, patch);
   }
 
+  async delete(projectId: string): Promise<ProjectRecord> {
+    return this.#mutate(async (state) => {
+      const id = validatedId(projectId);
+      const index = state.projects.findIndex((project) => project.id === id);
+      if (index < 0) throw new Error(`Unknown project: ${id}`);
+      const project = state.projects[index]!;
+      const stagedRoot = await stageVerifiedWorkspaceForDeletion(project);
+      state.projects.splice(index, 1);
+      try {
+        await this.#persist(state);
+      } catch (error) {
+        if (stagedRoot) await rename(stagedRoot, project.root).catch(() => undefined);
+        throw error;
+      }
+      if (stagedRoot) {
+        await rm(stagedRoot, {
+          recursive: true,
+          force: false,
+          maxRetries: 3,
+          retryDelay: 100,
+        }).catch((error) => {
+          if (process.env.NOOBI_DEBUG === '1') {
+            process.stderr.write(
+              `[project-store] staged workspace cleanup failed for ${id}: ${asError(error).message}\n`,
+            );
+          }
+        });
+      }
+      return structuredClone(project);
+    });
+  }
+
+  async deleteProject(projectId: string): Promise<ProjectRecord> {
+    return this.delete(projectId);
+  }
+
+  async relocate(projectId: string, projectDirectory: string): Promise<ProjectRecord> {
+    return this.#mutate(async (state) => {
+      const id = validatedId(projectId);
+      const index = state.projects.findIndex((project) => project.id === id);
+      if (index < 0) throw new Error(`Unknown project: ${id}`);
+      const root = await resolveExistingProjectDirectory(projectDirectory, id);
+      const duplicate = state.projects.find((project) => project.id !== id && project.root === root);
+      if (duplicate) throw new Error('这个文件夹已经绑定到另一个 NooBi 游戏。');
+      const next: ProjectRecord = {
+        ...state.projects[index]!,
+        root,
+        updatedAt: new Date().toISOString(),
+        lastError: null,
+      };
+      state.projects[index] = next;
+      await this.#persist(state);
+      return structuredClone(next);
+    });
+  }
   async getSettings(): Promise<AppSettings> {
     await this.init();
     await this.#mutationTail;
@@ -465,18 +526,78 @@ export async function atomicWriteJson(targetPath: string, value: unknown): Promi
   }
 }
 
+async function stageVerifiedWorkspaceForDeletion(project: ProjectRecord): Promise<string | null> {
+  const lexicalRoot = resolve(project.root);
+  if (dirname(lexicalRoot) === lexicalRoot) {
+    throw new Error('Refusing to delete a filesystem root');
+  }
+  let rootInfo;
+  try {
+    rootInfo = await lstat(lexicalRoot);
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) return null;
+    throw error;
+  }
+  if (rootInfo.isSymbolicLink() || !rootInfo.isDirectory()) {
+    throw new Error('Project workspace is not a safe directory');
+  }
+  const canonicalRoot = await realpath(lexicalRoot);
+  if (canonicalRoot !== lexicalRoot) {
+    throw new Error('Project workspace path does not match its canonical directory');
+  }
+
+  const metadataPath = join(lexicalRoot, '.noobi', 'project.json');
+  const handle = await open(metadataPath, READ_ONLY_NOFOLLOW);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > MAX_FILE_BYTES) {
+      throw new Error('Project workspace metadata is invalid');
+    }
+    const metadata = JSON.parse(await handle.readFile('utf8')) as unknown;
+    if (!isRecord(metadata) || metadata.id !== project.id) {
+      throw new Error('Project workspace identity does not match the selected project');
+    }
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error('Project workspace metadata contains invalid JSON');
+    throw error;
+  } finally {
+    await handle.close();
+  }
+
+  const stagedRoot = join(
+    dirname(lexicalRoot),
+    `.${basename(lexicalRoot)}.noobi-delete-${randomUUID()}`,
+  );
+  await rename(lexicalRoot, stagedRoot);
+  return stagedRoot;
+}
+
+function compareProjects(left: ProjectRecord, right: ProjectRecord): number {
+  return Number(right.pinned) - Number(left.pinned)
+    || Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+}
+
 function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   name: string;
   idea: string;
-  parentDirectory: string;
+  parentDirectory: string | null;
+  projectDirectory: string | null;
   model: string | null;
   engine: GameEngine;
 } {
   if (!input || typeof input !== 'object') throw new Error('Project input is required');
   const name = validatedText(input.name, 'Project name', MAX_PROJECT_NAME_LENGTH);
   const idea = validatedText(input.idea, 'Game idea', MAX_PROJECT_IDEA_LENGTH);
-  if (!isNonEmptyString(input.parentDirectory) || !isAbsolute(input.parentDirectory)) {
+  const hasParentDirectory = isNonEmptyString(input.parentDirectory);
+  const hasProjectDirectory = isNonEmptyString(input.projectDirectory);
+  if (hasParentDirectory === hasProjectDirectory) {
+    throw new Error('Provide exactly one project parent directory or selected project directory');
+  }
+  if (hasParentDirectory && !isAbsolute(input.parentDirectory!)) {
     throw new Error('Project parent directory must be an absolute path');
+  }
+  if (hasProjectDirectory && !isAbsolute(input.projectDirectory!)) {
+    throw new Error('Selected project directory must be an absolute path');
   }
   if (input.model !== undefined && input.model !== null && !isNonEmptyString(input.model)) {
     throw new Error('Project model must be a non-empty string or null');
@@ -487,7 +608,8 @@ function validateCreateProjectInput(input: ProjectStoreCreateInput): {
   return {
     name,
     idea,
-    parentDirectory: resolve(input.parentDirectory),
+    parentDirectory: hasParentDirectory ? resolve(input.parentDirectory!) : null,
+    projectDirectory: hasProjectDirectory ? resolve(input.projectDirectory!) : null,
     model: input.model?.trim() || null,
     engine: input.engine ?? DEFAULT_GAME_ENGINE,
   };
@@ -499,6 +621,7 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
   }
   const allowed = new Set([
     'name',
+    'pinned',
     'idea',
     'status',
     'stage',
@@ -510,12 +633,17 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
     'toolsetVersion',
     'activeTurnId',
     'lastError',
+    'icon',
   ]);
   for (const key of Object.keys(patch)) {
     if (!allowed.has(key)) throw new Error(`Project field cannot be updated: ${key}`);
   }
   const next: ProjectRecord = { ...current, updatedAt: new Date().toISOString() };
   if (patch.name !== undefined) next.name = validatedText(patch.name, 'Project name', MAX_PROJECT_NAME_LENGTH);
+  if (patch.pinned !== undefined) {
+    if (typeof patch.pinned !== 'boolean') throw new Error('Project pinned must be a boolean');
+    next.pinned = patch.pinned;
+  }
   if (patch.idea !== undefined) next.idea = validatedText(patch.idea, 'Game idea', MAX_PROJECT_IDEA_LENGTH);
   if (patch.status !== undefined) {
     if (!PROJECT_STATUSES.has(patch.status)) throw new Error(`Invalid project status: ${String(patch.status)}`);
@@ -559,6 +687,9 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
     }
     next.toolsetVersion = patch.toolsetVersion;
   }
+  if (patch.icon !== undefined) {
+    next.icon = patch.icon === null ? null : validatedProjectIcon(patch.icon, current.id);
+  }
   return next;
 }
 
@@ -592,8 +723,10 @@ function parsePersistedStore(source: string): {
         && (
           project.targetFrameRate === undefined
           || project.engine === undefined
+          || project.pinned === undefined
           || project.noobiPackOverrideId === undefined
           || project.noobiCrewOverride === undefined
+          || project.icon === undefined
         ),
     ) || !isRecord(parsed.settings)
       || parsed.settings.defaultNoobiStageMode === undefined
@@ -624,6 +757,7 @@ function validateProjectRecord(value: unknown): ProjectRecord {
   return {
     id,
     name,
+    pinned: value.pinned === undefined ? false : validatedPinned(value.pinned, id),
     idea,
     root: resolve(value.root),
     createdAt: value.createdAt,
@@ -649,7 +783,34 @@ function validateProjectRecord(value: unknown): ProjectRecord {
       : validatedToolsetVersion(value.toolsetVersion, id),
     activeTurnId: nullableString(value.activeTurnId, `Project ${id} active turn id`),
     lastError: nullableString(value.lastError, `Project ${id} last error`),
+    icon: value.icon === undefined || value.icon === null
+      ? null
+      : validatedProjectIcon(value.icon, id),
   };
+}
+
+function validatedPinned(value: unknown, projectId: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`Project ${projectId} has an invalid pinned state`);
+  return value;
+}
+
+function validatedProjectIcon(value: unknown, projectId: string): ProjectIcon {
+  if (!isRecord(value)) throw new Error(`Project ${projectId} has an invalid icon`);
+  if (!isNonEmptyString(value.path)) throw new Error(`Project ${projectId} has an invalid icon path`);
+  let path: string;
+  try {
+    path = normalizeRelativeProjectPath(value.path);
+  } catch {
+    throw new Error(`Project ${projectId} has an invalid icon path`);
+  }
+  if (path !== '.noobi/icon.png') {
+    throw new Error(`Project ${projectId} has an unexpected icon path`);
+  }
+  if (value.source !== 'procedural' && value.source !== 'ai') {
+    throw new Error(`Project ${projectId} has an invalid icon source`);
+  }
+  if (!isIsoDate(value.updatedAt)) throw new Error(`Project ${projectId} has an invalid icon timestamp`);
+  return { path, source: value.source, updatedAt: value.updatedAt };
 }
 
 function validatedTargetFrameRate(value: unknown, projectId: string): TargetFrameRate {
@@ -787,6 +948,45 @@ async function canonicalDirectory(directory: string): Promise<string> {
   const canonical = await realpath(lexical);
   const info = await stat(canonical);
   if (!info.isDirectory()) throw new Error(`Path is not a directory: ${directory}`);
+  return canonical;
+}
+
+export async function resolveEmptyProjectDirectory(directory: string): Promise<string> {
+  const canonical = await canonicalDirectory(directory);
+  const entries = (await readdir(canonical)).filter((name) => name !== '.DS_Store');
+  if (entries.length > 0) {
+    throw new Error('请选择一个空文件夹，避免覆盖其中已有的文件。');
+  }
+  return canonical;
+}
+
+export async function resolveExistingProjectDirectory(
+  directory: string,
+  projectId: string,
+): Promise<string> {
+  const canonical = await canonicalDirectory(directory);
+  const metadataPath = join(canonical, '.noobi', 'project.json');
+  let metadataInfo;
+  try {
+    metadataInfo = await lstat(metadataPath);
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) {
+      throw new Error('所选文件夹不是 NooBi 游戏文件夹：缺少 .noobi/project.json。');
+    }
+    throw error;
+  }
+  if (metadataInfo.isSymbolicLink() || !metadataInfo.isFile() || metadataInfo.size > MAX_FILE_BYTES) {
+    throw new Error('所选文件夹的 NooBi 项目标记无效。');
+  }
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(await readFile(metadataPath, 'utf8'));
+  } catch {
+    throw new Error('所选文件夹的 NooBi 项目标记无法读取。');
+  }
+  if (!metadata || typeof metadata !== 'object' || (metadata as { id?: unknown }).id !== validatedId(projectId)) {
+    throw new Error('所选文件夹不属于当前游戏，请选择改名前的同一个游戏文件夹。');
+  }
   return canonical;
 }
 
