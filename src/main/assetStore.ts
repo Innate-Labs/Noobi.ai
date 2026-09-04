@@ -91,9 +91,10 @@ export class AssetStore {
   list(projectId: string, root: string): Promise<GameAssetRecord[]> {
     return this.#exclusive(async () => {
       const safeRoot = await canonicalRoot(root);
-      const manifest = await readManifest(safeRoot, projectId);
+      const loaded = await readManifest(safeRoot, projectId);
+      const manifest = loaded.manifest;
       const changed = await reconcileManifest(safeRoot, manifest);
-      if (changed) await writeManifest(safeRoot, manifest);
+      if (changed || loaded.repaired) await writeManifest(safeRoot, manifest);
       return structuredClone(manifest.assets);
     });
   }
@@ -104,7 +105,7 @@ export class AssetStore {
         throw new Error('Select between 1 and 100 asset files');
       }
       const safeRoot = await canonicalRoot(root);
-      const manifest = await readManifest(safeRoot, projectId);
+      const { manifest } = await readManifest(safeRoot, projectId);
       await reconcileManifest(safeRoot, manifest);
       let totalBytes = 0;
       const imported: GameAssetRecord[] = [];
@@ -153,7 +154,7 @@ export class AssetStore {
       if (info.isSymbolicLink() || !info.isFile()) throw new Error('Registered asset must be a regular file');
       assertSize(info.size, format, assetPath);
       await validateFileSignature(assetPath, format);
-      const manifest = await readManifest(safeRoot, input.projectId);
+      const { manifest } = await readManifest(safeRoot, input.projectId);
       await reconcileManifest(safeRoot, manifest);
       const record = await buildRecord(safeRoot, assetPath, {
         ...input,
@@ -183,7 +184,7 @@ export class AssetStore {
       await validateFileSignature(input.sourcePath, format);
 
       const safeRoot = await canonicalRoot(input.root);
-      const manifest = await readManifest(safeRoot, input.projectId);
+      const { manifest } = await readManifest(safeRoot, input.projectId);
       await reconcileManifest(safeRoot, manifest);
       const sourceHash = await hashFile(input.sourcePath);
       const duplicate = findDuplicate(manifest, sourceHash, format.kind);
@@ -504,7 +505,12 @@ async function hashFile(filePath: string): Promise<string> {
   return hash.digest('hex');
 }
 
-async function readManifest(root: string, projectId: string): Promise<GameAssetManifest> {
+interface LoadedManifest {
+  manifest: GameAssetManifest;
+  repaired: boolean;
+}
+
+async function readManifest(root: string, projectId: string): Promise<LoadedManifest> {
   const path = join(root, MANIFEST_RELATIVE_PATH);
   let contents: string;
   try {
@@ -514,29 +520,44 @@ async function readManifest(root: string, projectId: string): Promise<GameAssetM
     contents = await readFile(path, 'utf8');
   } catch (error) {
     if (!isNodeError(error, 'ENOENT')) throw error;
-    return emptyManifest(projectId);
+    return { manifest: emptyManifest(projectId), repaired: false };
   }
   const value = JSON.parse(contents) as unknown;
   return validateManifest(value, projectId);
 }
 
-function validateManifest(value: unknown, projectId: string): GameAssetManifest {
+function validateManifest(value: unknown, projectId: string): LoadedManifest {
   const record = asRecord(value);
   if (record?.version !== MANIFEST_VERSION || record.projectId !== projectId || !Array.isArray(record.assets)) {
     throw new Error('Asset manifest does not match this project or schema version');
   }
   if (record.assets.length > MAX_ASSET_COUNT) throw new Error('Asset manifest contains too many entries');
-  const assets = record.assets.map(validateRecord);
+  const assets: GameAssetRecord[] = [];
   const paths = new Set<string>();
-  for (const asset of assets) {
-    if (paths.has(asset.relativePath)) throw new Error(`Duplicate asset path: ${asset.relativePath}`);
-    paths.add(asset.relativePath);
+  let repaired = false;
+  for (const candidate of record.assets) {
+    try {
+      const asset = validateRecord(candidate);
+      if (paths.has(asset.relativePath)) {
+        repaired = true;
+        continue;
+      }
+      paths.add(asset.relativePath);
+      assets.push(asset);
+    } catch {
+      // The game-building agent can edit this workspace-owned file. Keep valid
+      // game assets usable and remove entries outside Noobi's supported schema.
+      repaired = true;
+    }
   }
   return {
-    version: MANIFEST_VERSION,
-    projectId,
-    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date(0).toISOString(),
-    assets,
+    repaired,
+    manifest: {
+      version: MANIFEST_VERSION,
+      projectId,
+      updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date(0).toISOString(),
+      assets,
+    },
   };
 }
 

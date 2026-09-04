@@ -119,6 +119,35 @@ describe('AssetStore', () => {
     expect(assets[0]).toMatchObject({ kind: 'image', provider: 'workspace-agent' });
   });
 
+  it('discards unsupported workspace-authored manifest entries instead of breaking the asset panel', async () => {
+    const { root } = await fixture();
+    const assetDirectory = join(root, 'public/assets');
+    await mkdir(assetDirectory, { recursive: true });
+    await writeFile(join(assetDirectory, 'hand_landmarker.task'), 'mediapipe model data');
+    await writeFile(join(assetDirectory, 'asset-pack.json'), JSON.stringify({
+      version: 1,
+      projectId: 'project-1',
+      updatedAt: new Date().toISOString(),
+      assets: [{
+        id: 'unsupported-data',
+        name: 'hand_landmarker',
+        kind: 'data',
+        source: 'imported',
+        relativePath: 'public/assets/hand_landmarker.task',
+        mimeType: 'application/octet-stream',
+        size: 20,
+        sha256: '0'.repeat(64),
+        createdAt: new Date().toISOString(),
+      }],
+    }));
+
+    await expect(new AssetStore().list('project-1', root)).resolves.toEqual([]);
+    const repaired = JSON.parse(await readFile(join(assetDirectory, 'asset-pack.json'), 'utf8')) as {
+      assets: unknown[];
+    };
+    expect(repaired.assets).toEqual([]);
+  });
+
   it('rejects symbolic-link asset directories and project traversal', async () => {
     const { root, sources } = await fixture();
     const outside = await mkdtemp(join(tmpdir(), 'noobi-assets-outside-'));

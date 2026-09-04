@@ -99,7 +99,11 @@ import {
   importProjectReferences,
   isProjectReferencePath,
 } from './projectReferenceStore.js';
-import { ProjectStore } from './projectStore.js';
+import {
+  ProjectStore,
+  resolveEmptyProjectDirectory,
+  resolveExistingProjectDirectory,
+} from './projectStore.js';
 import { PromptTemplateStore } from './promptTemplateStore.js';
 import { verifyVisualAssetCoverage } from './visualAssetCoverage.js';
 import { verifyWebProductionBuild } from './webProductionBuild.js';
@@ -441,7 +445,7 @@ function bindIpc(): void {
   handle('noobi:dialog:directory', async () => {
     const settings = await projectStore.getSettings();
     const options: Electron.OpenDialogOptions = {
-      title: '选择游戏项目目录',
+      title: '选择默认项目存放位置',
       defaultPath: settings.defaultWorkspace,
       properties: ['openDirectory', 'createDirectory'],
     };
@@ -450,6 +454,42 @@ function bindIpc(): void {
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
+  handle('noobi:dialog:project-directory', async () => {
+    const settings = await projectStore.getSettings();
+    while (true) {
+      const options: Electron.OpenDialogOptions = {
+        title: '创建或选择游戏项目文件夹',
+        message: '这个文件夹将直接保存游戏代码、素材和构建文件，请选择一个空文件夹。',
+        buttonLabel: '使用这个文件夹',
+        defaultPath: settings.defaultWorkspace,
+        properties: ['openDirectory', 'createDirectory'],
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled) return null;
+      const selected = result.filePaths[0];
+      if (!selected) return null;
+      try {
+        return await resolveEmptyProjectDirectory(selected);
+      } catch (error) {
+        const messageOptions: Electron.MessageBoxOptions = {
+          type: 'warning',
+          title: '请选择空文件夹',
+          message: '这个文件夹里已经有内容',
+          detail: `${asError(error).message}\n\n你可以返回 Finder 新建一个文件夹，再选择它。`,
+          buttons: ['重新选择', '取消'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+        };
+        const choice = mainWindow
+          ? await dialog.showMessageBox(mainWindow, messageOptions)
+          : await dialog.showMessageBox(messageOptions);
+        if (choice.response === 1) return null;
+      }
+    }
+  });
 
   handle('noobi:project:create', async (
     _event,
@@ -457,13 +497,19 @@ function bindIpc(): void {
     attachmentPaths: unknown = [],
   ) => {
     const attachments = await inspectCreationAttachments(attachmentPaths);
+    const projectDirectory = typeof input?.projectDirectory === 'string'
+      ? input.projectDirectory
+      : '';
+    if (!projectDirectory.trim()) throw new Error('请选择游戏项目文件夹');
+    const selectedProjectDirectory = await resolveEmptyProjectDirectory(projectDirectory);
+    const projectName = basename(selectedProjectDirectory).trim().slice(0, 100);
+    if (!projectName) throw new Error('请选择游戏项目文件夹');
     const [settings, godot] = await Promise.all([
       projectStore.getSettings(),
       godotEnvironmentService.refresh(),
     ]);
-    await mkdir(settings.defaultWorkspace, { recursive: true, mode: 0o700 });
     const decision = await engineAdvisor.decide({
-      cwd: settings.defaultWorkspace,
+      cwd: selectedProjectDirectory,
       idea: typeof input?.idea === 'string' ? input.idea : '',
       model: input?.model,
       effort: settings.defaultEffort,
@@ -480,7 +526,13 @@ function bindIpc(): void {
     const exportGodotStarter = decision.engine === 'godot'
       && godot.canExportProjects
       && godot.exportTemplates.targets.web;
-    const project = await projectStore.create({ ...input, engine: decision.engine });
+    const project = await projectStore.create({
+      name: projectName,
+      idea: input.idea,
+      projectDirectory: selectedProjectDirectory,
+      model: input.model,
+      engine: decision.engine,
+    });
     const initialEvent: AgentEvent = {
       id: randomUUID(),
       projectId: project.id,
@@ -532,8 +584,10 @@ function bindIpc(): void {
     return project;
   });
 
-  handle('noobi:project:rename', async (_event, projectId: string, name: string) => {
-    return updateProject(validateProjectId(projectId), { name });
+  handle('noobi:project:rename', (_event, projectId: string, name: unknown) => {
+    const id = validateProjectId(projectId);
+    if (typeof name !== 'string') throw new Error('游戏名称必须是文字');
+    return updateProject(id, { name });
   });
   handle('noobi:project:pin', async (_event, projectId: string, pinned: boolean) => {
     if (typeof pinned !== 'boolean') throw new Error('无效的置顶状态');
@@ -561,13 +615,16 @@ function bindIpc(): void {
 
   handle('noobi:project:run', async (_event, input: RunProjectInput) => {
     validateRunInput(input);
-    const project = await projectStore.get(input.projectId);
+    let project = await projectStore.get(input.projectId);
     if (harness.isRunning(project.id) || projectRunReservations.has(project.id)) {
       throw new Error('该项目已有正在执行或启动中的 Agent');
     }
     if (experienceEvaluationRuns.has(project.id)) {
       throw new Error('该项目正在进行体验评测，请等待评测结束后再启动 Agent');
     }
+    const locatedProject = await ensureProjectLocation(project);
+    if (!locatedProject) throw new Error('尚未重新连接项目文件夹，本次制作没有启动。');
+    project = locatedProject;
     projectRunReservations.add(project.id);
     try {
     if (project.engine === 'godot') {
@@ -667,9 +724,12 @@ function bindIpc(): void {
       : project;
   });
   handle('noobi:project:reveal', async (_event, projectId: string) => {
-    const project = await projectStore.get(validateProjectId(projectId));
+    const storedProject = await projectStore.get(validateProjectId(projectId));
+    const project = await ensureProjectLocation(storedProject);
+    if (!project) return null;
     const error = await shell.openPath(project.root);
     if (error) throw new Error(error);
+    return project;
   });
   handle('noobi:project:assets:import', async (_event, projectId: string) => {
     const project = await projectStore.get(validateProjectId(projectId));
@@ -736,6 +796,9 @@ function bindIpc(): void {
   });
   handle('noobi:project:inspect', async (_event, projectId: string): Promise<ProjectInspectorPayload> => {
     const project = await projectStore.get(validateProjectId(projectId));
+    if (!await projectDirectoryAvailable(project)) {
+      throw new Error('项目文件夹已被移动或改名。请点击右上角文件夹按钮，选择改名后的文件夹重新连接。');
+    }
     const useSourceAssetOverlay = project.status !== 'completed';
     const [files, previewUrl, assets, experienceReport] = await Promise.all([
       projectStore.listProjectFiles(project.id),
@@ -1868,6 +1931,60 @@ async function updateProject(
   return project;
 }
 
+async function projectDirectoryAvailable(project: Pick<ProjectRecord, 'id' | 'root'>): Promise<boolean> {
+  try {
+    await resolveExistingProjectDirectory(project.root, project.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureProjectLocation(project: ProjectRecord): Promise<ProjectRecord | null> {
+  if (await projectDirectoryAvailable(project)) return project;
+  if (isProjectBusyForMutation(project.id)) {
+    throw new Error('项目正在工作，暂时不能重新定位文件夹。请先停止当前任务。');
+  }
+
+  while (true) {
+    const options: Electron.OpenDialogOptions = {
+      title: `重新连接“${project.name}”的项目文件夹`,
+      message: '请选择这个游戏改名或移动后的文件夹，NooBi 会核对项目身份并更新保存路径。',
+      buttonLabel: '重新连接',
+      defaultPath: dirname(project.root),
+      properties: ['openDirectory'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled) return null;
+    const selectedDirectory = result.filePaths[0];
+    if (!selectedDirectory) return null;
+
+    try {
+      const relocated = await projectStore.relocate(project.id, selectedDirectory);
+      await Promise.allSettled([previews.stop(project.id), playtestPreviews.stop(project.id)]);
+      broadcast('noobi:event:project', relocated);
+      return relocated;
+    } catch (error) {
+      const messageOptions: Electron.MessageBoxOptions = {
+        type: 'warning',
+        title: '无法连接这个文件夹',
+        message: '请选择同一个游戏改名或移动后的文件夹',
+        detail: asError(error).message,
+        buttons: ['重新选择', '取消'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      };
+      const choice = mainWindow
+        ? await dialog.showMessageBox(mainWindow, messageOptions)
+        : await dialog.showMessageBox(messageOptions);
+      if (choice.response === 1) return null;
+    }
+  }
+}
+
 function emitAgentEvent(event: AgentEvent): void {
   void eventLog.append(event).catch((error) => {
     if (process.env.NOOBI_DEBUG === '1') process.stderr.write(`[event-log] ${asError(error).message}\n`);
@@ -1995,6 +2112,55 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     );
     await delay(300);
+  }
+  if (process.env.NOOBI_SMOKE_COLLAPSED === '1') {
+    const collapsed = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('[aria-label="收起首页侧栏"]');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!collapsed) throw new Error('Home rail collapse control was not available');
+    await delay(300);
+    const railCollapsed = await window.webContents.executeJavaScript(
+      `document.querySelector('.project-rail.mode-dashboard')?.classList.contains('is-collapsed') === true`,
+      true,
+    ) as boolean;
+    if (!railCollapsed) throw new Error('Home rail did not enter its collapsed state');
+    const compactHomeVisible = await window.webContents.executeJavaScript(
+      `(() => {
+        const home = document.querySelector('.compact-project-list [aria-label="首页"]');
+        return home instanceof HTMLButtonElement
+          && Boolean(home.querySelector('.lucide-house'))
+          && !home.querySelector('.lucide-plus');
+      })()`,
+      true,
+    ) as boolean;
+    if (!compactHomeVisible) throw new Error('Collapsed home rail did not show the home icon');
+    const roundTrip = await window.webContents.executeJavaScript(
+      `(() => {
+        const brand = document.querySelector('[aria-label="展开首页侧栏"]');
+        if (!(brand instanceof HTMLButtonElement)) return false;
+        brand.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!roundTrip) throw new Error('Collapsed Noobi monogram was not available');
+    await delay(200);
+    const railExpanded = await window.webContents.executeJavaScript(
+      `document.querySelector('.project-rail.mode-dashboard')?.classList.contains('is-collapsed') === false`,
+      true,
+    ) as boolean;
+    if (!railExpanded) throw new Error('Collapsed Noobi monogram did not expand the home rail');
+    await window.webContents.executeJavaScript(
+      `document.querySelector('[aria-label="收起首页侧栏"]')?.click()`,
+      true,
+    );
+    await delay(200);
   }
   if (process.env.NOOBI_SMOKE_PROMPT_PROGRESS === '1') {
     const samples: string[] = [];
@@ -2194,6 +2360,13 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       `document.querySelector('.preview-pane iframe') instanceof HTMLIFrameElement`,
       true,
     ) as boolean;
+    if (process.env.NOOBI_SMOKE_STATUS === 'stopped') {
+      const resumeVisible = await window.webContents.executeJavaScript(
+        `Boolean(document.querySelector('.composer-action.is-resume[aria-label="继续制作"]'))`,
+        true,
+      ) as boolean;
+      if (!resumeVisible) throw new Error('Stopped project did not show the resume action');
+    }
     const expectedScene = process.env.NOOBI_SMOKE_SCENE?.trim();
     if (isNoobiSceneId(expectedScene)) {
       const sceneState = await window.webContents.executeJavaScript(
@@ -2504,6 +2677,53 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     }
     if (!changed) throw new Error(`Production assistant did not change action or position: ${JSON.stringify(initial)}`);
     process.stdout.write(`Noobi production assistant moved from ${initial.action} at ${initial.station}\n`);
+  }
+  if (process.env.NOOBI_SMOKE_RENAME_TITLE === '1') {
+    const workbenchBrandIsStatic = await window.webContents.executeJavaScript(
+      `(() => {
+        const brand = document.querySelector('.project-rail.mode-workbench .brand');
+        return brand instanceof HTMLElement && !(brand instanceof HTMLButtonElement);
+      })()`,
+      true,
+    ) as boolean;
+    if (!workbenchBrandIsStatic) throw new Error('Workbench N brand is still interactive');
+    const opened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('.agent-project-name');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!opened) throw new Error('Workbench project title menu trigger was not available');
+    await delay(250);
+    const menuState = await window.webContents.executeJavaScript(
+      `({
+        menu: Boolean(document.querySelector('.project-context-menu')),
+        dialog: Boolean(document.querySelector('.project-rename-dialog')),
+      })`,
+      true,
+    ) as { menu: boolean; dialog: boolean };
+    if (!menuState.menu || menuState.dialog) {
+      throw new Error(`Workbench project title did not open the rename menu first: ${JSON.stringify(menuState)}`);
+    }
+    const renameSelected = await window.webContents.executeJavaScript(
+      `(() => {
+        const action = document.querySelector('.project-context-menu [role="menuitem"]');
+        if (!(action instanceof HTMLButtonElement)) return false;
+        action.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!renameSelected) throw new Error('Workbench rename menu action was not available');
+    await delay(250);
+    const dialogVisible = await window.webContents.executeJavaScript(
+      `Boolean(document.querySelector('.project-rename-dialog'))`,
+      true,
+    ) as boolean;
+    if (!dialogVisible) throw new Error('Workbench rename action did not open the rename dialog');
   }
   await window.webContents.executeJavaScript(
     `document.querySelectorAll('.brief-card footer > span').forEach((node) => {
