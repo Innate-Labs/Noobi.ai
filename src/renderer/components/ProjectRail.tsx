@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 
 import { createPortal } from 'react-dom';
 
 import type { ProjectRecord, RuntimeStatus } from '../../shared/contracts';
+import { ProjectIconImage } from './ProjectIcon';
 import type { SettingsSection } from './SettingsModal';
 import {
   formatRelative,
@@ -272,7 +273,11 @@ export function ProjectRail({
               onClick={() => onSelect(project)}
               onContextMenu={(event) => openContextMenu(event, project)}
             >
-              <span>{project.name.trim().slice(0, 1).toUpperCase() || 'N'}</span>
+              {project.icon ? (
+                <ProjectIconImage project={project} className="project-icon-img" />
+              ) : (
+                <span>{project.name.trim().slice(0, 1).toUpperCase() || 'N'}</span>
+              )}
               <i className={`status-dot status-${project.status}`} />
             </button>
           ))}

@@ -31,6 +31,7 @@ import type {
   NoobiCrewMember,
   NoobiPackId,
   PipelineStage,
+  ProjectIcon,
   ProjectRecord,
   ProjectStatus,
   TargetFrameRate,
@@ -195,6 +196,7 @@ export class ProjectStore {
         toolsetVersion: 0,
         activeTurnId: null,
         lastError: null,
+        icon: null,
       };
 
       try {
@@ -618,6 +620,7 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
     'toolsetVersion',
     'activeTurnId',
     'lastError',
+    'icon',
   ]);
   for (const key of Object.keys(patch)) {
     if (!allowed.has(key)) throw new Error(`Project field cannot be updated: ${key}`);
@@ -671,6 +674,9 @@ function applyProjectPatch(current: ProjectRecord, patch: ProjectPatch): Project
     }
     next.toolsetVersion = patch.toolsetVersion;
   }
+  if (patch.icon !== undefined) {
+    next.icon = patch.icon === null ? null : validatedProjectIcon(patch.icon, current.id);
+  }
   return next;
 }
 
@@ -707,6 +713,7 @@ function parsePersistedStore(source: string): {
           || project.pinned === undefined
           || project.noobiPackOverrideId === undefined
           || project.noobiCrewOverride === undefined
+          || project.icon === undefined
         ),
     ) || !isRecord(parsed.settings)
       || parsed.settings.defaultNoobiStageMode === undefined
@@ -763,12 +770,31 @@ function validateProjectRecord(value: unknown): ProjectRecord {
       : validatedToolsetVersion(value.toolsetVersion, id),
     activeTurnId: nullableString(value.activeTurnId, `Project ${id} active turn id`),
     lastError: nullableString(value.lastError, `Project ${id} last error`),
+    icon: value.icon === undefined || value.icon === null
+      ? null
+      : validatedProjectIcon(value.icon, id),
   };
 }
 
 function validatedPinned(value: unknown, projectId: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`Project ${projectId} has an invalid pinned state`);
   return value;
+}
+
+function validatedProjectIcon(value: unknown, projectId: string): ProjectIcon {
+  if (!isRecord(value)) throw new Error(`Project ${projectId} has an invalid icon`);
+  if (!isNonEmptyString(value.path)) throw new Error(`Project ${projectId} has an invalid icon path`);
+  let path: string;
+  try {
+    path = normalizeRelativeProjectPath(value.path);
+  } catch {
+    throw new Error(`Project ${projectId} has an invalid icon path`);
+  }
+  if (value.source !== 'procedural' && value.source !== 'ai') {
+    throw new Error(`Project ${projectId} has an invalid icon source`);
+  }
+  if (!isIsoDate(value.updatedAt)) throw new Error(`Project ${projectId} has an invalid icon timestamp`);
+  return { path, source: value.source, updatedAt: value.updatedAt };
 }
 
 function validatedTargetFrameRate(value: unknown, projectId: string): TargetFrameRate {
