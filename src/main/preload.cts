@@ -24,6 +24,7 @@ import type {
   PromptTemplateId,
   PromptTemplateSetting,
   ProjectInspectorPayload,
+  ProjectIconData,
   ProjectRecord,
   RunProjectInput,
   RuntimeStatus,
@@ -44,6 +45,8 @@ const api: NoobiApi = {
   startLogin: () => ipcRenderer.invoke('noobi:runtime:login') as Promise<LoginStartResult>,
   logout: () => ipcRenderer.invoke('noobi:runtime:logout') as Promise<RuntimeStatus>,
   chooseDirectory: () => ipcRenderer.invoke('noobi:dialog:directory') as Promise<string | null>,
+  chooseProjectDirectory: () =>
+    ipcRenderer.invoke('noobi:dialog:project-directory') as Promise<string | null>,
   createProject: (input: CreateProjectInput, files: readonly unknown[] = []) => {
     if (!Array.isArray(files) || files.length > 50) {
       return Promise.reject(new Error('一次最多上传 50 个附件'));
@@ -57,12 +60,18 @@ const api: NoobiApi = {
     if (paths.length !== files.length) return Promise.reject(new Error('上传文件缺少本地路径'));
     return ipcRenderer.invoke('noobi:project:create', input, paths) as Promise<ProjectRecord>;
   },
+  renameProject: (projectId: string, name: string) =>
+    ipcRenderer.invoke('noobi:project:rename', projectId, name) as Promise<ProjectRecord>,
+  setProjectPinned: (projectId: string, pinned: boolean) =>
+    ipcRenderer.invoke('noobi:project:pin', projectId, pinned) as Promise<ProjectRecord>,
+  deleteProject: (projectId: string) =>
+    ipcRenderer.invoke('noobi:project:delete', projectId) as Promise<ProjectRecord>,
   runProject: (input: RunProjectInput) =>
     ipcRenderer.invoke('noobi:project:run', input) as Promise<ProjectRecord>,
   stopProject: (projectId: string) =>
     ipcRenderer.invoke('noobi:project:stop', projectId) as Promise<ProjectRecord>,
   revealProject: (projectId: string) =>
-    ipcRenderer.invoke('noobi:project:reveal', projectId) as Promise<void>,
+    ipcRenderer.invoke('noobi:project:reveal', projectId) as Promise<ProjectRecord | null>,
   importProjectAssets: (projectId: string) =>
     ipcRenderer.invoke('noobi:project:assets:import', projectId) as Promise<GameAssetRecord[]>,
   importDroppedProjectAssets: (projectId: string, files: readonly unknown[]) => {
@@ -88,6 +97,8 @@ const api: NoobiApi = {
     ipcRenderer.invoke('noobi:project:experience:cancel', projectId) as Promise<void>,
   readProjectFile: (projectId: string, relativePath: string) =>
     ipcRenderer.invoke('noobi:project:read', projectId, relativePath) as Promise<FileReadResult>,
+  getProjectIcon: (projectId: string) =>
+    ipcRenderer.invoke('noobi:project:icon', projectId) as Promise<ProjectIconData | null>,
   saveProjectNoobiPack: (projectId: string, packId: NoobiPackId | null) =>
     ipcRenderer.invoke('noobi:project:noobi-pack:save', projectId, packId) as Promise<ProjectRecord>,
   saveProjectNoobiCrew: (projectId: string, crew: readonly NoobiCrewMember[] | null) =>

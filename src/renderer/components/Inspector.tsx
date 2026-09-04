@@ -13,6 +13,8 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Info,
+  Maximize2,
+  Minimize2,
   Music2,
   MonitorPlay,
   PackageOpen,
@@ -24,7 +26,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent, ReactNode } from 'react';
 
 import type {
@@ -39,6 +41,7 @@ import type {
   NoobiCrewMember,
   ProjectInspectorPayload,
   ProjectRecord,
+  ProjectStatus,
 } from '../../shared/contracts';
 import {
   DEFAULT_NOOBI_CREW,
@@ -61,6 +64,7 @@ interface InspectorProps {
   refreshSignal: number;
   onError: (message: string) => void;
   onRegenerate: (plan: AssetPlanRecord) => Promise<void>;
+  onRevealProject: () => Promise<void>;
   onProjectUpdated: (project: ProjectRecord) => void;
 }
 
@@ -73,6 +77,7 @@ export function Inspector({
   refreshSignal,
   onError,
   onRegenerate,
+  onRevealProject,
   onProjectUpdated,
 }: InspectorProps) {
   const [tab, setTab] = useState<InspectorTab>('preview');
@@ -89,6 +94,7 @@ export function Inspector({
   const [importing, setImporting] = useState(false);
   const [retryingPlanId, setRetryingPlanId] = useState<string | null>(null);
   const [evaluatingExperience, setEvaluatingExperience] = useState(false);
+  const [experienceReportOpen, setExperienceReportOpen] = useState(false);
   const [previewRevision, setPreviewRevision] = useState(0);
   const [showBuildPreview, setShowBuildPreview] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -110,9 +116,11 @@ export function Inspector({
     : terminal
       ? 'is-error'
       : 'is-pending';
-  const showExperienceReport = evaluatingExperience
-    || project.status === 'completed'
-    || (project.status === 'failed' && payload.experienceReport !== null);
+  const showExperienceReport = shouldShowExperienceReport(
+    evaluatingExperience,
+    project.status,
+    payload.experienceReport,
+  );
   const showProductionScene = !payload.previewUrl
     || (project.status === 'running' && !showBuildPreview);
   const resolvedNoobiPackId = project.noobiPackOverrideId
@@ -142,9 +150,10 @@ export function Inspector({
     setTab('preview');
     setAssetNotice(null);
     setShowBuildPreview(false);
+    setExperienceReportOpen(false);
     setCrewEditorOpen(false);
     void refresh();
-  }, [project.id, refresh]);
+  }, [project.id, project.root, refresh]);
 
   useEffect(() => {
     if (project.status === 'running' && previousProjectStatus.current !== 'running') {
@@ -158,7 +167,10 @@ export function Inspector({
   }, [refresh, refreshSignal]);
 
   useEffect(() => {
-    if (tab !== 'preview') setCrewEditorOpen(false);
+    if (tab !== 'preview') {
+      setCrewEditorOpen(false);
+      setExperienceReportOpen(false);
+    }
   }, [tab]);
 
   useEffect(() => {
@@ -366,6 +378,15 @@ export function Inspector({
               : 'PROJECT FILES'}
         </span>
         <div className="inspector-toolbar-actions">
+          {tab === 'preview' && showExperienceReport ? (
+            <ExperienceReportTrigger
+              report={payload.experienceReport}
+              projectStatus={project.status}
+              evaluating={evaluatingExperience}
+              expanded={experienceReportOpen}
+              onToggle={() => setExperienceReportOpen((open) => !open)}
+            />
+          ) : null}
           {tab === 'preview' ? (
             resolvedNoobiStageMode === 'crew' ? (
               <button
@@ -536,11 +557,13 @@ export function Inspector({
               status={project.status}
             />
           )}
-          {showExperienceReport ? (
+          {showExperienceReport && experienceReportOpen ? (
             <ExperienceReport
               report={payload.experienceReport}
+              projectStatus={project.status}
               evaluating={evaluatingExperience}
               disabled={project.status === 'running' || !payload.previewUrl}
+              onClose={() => setExperienceReportOpen(false)}
               onEvaluate={() => void evaluateExperience()}
               onCancel={() => void cancelExperience()}
               onOpenReport={(relativePath) => {
@@ -552,7 +575,7 @@ export function Inspector({
           <footer className="inspector-footer">
             <button
               type="button"
-              onClick={() => void window.noobi.revealProject(project.id)}
+              onClick={() => void onRevealProject()}
             >
               <FolderOpen size={13} /> 在 Finder 中显示
             </button>
@@ -627,42 +650,148 @@ export function Inspector({
   );
 }
 
-function ExperienceReport({
+function experienceReportPresentation(
+  report: GameplayExperienceReport | null,
+  projectStatus: ProjectStatus,
+): { historical: boolean; overallFailureAfterPassingPlaytest: boolean; title: string } {
+  const historical = projectStatus === 'running'
+    || projectStatus === 'waiting'
+    || projectStatus === 'stopped';
+  const overallFailureAfterPassingPlaytest = projectStatus === 'failed'
+    && report?.verdict === 'pass';
+  const title = overallFailureAfterPassingPlaytest
+    ? '试玩通过 · 项目仍需处理'
+    : historical && report
+      ? '上次体验评测'
+      : '体验评测';
+  return { historical, overallFailureAfterPassingPlaytest, title };
+}
+
+export function ExperienceReportTrigger({
   report,
+  projectStatus,
+  evaluating,
+  expanded,
+  onToggle,
+}: {
+  report: GameplayExperienceReport | null;
+  projectStatus: ProjectStatus;
+  evaluating: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const score = report ? Math.max(0, Math.min(100, Math.round(report.score))) : null;
+  const tone = evaluating ? 'running' : report?.verdict ?? 'waiting';
+  const presentation = experienceReportPresentation(report, projectStatus);
+  const status = evaluating
+    ? 'RUNNING'
+    : report?.verdict === 'pass'
+      ? 'PASS'
+      : report?.verdict === 'repair'
+        ? 'REPAIR'
+        : 'WAITING';
+
+  return (
+    <button
+      type="button"
+      className={`experience-report-trigger is-${tone}`}
+      aria-expanded={expanded}
+      aria-controls="experience-report-panel"
+      aria-label={`${expanded ? '收起' : '展开'}${presentation.title}${score === null ? '' : `，${score} 分 ${status}`}`}
+      title={`${expanded ? '收起' : '展开'}${presentation.title}`}
+      onClick={onToggle}
+    >
+      <span>PLAYTEST</span>
+      {score === null
+        ? <CircleDashed size={11} className={evaluating ? 'spin' : ''} aria-hidden="true" />
+        : <strong>{score}</strong>}
+      <i>{status}</i>
+      {expanded ? <Minimize2 size={12} aria-hidden="true" /> : <Maximize2 size={12} aria-hidden="true" />}
+    </button>
+  );
+}
+
+export function ExperienceReport({
+  report,
+  projectStatus,
   evaluating,
   disabled,
+  onClose,
   onEvaluate,
   onCancel,
   onOpenReport,
 }: {
   report: GameplayExperienceReport | null;
+  projectStatus: ProjectStatus;
   evaluating: boolean;
   disabled: boolean;
+  onClose: () => void;
   onEvaluate: () => void;
   onCancel: () => void;
   onOpenReport: (relativePath: string) => void;
 }) {
+  const presentation = experienceReportPresentation(report, projectStatus);
+  const score = report ? Math.max(0, Math.min(100, Math.round(report.score))) : null;
+  const tone = evaluating ? 'running' : report?.verdict ?? 'waiting';
+  const status = evaluating
+    ? 'RUNNING'
+    : report?.verdict === 'pass'
+      ? 'PASS'
+      : report?.verdict === 'repair'
+        ? 'REPAIR'
+        : 'WAITING';
+
+  const header = (
+    <header className="experience-report-header">
+      <div>
+        <span>{presentation.historical ? 'LAST PLAYTEST / EXPERIENCE' : 'PLAYTEST / EXPERIENCE'}</span>
+        <strong>{presentation.title}</strong>
+      </div>
+      <div className="experience-report-actions">
+        {score !== null ? (
+          <div className="experience-score" aria-label={`体验评分 ${score} 分`}>
+            <strong>{score}</strong>
+            <span>/100</span>
+          </div>
+        ) : null}
+        <span className={`experience-verdict is-${tone}`}>
+          {evaluating
+            ? <CircleDashed size={12} className="spin" aria-hidden="true" />
+            : report?.verdict === 'pass'
+              ? <CheckCircle2 size={12} aria-hidden="true" />
+              : report?.verdict === 'repair'
+                ? <AlertTriangle size={12} aria-hidden="true" />
+                : <CircleDashed size={12} aria-hidden="true" />}
+          {status}
+        </span>
+        <button
+          type="button"
+          className="experience-report-close"
+          aria-label="收起体验评测"
+          title="收起评测"
+          onClick={onClose}
+        >
+          <Minimize2 size={13} aria-hidden="true" /> 收起
+        </button>
+      </div>
+    </header>
+  );
+
   if (evaluating) {
     return (
-      <section className="experience-report is-running" aria-label="体验评测运行中" aria-busy="true">
-        <header className="experience-report-header">
-          <div>
-            <span>PLAYTEST / EXPERIENCE</span>
-            <strong>体验评测</strong>
+      <section id="experience-report-panel" className="experience-report is-running" aria-label="体验评测运行中" aria-busy="true">
+        {header}
+        <div className="experience-report-details">
+          <div className="experience-report-empty" role="status" aria-live="polite">
+            <PlayCircle size={18} aria-hidden="true" />
+            <div>
+              <strong>正在自动试玩正式构建</strong>
+              <span>{report ? `上次结果 ${report.score}/100；本次完成前不沿用旧结论。` : '正在执行操作、动画、暂停与重开检查。'}</span>
+            </div>
+            <button type="button" className="experience-evaluate-button is-stop" onClick={onCancel}>
+              <Square size={10} fill="currentColor" aria-hidden="true" /> 停止评测
+            </button>
           </div>
-          <span className="experience-verdict is-running">
-            <CircleDashed size={12} className="spin" aria-hidden="true" /> RUNNING
-          </span>
-        </header>
-        <div className="experience-report-empty" role="status" aria-live="polite">
-          <PlayCircle size={18} aria-hidden="true" />
-          <div>
-            <strong>正在自动试玩正式构建</strong>
-            <span>{report ? `上次结果 ${report.score}/100；本次完成前不沿用旧结论。` : '正在执行操作、动画、暂停与重开检查。'}</span>
-          </div>
-          <button type="button" className="experience-evaluate-button is-stop" onClick={onCancel}>
-            <Square size={10} fill="currentColor" aria-hidden="true" /> 停止评测
-          </button>
         </div>
       </section>
     );
@@ -670,92 +799,93 @@ function ExperienceReport({
 
   if (!report) {
     return (
-      <section className="experience-report is-waiting" aria-label="体验评测">
-        <header className="experience-report-header">
-          <div>
-            <span>PLAYTEST / EXPERIENCE</span>
-            <strong>体验评测</strong>
+      <section id="experience-report-panel" className="experience-report is-waiting" aria-label="体验评测">
+        {header}
+        <div className="experience-report-details">
+          <div className="experience-report-empty" role="status">
+            <PlayCircle size={18} aria-hidden="true" />
+            <div>
+              <strong>等待首次体验评测</strong>
+              <span>可运行版本就绪后，Agent 会自动加载、操作并重新开始游戏。</span>
+            </div>
+            <button
+              type="button"
+              className="experience-evaluate-button"
+              disabled={disabled}
+              onClick={onEvaluate}
+            >
+              <PlayCircle size={11} aria-hidden="true" />
+              立即评测
+            </button>
           </div>
-          <span className="experience-verdict is-waiting">
-            <CircleDashed size={12} aria-hidden="true" /> WAITING
-          </span>
-        </header>
-        <div className="experience-report-empty" role="status">
-          <PlayCircle size={18} aria-hidden="true" />
-          <div>
-            <strong>等待首次体验评测</strong>
-            <span>可运行版本就绪后，Agent 会自动加载、操作并重新开始游戏。</span>
-          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const checkedAt = formatExperienceTime(report.checkedAt);
+
+  return (
+    <section
+      id="experience-report-panel"
+      className={`experience-report is-${report.verdict}`}
+      aria-label={`体验评测：${report.verdict === 'pass' ? '通过' : '需要修复'}`}
+    >
+      {header}
+      <div className="experience-report-details">
+        {presentation.overallFailureAfterPassingPlaytest ? (
+          <p className="experience-status-context is-attention">
+            <Info size={12} aria-hidden="true" />
+            自动试玩已经通过，但项目整体仍未通过 Reviewer 或其他交付检查；请结合左侧失败事件继续处理。
+          </p>
+        ) : presentation.historical ? (
+          <p className="experience-status-context">
+            <Info size={12} aria-hidden="true" />
+            {projectStatus === 'running'
+              ? '这是上一版本的试玩结果；当前制作完成后需要重新评测。'
+              : '这是项目停止前保存的最后一次试玩结果。'}
+          </p>
+        ) : null}
+        <div className="experience-checks" role="list" aria-label="体验评测检查项">
+          {report.checks.map((check) => (
+            <ExperienceCheckRow key={check.id} check={check} />
+          ))}
+        </div>
+
+        {report.summary ? <p className="experience-summary">{report.summary}</p> : null}
+
+        <footer className="experience-report-meta">
+          <span>{checkedAt}{formatExperienceDuration(report.durationMs)}</span>
+          <span title={report.reportPath}>REPORT · {report.reportPath}</span>
+          <button
+            type="button"
+            className="experience-evaluate-button"
+            onClick={() => onOpenReport(report.reportPath)}
+          >
+            <File size={10} aria-hidden="true" />
+            查看报告
+          </button>
           <button
             type="button"
             className="experience-evaluate-button"
             disabled={disabled}
             onClick={onEvaluate}
           >
-            <PlayCircle size={11} aria-hidden="true" />
-            立即评测
+            <RefreshCw size={10} aria-hidden="true" />
+            重新评测
           </button>
-        </div>
-      </section>
-    );
-  }
-
-  const score = Math.max(0, Math.min(100, Math.round(report.score)));
-  const checkedAt = formatExperienceTime(report.checkedAt);
-
-  return (
-    <section
-      className={`experience-report is-${report.verdict}`}
-      aria-label={`体验评测：${report.verdict === 'pass' ? '通过' : '需要修复'}`}
-    >
-      <header className="experience-report-header">
-        <div>
-          <span>PLAYTEST / EXPERIENCE</span>
-          <strong>体验评测</strong>
-        </div>
-        <div className="experience-score" aria-label={`体验评分 ${score} 分`}>
-          <strong>{score}</strong>
-          <span>/100</span>
-        </div>
-        <span className={`experience-verdict is-${report.verdict}`}>
-          {report.verdict === 'pass'
-            ? <CheckCircle2 size={12} aria-hidden="true" />
-            : <AlertTriangle size={12} aria-hidden="true" />}
-          {report.verdict === 'pass' ? 'PASS' : 'REPAIR'}
-        </span>
-      </header>
-
-      <div className="experience-checks" role="list" aria-label="体验评测检查项">
-        {report.checks.map((check) => (
-          <ExperienceCheckRow key={check.id} check={check} />
-        ))}
+        </footer>
       </div>
-
-      {report.summary ? <p className="experience-summary">{report.summary}</p> : null}
-
-      <footer className="experience-report-meta">
-        <span>{checkedAt}{formatExperienceDuration(report.durationMs)}</span>
-        <span title={report.reportPath}>REPORT · {report.reportPath}</span>
-        <button
-          type="button"
-          className="experience-evaluate-button"
-          onClick={() => onOpenReport(report.reportPath)}
-        >
-          <File size={10} aria-hidden="true" />
-          查看报告
-        </button>
-        <button
-          type="button"
-          className="experience-evaluate-button"
-          disabled={disabled}
-          onClick={onEvaluate}
-        >
-          <RefreshCw size={10} aria-hidden="true" />
-          重新评测
-        </button>
-      </footer>
     </section>
   );
+}
+
+export function shouldShowExperienceReport(
+  evaluating: boolean,
+  projectStatus: ProjectStatus,
+  report: GameplayExperienceReport | null,
+): boolean {
+  return evaluating || report !== null || projectStatus === 'completed';
 }
 
 function ExperienceCheckRow({ check }: { check: GameplayExperienceCheck }) {

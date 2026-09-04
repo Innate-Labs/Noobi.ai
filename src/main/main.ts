@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +34,7 @@ import type {
   PromptTemplateId,
   PromptTemplateSetting,
   ProjectInspectorPayload,
+  ProjectIconData,
   ProjectRecord,
   ProjectStatus,
   RunProjectInput,
@@ -96,10 +97,20 @@ import {
 import { MEDIA_DYNAMIC_TOOLS, MediaToolBroker } from './mediaToolBroker.js';
 import { PreviewServer } from './previewServer.js';
 import {
+  generateAiProjectIcon,
+  generateProceduralProjectIcon,
+  readProjectIconBytes,
+} from './projectIcon.js';
+import { generateCodexProjectIcon } from './projectIconAgent.js';
+import {
   importProjectReferences,
   isProjectReferencePath,
 } from './projectReferenceStore.js';
-import { ProjectStore } from './projectStore.js';
+import {
+  ProjectStore,
+  resolveEmptyProjectDirectory,
+  resolveExistingProjectDirectory,
+} from './projectStore.js';
 import { PromptTemplateStore } from './promptTemplateStore.js';
 import { verifyVisualAssetCoverage } from './visualAssetCoverage.js';
 import { verifyWebProductionBuild } from './webProductionBuild.js';
@@ -133,6 +144,8 @@ const assetIngestionRuns = new Map<string, Set<Promise<void>>>();
 const experienceEvaluationRuns = new Map<string, Promise<GameplayExperienceReport>>();
 const manualExperienceControllers = new Map<string, AbortController>();
 const projectRunReservations = new Set<string>();
+const projectDeletionReservations = new Set<string>();
+const projectFilesystemAccessCounts = new Map<string, number>();
 let projectStore: ProjectStore;
 let assetPlanStore: AssetPlanStore;
 let eventLog: EventLog;
@@ -275,6 +288,7 @@ async function launch(): Promise<void> {
     promptTemplateStore.init(),
   ]);
   await recoverInterruptedProjects();
+  void backfillProjectIcons();
 
   bindRuntimeEvents();
   bindHarnessEvents();
@@ -441,7 +455,7 @@ function bindIpc(): void {
   handle('noobi:dialog:directory', async () => {
     const settings = await projectStore.getSettings();
     const options: Electron.OpenDialogOptions = {
-      title: '选择游戏项目目录',
+      title: '选择默认项目存放位置',
       defaultPath: settings.defaultWorkspace,
       properties: ['openDirectory', 'createDirectory'],
     };
@@ -450,6 +464,42 @@ function bindIpc(): void {
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
+  handle('noobi:dialog:project-directory', async () => {
+    const settings = await projectStore.getSettings();
+    while (true) {
+      const options: Electron.OpenDialogOptions = {
+        title: '创建或选择游戏项目文件夹',
+        message: '这个文件夹将直接保存游戏代码、素材和构建文件，请选择一个空文件夹。',
+        buttonLabel: '使用这个文件夹',
+        defaultPath: settings.defaultWorkspace,
+        properties: ['openDirectory', 'createDirectory'],
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled) return null;
+      const selected = result.filePaths[0];
+      if (!selected) return null;
+      try {
+        return await resolveEmptyProjectDirectory(selected);
+      } catch (error) {
+        const messageOptions: Electron.MessageBoxOptions = {
+          type: 'warning',
+          title: '请选择空文件夹',
+          message: '这个文件夹里已经有内容',
+          detail: `${asError(error).message}\n\n你可以返回 Finder 新建一个文件夹，再选择它。`,
+          buttons: ['重新选择', '取消'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+        };
+        const choice = mainWindow
+          ? await dialog.showMessageBox(mainWindow, messageOptions)
+          : await dialog.showMessageBox(messageOptions);
+        if (choice.response === 1) return null;
+      }
+    }
+  });
 
   handle('noobi:project:create', async (
     _event,
@@ -457,13 +507,19 @@ function bindIpc(): void {
     attachmentPaths: unknown = [],
   ) => {
     const attachments = await inspectCreationAttachments(attachmentPaths);
+    const projectDirectory = typeof input?.projectDirectory === 'string'
+      ? input.projectDirectory
+      : '';
+    if (!projectDirectory.trim()) throw new Error('请选择游戏项目文件夹');
+    const selectedProjectDirectory = await resolveEmptyProjectDirectory(projectDirectory);
+    const projectName = basename(selectedProjectDirectory).trim().slice(0, 100);
+    if (!projectName) throw new Error('请选择游戏项目文件夹');
     const [settings, godot] = await Promise.all([
       projectStore.getSettings(),
       godotEnvironmentService.refresh(),
     ]);
-    await mkdir(settings.defaultWorkspace, { recursive: true, mode: 0o700 });
     const decision = await engineAdvisor.decide({
-      cwd: settings.defaultWorkspace,
+      cwd: selectedProjectDirectory,
       idea: typeof input?.idea === 'string' ? input.idea : '',
       model: input?.model,
       effort: settings.defaultEffort,
@@ -480,7 +536,15 @@ function bindIpc(): void {
     const exportGodotStarter = decision.engine === 'godot'
       && godot.canExportProjects
       && godot.exportTemplates.targets.web;
-    const project = await projectStore.create({ ...input, engine: decision.engine });
+    const project = await withProceduralIcon(
+      await projectStore.create({
+        name: projectName,
+        idea: input.idea,
+        projectDirectory: selectedProjectDirectory,
+        model: input.model,
+        engine: decision.engine,
+      }),
+    );
     const initialEvent: AgentEvent = {
       id: randomUUID(),
       projectId: project.id,
@@ -532,100 +596,149 @@ function bindIpc(): void {
     return project;
   });
 
+  handle('noobi:project:rename', (_event, projectId: string, name: unknown) => {
+    const id = validateProjectId(projectId);
+    if (typeof name !== 'string') throw new Error('游戏名称必须是文字');
+    if (projectDeletionReservations.has(id)) throw new Error('项目正在删除');
+    return updateProject(id, { name });
+  });
+  handle('noobi:project:pin', async (_event, projectId: string, pinned: boolean) => {
+    if (typeof pinned !== 'boolean') throw new Error('无效的置顶状态');
+    const id = validateProjectId(projectId);
+    if (projectDeletionReservations.has(id)) throw new Error('项目正在删除');
+    return updateProject(id, { pinned });
+  });
+  handle('noobi:project:delete', async (_event, projectId: string) => {
+    const id = validateProjectId(projectId);
+    if (projectDeletionReservations.has(id)) throw new Error('项目正在删除');
+    projectDeletionReservations.add(id);
+    try {
+      const project = await projectStore.get(id);
+      if (
+        isProjectBusyForMutation(project.id, { ignoreDeletionReservation: true })
+        || (projectFilesystemAccessCounts.get(project.id) ?? 0) > 0
+      ) {
+        throw new Error('项目仍在运行或写入，请停止当前任务后再删除');
+      }
+      await Promise.allSettled([previews.stop(project.id), playtestPreviews.stop(project.id)]);
+      const deleted = await projectStore.delete(project.id);
+      const cleanup = await Promise.allSettled([
+        eventLog.remove(project.id),
+        assetPlanStore.removeProject(project.id),
+        imageGenerationAttestations.removeProject(project.id),
+      ]);
+      if (process.env.NOOBI_DEBUG === '1') {
+        cleanup.forEach((result) => {
+          if (result.status === 'rejected') {
+            process.stderr.write(`[project-delete] sidecar cleanup failed: ${asError(result.reason).message}\n`);
+          }
+        });
+      }
+      for (const [threadId, route] of threadRoutes) {
+        if (route.projectId !== project.id) continue;
+        threadRoutes.delete(threadId);
+        threadActivityStages.delete(threadId);
+      }
+      return deleted;
+    } finally {
+      projectDeletionReservations.delete(id);
+    }
+  });
+
   handle('noobi:project:run', async (_event, input: RunProjectInput) => {
     validateRunInput(input);
-    const project = await projectStore.get(input.projectId);
-    if (harness.isRunning(project.id) || projectRunReservations.has(project.id)) {
+    let project = await projectStore.get(input.projectId);
+    if (isProjectBusyForMutation(project.id)) {
       throw new Error('该项目已有正在执行或启动中的 Agent');
-    }
-    if (experienceEvaluationRuns.has(project.id)) {
-      throw new Error('该项目正在进行体验评测，请等待评测结束后再启动 Agent');
     }
     projectRunReservations.add(project.id);
     try {
-    if (project.engine === 'godot') {
-      const godot = await godotEnvironmentService.refresh();
-      if (!godot.canCreateProjects) {
-        throw new Error('Godot 4 环境未就绪；请先在设置 → 环境管理中修复引擎路径。');
+      const locatedProject = await ensureProjectLocation(project, { ignoreRunReservation: true });
+      if (!locatedProject) throw new Error('尚未重新连接项目文件夹，本次制作没有启动。');
+      project = locatedProject;
+      if (project.engine === 'godot') {
+        const godot = await godotEnvironmentService.refresh();
+        if (!godot.canCreateProjects) {
+          throw new Error('Godot 4 环境未就绪；请先在设置 → 环境管理中修复引擎路径。');
+        }
+        if (!godot.canExportProjects || !godot.exportTemplates.targets.web) {
+          throw new Error(
+            `Godot ${godot.tool.version ?? '4'} 的 Web Export Templates 未就绪；请先在设置 → 环境管理中安装精确匹配的导出模板。`,
+          );
+        }
       }
-      if (!godot.canExportProjects || !godot.exportTemplates.targets.web) {
-        throw new Error(
-          `Godot ${godot.tool.version ?? '4'} 的 Web Export Templates 未就绪；请先在设置 → 环境管理中安装精确匹配的导出模板。`,
-        );
+      const status = await runtime.start();
+      if (!status.account) throw new Error('请先登录 ChatGPT，再启动游戏 Agent');
+      const settings = await projectStore.getSettings();
+      const model = input.model ?? project.model ?? settings.defaultModel ?? defaultModel(status.models);
+      const targetFrameRate = project.targetFrameRate;
+      const imageProvider = activeMediaProvider('image');
+      const audioProvider = activeMediaProvider('audio');
+      const miniMaxMusicRequired = Boolean(
+        audioProvider && isMiniMaxAudioPreset(audioProvider.presetId),
+      );
+      const imageGenerationSkill = await resolveImageGenerationSkill();
+      if (!imageProvider && (!status.capabilities.imageGeneration || !imageGenerationSkill)) {
+        throw new Error('没有可用的图像 API，当前 Codex 运行时也没有 ImageGen 能力；请先在设置中配置图像 API 或修复 Codex ImageGen');
       }
-    }
-    const status = await runtime.start();
-    if (!status.account) throw new Error('请先登录 ChatGPT，再启动游戏 Agent');
-    const settings = await projectStore.getSettings();
-    const model = input.model ?? project.model ?? settings.defaultModel ?? defaultModel(status.models);
-    const targetFrameRate = project.targetFrameRate;
-    const imageProvider = activeMediaProvider('image');
-    const audioProvider = activeMediaProvider('audio');
-    const miniMaxMusicRequired = Boolean(
-      audioProvider && isMiniMaxAudioPreset(audioProvider.presetId),
-    );
-    const imageGenerationSkill = await resolveImageGenerationSkill();
-    if (!imageProvider && (!status.capabilities.imageGeneration || !imageGenerationSkill)) {
-      throw new Error('没有可用的图像 API，当前 Codex 运行时也没有 ImageGen 能力；请先在设置中配置图像 API 或修复 Codex ImageGen');
-    }
-    const imageGenerationRequirement = await resolveHostImageGenerationRequirement(project);
-    const audioGenerationRequirement = await resolveHostAudioGenerationRequirement(
-      project,
-      miniMaxMusicRequired,
-    );
-    const promptAdditions = await promptTemplateStore.enabledAdditions();
-    const prepared = await updateProject(project.id, {
-      model,
-      lastError: null,
-    });
-    try {
-      await synchronizeWorkspaceHostPolicy(prepared.root, prepared);
-      if (prepared.engine === 'godot') {
-        await synchronizeGodotPresentationPolicy(prepared.root);
-      }
-    } catch (error) {
-      const message = `无法同步游戏引擎展示策略：${asError(error).message}`;
-      await updateProject(project.id, {
-        status: 'failed',
-        activeTurnId: null,
-        lastError: message,
-      }).catch(() => undefined);
-      throw new Error(message);
-    }
-    await archiveLatestGameplayExperienceReport(prepared.root).catch((error) => {
-      throw new Error(`无法归档上一轮体验评测：${asError(error).message}`);
-    });
-    const running = await updateProject(project.id, {
-      status: 'running',
-      stage: 'brief',
-      activeTurnId: null,
-      lastError: null,
-    });
-    emitAgentEvent({
-      id: randomUUID(),
-      projectId: project.id,
-      kind: 'user',
-      title: '制作指令',
-      message: input.prompt.trim(),
-      stage: running.stage,
-      timestamp: new Date().toISOString(),
-      method: 'harness/user-request',
-    });
-    trackBackgroundRun(
-      executeHarness(
-        running,
-        input.prompt.trim(),
+      const imageGenerationRequirement = await resolveHostImageGenerationRequirement(project);
+      const audioGenerationRequirement = await resolveHostAudioGenerationRequirement(
+        project,
+        miniMaxMusicRequired,
+      );
+      const promptAdditions = await promptTemplateStore.enabledAdditions();
+      const prepared = await updateProject(project.id, {
         model,
-        input.effort ?? settings.defaultEffort,
-        imageGenerationSkill,
-        imageGenerationRequirement,
-        audioGenerationRequirement,
-        targetFrameRate,
-        imageProvider ? 'configured-api' : 'codex-imagegen',
-        promptAdditions,
-      ),
-    );
-    return running;
+        lastError: null,
+      });
+      try {
+        await synchronizeWorkspaceHostPolicy(prepared.root, prepared);
+        if (prepared.engine === 'godot') {
+          await synchronizeGodotPresentationPolicy(prepared.root);
+        }
+      } catch (error) {
+        const message = `无法同步游戏引擎展示策略：${asError(error).message}`;
+        await updateProject(project.id, {
+          status: 'failed',
+          activeTurnId: null,
+          lastError: message,
+        }).catch(() => undefined);
+        throw new Error(message);
+      }
+      await archiveLatestGameplayExperienceReport(prepared.root).catch((error) => {
+        throw new Error(`无法归档上一轮体验评测：${asError(error).message}`);
+      });
+      const running = await updateProject(project.id, {
+        status: 'running',
+        stage: 'brief',
+        activeTurnId: null,
+        lastError: null,
+      });
+      emitAgentEvent({
+        id: randomUUID(),
+        projectId: project.id,
+        kind: 'user',
+        title: '制作指令',
+        message: input.prompt.trim(),
+        stage: running.stage,
+        timestamp: new Date().toISOString(),
+        method: 'harness/user-request',
+      });
+      trackBackgroundRun(
+        executeHarness(
+          running,
+          input.prompt.trim(),
+          model,
+          input.effort ?? settings.defaultEffort,
+          imageGenerationSkill,
+          imageGenerationRequirement,
+          audioGenerationRequirement,
+          targetFrameRate,
+          imageProvider ? 'configured-api' : 'codex-imagegen',
+          promptAdditions,
+        ),
+      );
+      return running;
     } finally {
       projectRunReservations.delete(project.id);
     }
@@ -640,52 +753,73 @@ function bindIpc(): void {
       : project;
   });
   handle('noobi:project:reveal', async (_event, projectId: string) => {
-    const project = await projectStore.get(validateProjectId(projectId));
-    const error = await shell.openPath(project.root);
-    if (error) throw new Error(error);
+    const id = validateProjectId(projectId);
+    const release = acquireProjectFilesystemAccess(id);
+    try {
+      const storedProject = await projectStore.get(id);
+      const project = await ensureProjectLocation(storedProject);
+      if (!project) return null;
+      const error = await shell.openPath(project.root);
+      if (error) throw new Error(error);
+      return project;
+    } finally {
+      release();
+    }
   });
   handle('noobi:project:assets:import', async (_event, projectId: string) => {
-    const project = await projectStore.get(validateProjectId(projectId));
-    if (isProjectBusyForMutation(project.id)) {
-      throw new Error('Agent 正在写入项目，请等待当前任务结束后再导入素材');
+    const id = validateProjectId(projectId);
+    const release = acquireProjectFilesystemAccess(id);
+    try {
+      const project = await projectStore.get(id);
+      if (isProjectBusyForMutation(project.id)) {
+        throw new Error('Agent 正在写入项目，请等待当前任务结束后再导入素材');
+      }
+      const options: Electron.OpenDialogOptions = {
+        title: '导入游戏素材',
+        defaultPath: project.root,
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          { name: '支持的游戏素材', extensions: ['png', 'jpg', 'jpeg', 'webp', 'wav', 'mp3', 'ogg', 'glb'] },
+          { name: '图像', extensions: ['png', 'jpg', 'jpeg', 'webp'] },
+          { name: '音频', extensions: ['wav', 'mp3', 'ogg'] },
+          { name: '3D 模型', extensions: ['glb'] },
+        ],
+      };
+      const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || result.filePaths.length === 0) {
+        return assetStore.list(project.id, project.root);
+      }
+      return importProjectAssetPaths(project, result.filePaths, '图像、音频或 3D 素材');
+    } finally {
+      release();
     }
-    const options: Electron.OpenDialogOptions = {
-      title: '导入游戏素材',
-      defaultPath: project.root,
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: '支持的游戏素材', extensions: ['png', 'jpg', 'jpeg', 'webp', 'wav', 'mp3', 'ogg', 'glb'] },
-        { name: '图像', extensions: ['png', 'jpg', 'jpeg', 'webp'] },
-        { name: '音频', extensions: ['wav', 'mp3', 'ogg'] },
-        { name: '3D 模型', extensions: ['glb'] },
-      ],
-    };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options);
-    if (result.canceled || result.filePaths.length === 0) {
-      return assetStore.list(project.id, project.root);
-    }
-    return importProjectAssetPaths(project, result.filePaths, '图像、音频或 3D 素材');
   });
   handle('noobi:project:assets:import-paths', async (_event, projectId: string, paths: unknown) => {
-    const project = await projectStore.get(validateProjectId(projectId));
-    if (isProjectBusyForMutation(project.id)) {
-      throw new Error('Agent 正在写入项目，请等待当前任务结束后再拖入图片');
-    }
-    if (!Array.isArray(paths) || paths.length === 0 || paths.length > 50) {
-      throw new Error('一次只能拖入 1–50 张图片');
-    }
-    const imagePaths = paths.map((path) => {
-      if (typeof path !== 'string' || !isAbsolute(path) || path.length > 4_000 || path.includes('\0')) {
-        throw new Error('拖入图片路径无效');
+    const id = validateProjectId(projectId);
+    const release = acquireProjectFilesystemAccess(id);
+    try {
+      const project = await projectStore.get(id);
+      if (isProjectBusyForMutation(project.id)) {
+        throw new Error('Agent 正在写入项目，请等待当前任务结束后再拖入图片');
       }
-      if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extname(path).toLowerCase())) {
-        throw new Error('拖拽仅支持 PNG、JPEG 和 WebP 图片');
+      if (!Array.isArray(paths) || paths.length === 0 || paths.length > 50) {
+        throw new Error('一次只能拖入 1–50 张图片');
       }
-      return path;
-    });
-    return importProjectAssetPaths(project, imagePaths, '拖入图片');
+      const imagePaths = paths.map((path) => {
+        if (typeof path !== 'string' || !isAbsolute(path) || path.length > 4_000 || path.includes('\0')) {
+          throw new Error('拖入图片路径无效');
+        }
+        if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extname(path).toLowerCase())) {
+          throw new Error('拖拽仅支持 PNG、JPEG 和 WebP 图片');
+        }
+        return path;
+      });
+      return importProjectAssetPaths(project, imagePaths, '拖入图片');
+    } finally {
+      release();
+    }
   });
   handle('noobi:project:asset-plan:retry', async (_event, projectId: string, planId: string) => {
     const project = await projectStore.get(validateProjectId(projectId));
@@ -708,35 +842,44 @@ function bindIpc(): void {
     return queued;
   });
   handle('noobi:project:inspect', async (_event, projectId: string): Promise<ProjectInspectorPayload> => {
-    const project = await projectStore.get(validateProjectId(projectId));
-    const useSourceAssetOverlay = project.status !== 'completed';
-    const [files, previewUrl, assets, experienceReport] = await Promise.all([
-      projectStore.listProjectFiles(project.id),
-      project.engine === 'godot'
-        ? previews.start(project.id, project.root, {
-            directory: 'build/web',
-            sourceFallback: false,
-            hideGodotSplash: true,
-            sourceAssetOverlay: useSourceAssetOverlay,
-          }).catch(() => '')
-        : previews.start(project.id, project.root, {
-            directory: 'dist',
-            sourceFallback: project.status !== 'completed',
-            sourceAssetOverlay: useSourceAssetOverlay,
-          }).catch(() => ''),
-      assetStore.list(project.id, project.root),
-      readLatestGameplayExperienceReport(project.root).catch(() => null),
-    ]);
-    const [assetPlans, imageVerification] = await Promise.all([
-      assetPlanStore.reconcile(project.id, project.root, assets),
-      verifyHostGeneratedImage(project, assets),
-    ]);
-    const imageGenerationGate = imageGenerationGateFromVerification(imageVerification);
-    return { files, previewUrl, assets, assetPlans, imageGenerationGate, experienceReport };
+    const id = validateProjectId(projectId);
+    const release = acquireProjectFilesystemAccess(id);
+    try {
+      const project = await projectStore.get(id);
+      if (!await projectDirectoryAvailable(project)) {
+        throw new Error('项目文件夹已被移动或改名。请点击右上角文件夹按钮，选择改名后的文件夹重新连接。');
+      }
+      const useSourceAssetOverlay = project.status !== 'completed';
+      const [files, previewUrl, assets, experienceReport] = await Promise.all([
+        projectStore.listProjectFiles(project.id),
+        project.engine === 'godot'
+          ? previews.start(project.id, project.root, {
+              directory: 'build/web',
+              sourceFallback: false,
+              hideGodotSplash: true,
+              sourceAssetOverlay: useSourceAssetOverlay,
+            }).catch(() => '')
+          : previews.start(project.id, project.root, {
+              directory: 'dist',
+              sourceFallback: project.status !== 'completed',
+              sourceAssetOverlay: useSourceAssetOverlay,
+            }).catch(() => ''),
+        assetStore.list(project.id, project.root),
+        readLatestGameplayExperienceReport(project.root).catch(() => null),
+      ]);
+      const [assetPlans, imageVerification] = await Promise.all([
+        assetPlanStore.reconcile(project.id, project.root, assets),
+        verifyHostGeneratedImage(project, assets),
+      ]);
+      const imageGenerationGate = imageGenerationGateFromVerification(imageVerification);
+      return { files, previewUrl, assets, assetPlans, imageGenerationGate, experienceReport };
+    } finally {
+      release();
+    }
   });
   handle('noobi:project:experience:evaluate', async (_event, projectId: string) => {
     const project = await projectStore.get(validateProjectId(projectId));
-    if (harness.isRunning(project.id) || projectRunReservations.has(project.id)) {
+    if (isProjectBusyForMutation(project.id)) {
       throw new Error('Agent 正在写入或启动项目，请等待当前任务结束后再进行体验评测');
     }
     if (experienceEvaluationRuns.has(project.id)) {
@@ -759,12 +902,33 @@ function bindIpc(): void {
     const id = validateProjectId(projectId);
     manualExperienceControllers.get(id)?.abort();
   });
-  handle('noobi:project:read', (_event, projectId: string, relativePath: string) => {
-    validateProjectId(projectId);
+  handle('noobi:project:read', async (_event, projectId: string, relativePath: string) => {
+    const id = validateProjectId(projectId);
     if (typeof relativePath !== 'string' || relativePath.length > 4_000) {
       throw new Error('无效的项目文件路径');
     }
-    return projectStore.readProjectFile(projectId, relativePath);
+    const release = acquireProjectFilesystemAccess(id);
+    try {
+      return await projectStore.readProjectFile(id, relativePath);
+    } finally {
+      release();
+    }
+  });
+  handle('noobi:project:icon', async (_event, projectId: string): Promise<ProjectIconData | null> => {
+    const id = validateProjectId(projectId);
+    const release = acquireProjectFilesystemAccess(id);
+    try {
+      const project = await projectStore.get(id);
+      if (!project.icon) return null;
+      const bytes = await readProjectIconBytes(project);
+      if (!bytes) return null;
+      return {
+        dataUrl: `data:image/png;base64,${bytes.toString('base64')}`,
+        updatedAt: project.icon.updatedAt,
+      };
+    } finally {
+      release();
+    }
   });
   handle('noobi:project:noobi-pack:save', (
     _event,
@@ -1124,13 +1288,13 @@ async function listSkillSettings(): Promise<SkillSetting[]> {
   const unique = new Map<string, SkillSetting>();
   for (const skill of skills) {
     if (!skill.path || unique.has(skill.path)) continue;
-    const source: SkillSetting['source'] = skill.path.includes(`${sep}plugins${sep}`)
-      ? 'plugin'
-      : skill.scope === 'system' || skill.scope === 'admin'
-        ? 'built-in'
-        : skill.scope === 'repo'
-          ? 'workspace'
-          : 'user';
+    // Codex 官方插件缓存（Canva/Figma 等）与游戏制作无关：不展示、不加载。
+    if (skill.path.includes(`${sep}plugins${sep}`)) continue;
+    const source: SkillSetting['source'] = skill.scope === 'system' || skill.scope === 'admin'
+      ? 'built-in'
+      : skill.scope === 'repo'
+        ? 'workspace'
+        : 'user';
     unique.set(skill.path, {
       id: skill.path,
       name: skill.name,
@@ -1294,6 +1458,7 @@ async function executeHarness(
       activeTurnId: null,
       lastError: null,
     });
+    void maybeGenerateGameIcon(project.id);
   } catch (error) {
     if (error instanceof GameHarnessStoppedError) return;
     const message = asError(error).message;
@@ -1310,10 +1475,37 @@ function isExternalDeliveryBlocker(message: string): boolean {
   return /(?:API\s*Key|鉴权|账户|余额|额度|套餐|使用资格|无权|权限|rate.?limit|too many requests|HTTP\s*(?:401|402|403|429)|status_code:\s*(?:1004|1008|1039|2049|2056|2153))/iu.test(message);
 }
 
-function isProjectBusyForMutation(projectId: string): boolean {
+function isProjectBusyForMutation(
+  projectId: string,
+  options: {
+    ignoreRunReservation?: boolean;
+    ignoreDeletionReservation?: boolean;
+  } = {},
+): boolean {
   return harness.isRunning(projectId)
-    || projectRunReservations.has(projectId)
-    || experienceEvaluationRuns.has(projectId);
+    || (!options.ignoreRunReservation && projectRunReservations.has(projectId))
+    || (!options.ignoreDeletionReservation && projectDeletionReservations.has(projectId))
+    || experienceEvaluationRuns.has(projectId)
+    || assetIngestionRuns.has(projectId)
+    || gameIconRuns.has(projectId);
+}
+
+function acquireProjectFilesystemAccess(projectId: string): () => void {
+  if (projectDeletionReservations.has(projectId)) {
+    throw new Error('项目正在删除，暂时不能访问项目文件');
+  }
+  projectFilesystemAccessCounts.set(
+    projectId,
+    (projectFilesystemAccessCounts.get(projectId) ?? 0) + 1,
+  );
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const remaining = (projectFilesystemAccessCounts.get(projectId) ?? 1) - 1;
+    if (remaining > 0) projectFilesystemAccessCounts.set(projectId, remaining);
+    else projectFilesystemAccessCounts.delete(projectId);
+  };
 }
 
 function startProductionPreview(project: ProjectRecord): Promise<string> {
@@ -1840,6 +2032,155 @@ async function updateProject(
   return project;
 }
 
+async function projectDirectoryAvailable(project: Pick<ProjectRecord, 'id' | 'root'>): Promise<boolean> {
+  try {
+    await resolveExistingProjectDirectory(project.root, project.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureProjectLocation(
+  project: ProjectRecord,
+  options: { ignoreRunReservation?: boolean } = {},
+): Promise<ProjectRecord | null> {
+  if (await projectDirectoryAvailable(project)) return project;
+  if (isProjectBusyForMutation(project.id, {
+    ignoreRunReservation: options.ignoreRunReservation,
+  })) {
+    throw new Error('项目正在工作，暂时不能重新定位文件夹。请先停止当前任务。');
+  }
+
+  while (true) {
+    const options: Electron.OpenDialogOptions = {
+      title: `重新连接“${project.name}”的项目文件夹`,
+      message: '请选择这个游戏改名或移动后的文件夹，NooBi 会核对项目身份并更新保存路径。',
+      buttonLabel: '重新连接',
+      defaultPath: dirname(project.root),
+      properties: ['openDirectory'],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled) return null;
+    const selectedDirectory = result.filePaths[0];
+    if (!selectedDirectory) return null;
+
+    try {
+      const relocated = await projectStore.relocate(project.id, selectedDirectory);
+      await Promise.allSettled([previews.stop(project.id), playtestPreviews.stop(project.id)]);
+      broadcast('noobi:event:project', relocated);
+      return relocated;
+    } catch (error) {
+      const messageOptions: Electron.MessageBoxOptions = {
+        type: 'warning',
+        title: '无法连接这个文件夹',
+        message: '请选择同一个游戏改名或移动后的文件夹',
+        detail: asError(error).message,
+        buttons: ['重新选择', '取消'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      };
+      const choice = mainWindow
+        ? await dialog.showMessageBox(mainWindow, messageOptions)
+        : await dialog.showMessageBox(messageOptions);
+      if (choice.response === 1) return null;
+    }
+  }
+}
+
+/**
+ * Projects created before icons existed receive their deterministic procedural
+ * pixel icon once at startup; failures never block the app.
+ */
+async function backfillProjectIcons(): Promise<void> {
+  try {
+    const projects = await projectStore.list();
+    for (const project of projects) {
+      if (project.icon || gameIconRuns.has(project.id)) continue;
+      gameIconRuns.add(project.id);
+      try {
+        const icon = await generateProceduralProjectIcon(project);
+        await updateProject(project.id, { icon });
+      } catch (error) {
+        if (process.env.NOOBI_DEBUG === '1') {
+          process.stderr.write(`[project-icon] backfill failed for ${project.id}: ${asError(error).message}\n`);
+        }
+      } finally {
+        gameIconRuns.delete(project.id);
+      }
+    }
+  } catch (error) {
+    if (process.env.NOOBI_DEBUG === '1') {
+      process.stderr.write(`[project-icon] backfill failed: ${asError(error).message}\n`);
+    }
+  }
+}
+
+/**
+ * Every new game immediately receives its deterministic procedural pixel icon;
+ * failures never block project creation.
+ */
+async function withProceduralIcon(project: ProjectRecord): Promise<ProjectRecord> {
+  try {
+    const icon = await generateProceduralProjectIcon(project);
+    return await projectStore.update(project.id, { icon });
+  } catch (error) {
+    if (process.env.NOOBI_DEBUG === '1') {
+      process.stderr.write(`[project-icon] procedural generation failed: ${asError(error).message}\n`);
+    }
+    return project;
+  }
+}
+
+const gameIconRuns = new Set<string>();
+
+/**
+ * Replaces the procedural placeholder with a pixel avatar that actually
+ * represents the game: a configured image API when available, otherwise a
+ * short Codex turn with the $imagegen skill. Never throws; the placeholder
+ * stays on any failure.
+ */
+async function maybeGenerateGameIcon(projectId: string): Promise<void> {
+  if (gameIconRuns.has(projectId)) return;
+  gameIconRuns.add(projectId);
+  try {
+    const current = await projectStore.get(projectId);
+    if (current.icon?.source === 'ai') return;
+    let icon = await generateAiProjectIcon(current, mediaGenerationService);
+    if (!icon) {
+      const status = runtime.status;
+      const skill = status.capabilities.imageGeneration
+        ? await resolveImageGenerationSkill()
+        : null;
+      if (!skill) return;
+      icon = await generateCodexProjectIcon(current, runtime, skill);
+    }
+    if (!icon) return;
+    const latest = await projectStore.get(projectId);
+    if (latest.icon?.source === 'ai' && latest.icon.updatedAt > icon.updatedAt) return;
+    await updateProject(projectId, { icon });
+    emitAgentEvent({
+      id: randomUUID(),
+      projectId,
+      kind: 'file',
+      title: '游戏图标已生成',
+      message: `根据「${current.name}」生成的像素风图标已保存：${icon.path}`,
+      stage: latest.stage,
+      timestamp: new Date().toISOString(),
+      method: 'project/icon-generated',
+    });
+  } catch (error) {
+    if (process.env.NOOBI_DEBUG === '1') {
+      process.stderr.write(`[project-icon] generation failed: ${asError(error).message}\n`);
+    }
+  } finally {
+    gameIconRuns.delete(projectId);
+  }
+}
+
 function emitAgentEvent(event: AgentEvent): void {
   void eventLog.append(event).catch((error) => {
     if (process.env.NOOBI_DEBUG === '1') process.stderr.write(`[event-log] ${asError(error).message}\n`);
@@ -1968,6 +2309,55 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     );
     await delay(300);
   }
+  if (process.env.NOOBI_SMOKE_COLLAPSED === '1') {
+    const collapsed = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('[aria-label="收起首页侧栏"]');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!collapsed) throw new Error('Home rail collapse control was not available');
+    await delay(300);
+    const railCollapsed = await window.webContents.executeJavaScript(
+      `document.querySelector('.project-rail.mode-dashboard')?.classList.contains('is-collapsed') === true`,
+      true,
+    ) as boolean;
+    if (!railCollapsed) throw new Error('Home rail did not enter its collapsed state');
+    const compactHomeVisible = await window.webContents.executeJavaScript(
+      `(() => {
+        const home = document.querySelector('.compact-project-list [aria-label="首页"]');
+        return home instanceof HTMLButtonElement
+          && Boolean(home.querySelector('.lucide-house'))
+          && !home.querySelector('.lucide-plus');
+      })()`,
+      true,
+    ) as boolean;
+    if (!compactHomeVisible) throw new Error('Collapsed home rail did not show the home icon');
+    const roundTrip = await window.webContents.executeJavaScript(
+      `(() => {
+        const brand = document.querySelector('[aria-label="展开首页侧栏"]');
+        if (!(brand instanceof HTMLButtonElement)) return false;
+        brand.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!roundTrip) throw new Error('Collapsed Noobi monogram was not available');
+    await delay(200);
+    const railExpanded = await window.webContents.executeJavaScript(
+      `document.querySelector('.project-rail.mode-dashboard')?.classList.contains('is-collapsed') === false`,
+      true,
+    ) as boolean;
+    if (!railExpanded) throw new Error('Collapsed Noobi monogram did not expand the home rail');
+    await window.webContents.executeJavaScript(
+      `document.querySelector('[aria-label="收起首页侧栏"]')?.click()`,
+      true,
+    );
+    await delay(200);
+  }
   if (process.env.NOOBI_SMOKE_PROMPT_PROGRESS === '1') {
     const samples: string[] = [];
     for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -1995,7 +2385,7 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     for (let attempt = 0; attempt < 20 && !opened; attempt += 1) {
       opened = await window.webContents.executeJavaScript(
         `(() => {
-          const trigger = document.querySelector('[aria-label="切换模型"]');
+          const trigger = document.querySelector('[aria-label="切换模型与推理强度"]');
           if (!(trigger instanceof HTMLButtonElement) || trigger.disabled) return false;
           trigger.click();
           return true;
@@ -2006,6 +2396,18 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     }
     if (!opened) throw new Error('Model picker trigger was not available');
     await delay(300);
+    const modelSectionOpened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = [...document.querySelectorAll('.home-model-row')]
+          .find((item) => item.querySelector('span')?.textContent?.trim() === '模型');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!modelSectionOpened) throw new Error('Model picker model section was not available');
+    await delay(200);
     const menu = await window.webContents.executeJavaScript(
       `(() => {
         const element = document.querySelector('.home-model-menu');
@@ -2035,7 +2437,15 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       `document.querySelector('.project-item')?.click()`,
       true,
     );
-    await delay(450);
+    let workbenchVisible = false;
+    for (let attempt = 0; attempt < 20 && !workbenchVisible; attempt += 1) {
+      workbenchVisible = await window.webContents.executeJavaScript(
+        `document.querySelector('.app-shell.view-workbench') instanceof HTMLElement`,
+        true,
+      ) as boolean;
+      if (!workbenchVisible) await delay(100);
+    }
+    if (!workbenchVisible) throw new Error('Workbench did not become visible');
     const opened = await window.webContents.executeJavaScript(
       `(() => {
         const trigger = document.querySelector('[aria-label="打开设置"]');
@@ -2162,6 +2572,17 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       true,
     );
     await delay(650);
+    const hasPlayablePreview = await window.webContents.executeJavaScript(
+      `document.querySelector('.preview-pane iframe') instanceof HTMLIFrameElement`,
+      true,
+    ) as boolean;
+    if (process.env.NOOBI_SMOKE_STATUS === 'stopped') {
+      const resumeVisible = await window.webContents.executeJavaScript(
+        `Boolean(document.querySelector('.composer-action.is-resume[aria-label="继续制作"]'))`,
+        true,
+      ) as boolean;
+      if (!resumeVisible) throw new Error('Stopped project did not show the resume action');
+    }
     const expectedScene = process.env.NOOBI_SMOKE_SCENE?.trim();
     if (isNoobiSceneId(expectedScene)) {
       const sceneState = await window.webContents.executeJavaScript(
@@ -2200,6 +2621,8 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
         throw new Error(`Noobi runtime background did not load correctly: ${JSON.stringify(sceneState)}`);
       }
       process.stdout.write(`Noobi runtime background loaded: ${sceneState.id}\n`);
+    } else if (process.env.NOOBI_SMOKE_EXPERIENCE_REPORT === 'expand' && hasPlayablePreview) {
+      process.stdout.write('Noobi workbench loaded a playable game preview\n');
     } else if (process.env.NOOBI_SMOKE_CREW !== '1') {
       const soloState = await window.webContents.executeJavaScript(
         `(() => {
@@ -2236,6 +2659,117 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
       }
       process.stdout.write('Noobi solo default loaded one character in the classic studio\n');
     }
+  }
+  if (process.env.NOOBI_SMOKE_PROJECT_RAIL === '1') {
+    const opened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector(
+          '[aria-label="打开项目列表"], [aria-label="打开项目导航"]',
+        );
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!opened) throw new Error('Project rail trigger was not available');
+    await delay(350);
+    const railState = await window.webContents.executeJavaScript(
+      `(() => {
+        const rail = document.querySelector('.project-rail.mode-workbench');
+        if (!(rail instanceof HTMLElement)) return null;
+        const rect = rail.getBoundingClientRect();
+        const style = getComputedStyle(rail);
+        return {
+          open: rail.classList.contains('is-open'),
+          width: Math.round(rect.width),
+          visible: style.display !== 'none' && style.visibility !== 'hidden',
+          projectRows: rail.querySelectorAll('.project-list .project-item').length,
+          closeVisible: Boolean(rail.querySelector('[aria-label="关闭项目导航"]')),
+        };
+      })()`,
+      true,
+    ) as {
+      open: boolean;
+      width: number;
+      visible: boolean;
+      projectRows: number;
+      closeVisible: boolean;
+    } | null;
+    if (!railState
+      || !railState.open
+      || railState.width < 260
+      || !railState.visible
+      || railState.projectRows < 1
+      || !railState.closeVisible) {
+      throw new Error(`Project rail did not open correctly: ${JSON.stringify(railState)}`);
+    }
+    process.stdout.write(`Noobi project rail opened ${JSON.stringify(railState)}\n`);
+  }
+  if (process.env.NOOBI_SMOKE_PROJECT_MENU === '1') {
+    const opened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('.project-item-more');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!opened) throw new Error('Project action menu trigger was not available');
+    await delay(250);
+    const menuState = await window.webContents.executeJavaScript(
+      `(() => {
+        const menu = document.querySelector('.project-actions-menu');
+        if (!(menu instanceof HTMLElement)) return null;
+        const rect = menu.getBoundingClientRect();
+        return {
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          labels: Array.from(menu.querySelectorAll('[role="menuitem"]'))
+            .map((item) => item.textContent?.trim() ?? ''),
+          insideViewport: rect.left >= 0 && rect.top >= 0
+            && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+        };
+      })()`,
+      true,
+    ) as { width: number; height: number; labels: string[]; insideViewport: boolean } | null;
+    if (!menuState
+      || menuState.width < 190
+      || menuState.height < 120
+      || !menuState.insideViewport
+      || !['重命名', '置顶', '删除'].every((label) => menuState.labels.includes(label))) {
+      throw new Error(`Project action menu did not open correctly: ${JSON.stringify(menuState)}`);
+    }
+    process.stdout.write(`Noobi project action menu opened ${JSON.stringify(menuState)}\n`);
+  }
+  if (process.env.NOOBI_SMOKE_GEAR_ALIGNMENT === '1') {
+    const alignment = await window.webContents.executeJavaScript(
+      `(() => {
+        const rail = document.querySelector('.project-rail.mode-workbench');
+        const settingsIcon = document.querySelector('.rail-settings svg');
+        const runtimeIcon = document.querySelector('.runtime-mini svg');
+        if (!(rail instanceof HTMLElement)
+          || !(settingsIcon instanceof SVGElement)
+          || !(runtimeIcon instanceof SVGElement)) return null;
+        const center = (element) => {
+          const rect = element.getBoundingClientRect();
+          return Math.round((rect.left + rect.width / 2) * 10) / 10;
+        };
+        return {
+          railCenter: center(rail),
+          settingsCenter: center(settingsIcon),
+          runtimeCenter: center(runtimeIcon),
+        };
+      })()`,
+      true,
+    ) as { railCenter: number; settingsCenter: number; runtimeCenter: number } | null;
+    if (!alignment
+      || Math.abs(alignment.settingsCenter - alignment.railCenter) > 1
+      || Math.abs(alignment.settingsCenter - alignment.runtimeCenter) > 1) {
+      throw new Error(`Collapsed settings icon is not centered: ${JSON.stringify(alignment)}`);
+    }
+    process.stdout.write(`Noobi collapsed settings icon aligned ${JSON.stringify(alignment)}\n`);
   }
   if (process.env.NOOBI_SMOKE_CREW === '1') {
     const crewState = await window.webContents.executeJavaScript(
@@ -2360,6 +2894,33 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     if (!changed) throw new Error(`Production assistant did not change action or position: ${JSON.stringify(initial)}`);
     process.stdout.write(`Noobi production assistant moved from ${initial.action} at ${initial.station}\n`);
   }
+  if (process.env.NOOBI_SMOKE_RENAME_TITLE === '1') {
+    const workbenchBrandCanExpand = await window.webContents.executeJavaScript(
+      `(() => {
+        const brand = document.querySelector('.project-rail.mode-workbench .brand');
+        return brand instanceof HTMLButtonElement
+          && brand.getAttribute('aria-label') === '打开项目列表';
+      })()`,
+      true,
+    ) as boolean;
+    if (!workbenchBrandCanExpand) throw new Error('Collapsed workbench rail cannot be expanded');
+    const opened = await window.webContents.executeJavaScript(
+      `(() => {
+        const trigger = document.querySelector('.agent-project-name');
+        if (!(trigger instanceof HTMLButtonElement)) return false;
+        trigger.click();
+        return true;
+      })()`,
+      true,
+    ) as boolean;
+    if (!opened) throw new Error('Workbench project title rename trigger was not available');
+    await delay(250);
+    const dialogVisible = await window.webContents.executeJavaScript(
+      `Boolean(document.querySelector('.rename-project-modal [aria-label="项目名称"]'))`,
+      true,
+    ) as boolean;
+    if (!dialogVisible) throw new Error('Workbench title did not open the rename dialog');
+  }
   await window.webContents.executeJavaScript(
     `document.querySelectorAll('.brief-card footer > span').forEach((node) => {
       node.textContent = 'LOCAL WORKSPACE / signal-garden';
@@ -2375,12 +2936,85 @@ async function captureSmoke(window: BrowserWindow, target: string): Promise<void
     );
     await delay(350);
   }
+  if (process.env.NOOBI_SMOKE_EXPERIENCE_REPORT === 'expand') {
+    let reportControlsReady = false;
+    for (let attempt = 0; attempt < 20 && !reportControlsReady; attempt += 1) {
+      reportControlsReady = await window.webContents.executeJavaScript(
+        `document.querySelector('.experience-report-trigger') instanceof HTMLButtonElement
+          && document.querySelector('.preview-pane iframe, .production-diorama') instanceof HTMLElement`,
+        true,
+      ) as boolean;
+      if (!reportControlsReady) await delay(250);
+    }
+    if (!reportControlsReady) throw new Error('Experience report controls were not available');
+    const collapsed = await window.webContents.executeJavaScript(
+      `(() => {
+        const report = document.querySelector('.experience-report');
+        const toggle = document.querySelector('.experience-report-trigger');
+        const preview = document.querySelector('.preview-pane iframe, .production-diorama');
+        if (!(toggle instanceof HTMLButtonElement) || !(preview instanceof HTMLElement)) return null;
+        const previewHeight = Math.round(preview.getBoundingClientRect().height);
+        toggle.click();
+        return {
+          reportVisible: report instanceof HTMLElement,
+          previewHeight,
+          expanded: toggle.getAttribute('aria-expanded'),
+        };
+      })()`,
+      true,
+    ) as { reportVisible: boolean; previewHeight: number; expanded: string | null } | null;
+    await delay(250);
+    const expanded = await window.webContents.executeJavaScript(
+      `(() => {
+        const report = document.querySelector('.experience-report');
+        const toggle = document.querySelector('.experience-report-trigger');
+        const details = document.querySelector('.experience-report-details');
+        const preview = document.querySelector('.preview-pane iframe, .production-diorama');
+        if (!(report instanceof HTMLElement)
+          || !(toggle instanceof HTMLButtonElement)
+          || !(preview instanceof HTMLElement)) return null;
+        report.scrollIntoView({ block: 'center' });
+        return {
+          height: Math.round(report.getBoundingClientRect().height),
+          width: Math.round(report.getBoundingClientRect().width),
+          previewHeight: Math.round(preview.getBoundingClientRect().height),
+          expanded: toggle.getAttribute('aria-expanded'),
+          details: details instanceof HTMLElement,
+        };
+      })()`,
+      true,
+    ) as {
+      height: number;
+      width: number;
+      previewHeight: number;
+      expanded: string | null;
+      details: boolean;
+    } | null;
+    if (!collapsed
+      || !expanded
+      || collapsed.reportVisible
+      || collapsed.expanded !== 'false'
+      || expanded.expanded !== 'true'
+      || !expanded.details
+      || expanded.height < 200
+      || Math.abs(expanded.previewHeight - collapsed.previewHeight) > 1) {
+      throw new Error(`Experience report did not expand correctly: ${JSON.stringify({ collapsed, expanded })}`);
+    }
+    process.stdout.write(
+      `Noobi experience report opened as ${expanded.width}x${expanded.height}px without resizing the ${expanded.previewHeight}px preview\n`,
+    );
+    await delay(250);
+  }
   const image = await window.webContents.capturePage();
   const output = resolve(target);
   await mkdir(dirname(output), { recursive: true });
   const { writeFile } = await import('node:fs/promises');
   await writeFile(output, image.toPNG());
   process.stdout.write(`Noobi UI smoke captured ${output}\n`);
+  if (process.env.NOOBI_SMOKE_HOLD === '1') {
+    process.stdout.write('Noobi UI smoke window left open for inspection\n');
+    return;
+  }
   app.quit();
 }
 
