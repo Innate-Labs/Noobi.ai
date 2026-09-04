@@ -57,6 +57,12 @@ const api: NoobiApi = {
     if (paths.length !== files.length) return Promise.reject(new Error('上传文件缺少本地路径'));
     return ipcRenderer.invoke('noobi:project:create', input, paths) as Promise<ProjectRecord>;
   },
+  renameProject: (projectId: string, name: string) =>
+    ipcRenderer.invoke('noobi:project:rename', projectId, name) as Promise<ProjectRecord>,
+  setProjectPinned: (projectId: string, pinned: boolean) =>
+    ipcRenderer.invoke('noobi:project:pin', projectId, pinned) as Promise<ProjectRecord>,
+  deleteProject: (projectId: string) =>
+    ipcRenderer.invoke('noobi:project:delete', projectId) as Promise<ProjectRecord>,
   runProject: (input: RunProjectInput) =>
     ipcRenderer.invoke('noobi:project:run', input) as Promise<ProjectRecord>,
   stopProject: (projectId: string) =>
