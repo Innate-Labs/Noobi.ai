@@ -1,14 +1,16 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { GameAssetRecord } from '../shared/contracts.js';
 import { AssetPlanStore } from './assetPlanStore.js';
+import * as attestation from './imageGenerationAttestation.js';
 
 const roots: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -132,6 +134,63 @@ describe('AssetPlanStore', () => {
       relativePath: asset.relativePath,
       sha256: asset.sha256,
     });
+  });
+
+  it('does not replace a newer generated asset with a delayed reference scan', async () => {
+    const fixture = await makeFixture();
+    const store = new AssetPlanStore(fixture.storageFile);
+    await store.init();
+    await store.upsert({ id: 'hero', projectId: 'project-1', name: 'Hero', kind: 'image', prompt: 'Hero sprite' });
+    const previous = fakeAsset();
+    const replacement = fakeAsset({
+      id: 'replacement', relativePath: 'public/assets/images/replacement.png', sha256: 'b'.repeat(64),
+    });
+    await store.generated('project-1', 'hero', previous, 'configured-api');
+
+    let releaseScan!: (path: string) => void;
+    let startScan!: () => void;
+    const scanStarted = new Promise<void>((resolve) => { startScan = resolve; });
+    vi.spyOn(attestation, 'findProductionAssetReference').mockImplementationOnce(async () => {
+      startScan();
+      return new Promise<string>((resolve) => { releaseScan = resolve; });
+    });
+    const reconciliation = store.reconcile('project-1', fixture.root, [previous]);
+    await scanStarted;
+    await store.begin('project-1', 'hero', 'configured-api');
+    await store.generated('project-1', 'hero', replacement, 'configured-api');
+    const expected = await store.get('project-1', 'hero');
+    releaseScan('src/previous.ts');
+    await reconciliation;
+
+    expect(await store.get('project-1', 'hero')).toEqual(expected);
+    const reloaded = new AssetPlanStore(fixture.storageFile);
+    await reloaded.init();
+    expect(await reloaded.get('project-1', 'hero')).toEqual(expected);
+  });
+
+  it('does not clear a newer asset when an earlier snapshot reports a missing file', async () => {
+    const fixture = await makeFixture();
+    const store = new AssetPlanStore(fixture.storageFile);
+    await store.init();
+    await store.upsert({ id: 'hero', projectId: 'project-1', name: 'Hero', kind: 'image', prompt: 'Hero sprite' });
+    await store.generated('project-1', 'hero', fakeAsset(), 'configured-api');
+    const replacement = fakeAsset({
+      id: 'replacement', relativePath: 'public/assets/images/replacement.png', sha256: 'b'.repeat(64),
+    });
+    const list = store.list.bind(store);
+    vi.spyOn(store, 'list').mockImplementationOnce(async (projectId) => {
+      const snapshot = await list(projectId);
+      await store.generated(projectId, 'hero', replacement, 'configured-api');
+      return snapshot;
+    });
+
+    await store.reconcile('project-1', fixture.root, []);
+    expect(await store.get('project-1', 'hero')).toMatchObject({
+      status: 'generated', assetId: replacement.id, relativePath: replacement.relativePath, sha256: replacement.sha256,
+    });
+    // An unchanged missing asset must still be marked as a retryable failure.
+    await store.reconcile('project-1', fixture.root, []);
+    expect(await store.get('project-1', 'hero')).toMatchObject({ status: 'failed', error: { code: 'asset-missing' } });
   });
 });
 
