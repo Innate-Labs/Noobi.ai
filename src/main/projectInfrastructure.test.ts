@@ -500,6 +500,49 @@ describe('project infrastructure', () => {
     }
   });
 
+  it('honors the Inspector source fallback before the first explicit dist build', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-preview-explicit-fallback-'));
+    roots.push(root);
+    const store = new ProjectStore(join(root, 'data/projects.json'), join(root, 'games'));
+    const project = await store.create({
+      name: 'New Web Project', idea: 'Preview the starter and imported media before building.',
+      parentDirectory: join(root, 'games'), model: null,
+    });
+    await mkdir(join(project.root, 'public/assets/images'), { recursive: true });
+    await writeFile(join(project.root, 'public/assets/images/hero.png'), 'source image');
+    const preview = new PreviewServer();
+    try {
+      const options = { directory: 'dist', sourceFallback: true, sourceAssetOverlay: true };
+      const sourceUrl = await preview.start(project.id, project.root, options);
+      expect((await fetch(sourceUrl)).status).toBe(200);
+      expect(await (await fetch(`${sourceUrl}assets/images/hero.png`)).text()).toBe('source image');
+      expect((await fetch(`${sourceUrl}package.json`)).status).toBe(404);
+
+      await mkdir(join(project.root, 'dist'));
+      await writeFile(join(project.root, 'dist/index.html'), '<main>Production game</main>');
+      const buildUrl = await preview.start(project.id, project.root, options);
+      expect(await (await fetch(buildUrl)).text()).toBe('<main>Production game</main>');
+    } finally {
+      await preview.stopAll();
+    }
+  });
+
+  it('does not enable fallback implicitly for an explicit production directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-preview-explicit-strict-'));
+    roots.push(root);
+    await writeFile(join(root, 'index.html'), '<main>Source only</main>');
+    const preview = new PreviewServer();
+    try {
+      await expect(preview.start('strict', root, { directory: 'dist', sourceFallback: false })).rejects.toThrow();
+      await expect(preview.start('implicit', root, { directory: 'dist' })).rejects.toThrow();
+      await symlink(root, join(root, 'dist'));
+      await expect(preview.start('unsafe', root, { directory: 'dist', sourceFallback: true }))
+        .rejects.toThrow('symbolic link');
+    } finally {
+      await preview.stopAll();
+    }
+  });
+
   it('hides Godot branding in legacy Web previews without mutating the build', async () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-godot-preview-branding-'));
     roots.push(root);
