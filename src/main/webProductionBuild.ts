@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { parse, type DefaultTreeAdapterMap } from 'parse5';
 
 const BUILD_TIME_TOLERANCE_MS = 2_000;
 const EXCLUDED_INPUT_DIRECTORIES = new Set([
@@ -394,13 +395,19 @@ async function verifyIndexReferences(
 
 function extractHtmlReferences(html: string): string[] {
   const references = new Set<string>();
-  const tagPattern = /<\s*(script|link|img|source|audio|video|track|object|embed|input|iframe)\b[^>]*>/giu;
-  for (const tagMatch of html.matchAll(tagPattern)) {
-    const tag = tagMatch[0];
-    const attributePattern = /\b(src|href|poster|data|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/giu;
-    for (const attributeMatch of tag.matchAll(attributePattern)) {
-      const name = attributeMatch[1].toLowerCase();
-      const value = attributeMatch[2] ?? attributeMatch[3] ?? attributeMatch[4] ?? '';
+  const resourceTags = new Set(['script', 'link', 'img', 'source', 'audio', 'video', 'track', 'object', 'embed', 'input', 'iframe']);
+  const resourceAttributes = new Set(['src', 'href', 'poster', 'data', 'srcset']);
+  // Parse HTML rather than matching tags inside comments, raw text, or
+  // attribute values. Attribute names must match exactly (not data-src).
+  const pending: DefaultTreeAdapterMap['node'][] = [parse(html)];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if ('childNodes' in node) {
+      for (const child of node.childNodes) pending.push(child);
+    }
+    if (!('tagName' in node) || !resourceTags.has(node.tagName)) continue;
+    for (const { name, value } of node.attrs) {
+      if (!resourceAttributes.has(name)) continue;
       if (name === 'srcset') {
         const trimmed = value.trim();
         if (trimmed.startsWith('data:')) {

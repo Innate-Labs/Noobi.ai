@@ -57,6 +57,7 @@
     "@openai/codex": "0.148.0",
     "@vp-tw/cjk-web-fonts-fusion-pixel-font": "^0.0.1",
     "lucide-react": "^0.468.0",
+    "parse5": "8.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "three": "^0.185.1",
