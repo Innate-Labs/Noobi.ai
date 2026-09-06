@@ -251,7 +251,7 @@ export class AssetPlanStore {
               message: '生成的素材文件已不存在或内容发生变化，可以重新生成。',
               retryable: true,
             },
-          }));
+          }), plan);
         }
         continue;
       }
@@ -265,7 +265,7 @@ export class AssetPlanStore {
         ...(['generated', 'ready'].includes(current.status)
           ? { status: referencedBy ? 'ready' as const : 'generated' as const }
           : {}),
-      }));
+      }), plan);
     }
     return this.list(projectId);
   }
@@ -282,10 +282,16 @@ export class AssetPlanStore {
     projectId: string,
     planId: string,
     updater: (plan: AssetPlanRecord) => AssetPlanRecord,
+    expected?: AssetPlanRecord,
   ): Promise<AssetPlanRecord> {
     return this.#exclusive(async () => {
       await this.#ensureLoaded();
       const current = this.#required(projectId, planId);
+      // Reconciliation scans outside the mutation queue. Do not apply its
+      // stale result after generation, retry, or another update changed the plan.
+      if (expected && JSON.stringify(current) !== JSON.stringify(expected)) {
+        return structuredClone(current);
+      }
       const index = this.#plans.indexOf(current);
       const candidate = validateRecord(compactPlan({
         ...updater(structuredClone(current)),

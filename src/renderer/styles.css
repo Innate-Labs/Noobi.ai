@@ -6908,6 +6908,125 @@ a {
   text-wrap: balance;
 }
 
+.home-readiness {
+  width: 100%;
+  margin-top: 24px;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 82%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--studio-surface) 88%, transparent);
+  padding: 14px;
+  box-shadow: 0 16px 46px color-mix(in srgb, var(--studio-shadow) 62%, transparent);
+  text-align: left;
+  backdrop-filter: blur(18px) saturate(1.18);
+}
+
+.home-readiness > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 1px 2px 11px;
+}
+
+.home-readiness > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.home-readiness > header span {
+  color: var(--studio-accent);
+  font: 700 8px/1 var(--mono);
+  letter-spacing: 0.13em;
+}
+
+.home-readiness > header strong {
+  color: var(--studio-text);
+  font-size: 13px;
+}
+
+.home-readiness > header > em {
+  border: 1px solid color-mix(in srgb, var(--studio-accent) 32%, var(--studio-border));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--studio-accent);
+  padding: 6px 9px;
+  font: 700 9px/1 var(--mono);
+  font-style: normal;
+}
+
+.home-readiness > header > em.is-ready {
+  border-color: color-mix(in srgb, var(--green) 42%, var(--studio-border));
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.home-readiness-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.home-readiness-grid > button {
+  display: grid;
+  min-width: 0;
+  min-height: 66px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--studio-border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--studio-surface-raised) 76%, transparent);
+  color: var(--studio-muted);
+  padding: 10px 11px;
+  text-align: left;
+}
+
+.home-readiness-grid > button.needs-action {
+  border-color: color-mix(in srgb, var(--studio-accent) 34%, var(--studio-border));
+  color: var(--studio-accent);
+  cursor: pointer;
+}
+
+.home-readiness-grid > button.needs-action:hover {
+  border-color: var(--studio-accent);
+  background: color-mix(in srgb, var(--accent-soft) 76%, var(--studio-surface));
+  transform: translateY(-1px);
+}
+
+.home-readiness-grid > button.is-ready {
+  color: var(--green);
+  cursor: default;
+  opacity: 1;
+}
+
+.home-readiness-grid > button > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.home-readiness-grid > button strong {
+  overflow: hidden;
+  color: var(--studio-text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-readiness-grid > button small {
+  overflow: hidden;
+  color: var(--studio-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-readiness-grid > button > em {
+  color: currentColor;
+  font: 700 9px/1 var(--mono);
+  font-style: normal;
+  white-space: nowrap;
+}
+
 .home-prompt-card {
   position: relative;
   width: 100%;
@@ -8951,6 +9070,10 @@ a {
 }
 
 @media (min-width: 760px) {
+  .home-readiness-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .pixel-station {
     transform: scale(0.9);
   }
