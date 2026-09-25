@@ -267,3 +267,5 @@ Generated Godot games can use the versioned native UI kit for title/HUD/inventor
 Reference comparison now pairs frozen reference inputs with host-verified game captures and preserves five separate evidence notes. Long-run checks require actor bounds and active-state assertions; rendering while falling outside the level is a failure. Full gameplay and human acceptance remain separate.
 
 Resource exhaustion now pauses new code-repair attempts and preserves the remaining budget. Diagnose host memory/disk and game allocations before resuming; the error alone does not identify the cause.
+
+The engineering macOS export check now packages a frozen UI fixture, verifies its native signature and title, and records actual OS keyboard play plus save recovery in a fresh process. This is separate from the production export button, clean-device qualification, and autonomous-game acceptance.

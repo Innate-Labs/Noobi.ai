@@ -31,3 +31,8 @@
 ![真实拾取后背包](../evidence/game-ui/03-inventory.png)
 
 ![小窗口设置](../evidence/game-ui/16-small-settings.png)
+
+
+## 原生独立包输入验证补充
+
+阶段 10 已将此 UI 工程夹具导出为独立 macOS `.app`，完成实际原生渲染、14 步系统键盘流程，以及退出进程后重新启动继续读取进度。证据和边界见 [原生导出报告](10-delivery.md)。该结果属于 UI 工程组件的独立运行验证，未声称 Noobi 自主生成的 A/B 成品或任意风格界面已验收。

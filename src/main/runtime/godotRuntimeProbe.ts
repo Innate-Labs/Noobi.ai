@@ -77,7 +77,7 @@ func _process(_delta: float) -> void:
         encoded = JSON.stringify(packet)
     if OS.has_feature("web"):
         JavaScriptBridge.eval("window.__noobiRuntime=" + encoded + ";window.__noobiRuntimeReceivedAt=performance.now();", true)
-    elif sequence <= 2:
+    elif sequence <= 2 or OS.get_cmdline_user_args().has("--noobi-native-probe"):
         print("NOOBI_RUNTIME " + encoded)
 
 func _collect(node: Node, scene: Node) -> void:
