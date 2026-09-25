@@ -1,6 +1,11 @@
 import type { GameEngine } from './contracts.js';
 
-export interface PlanRequirement { id: string; text: string }
+export interface PlanRequirement { id: string; text: string; source?: 'request' | 'revision' | 'import' }
+export interface PlanDesign { camera: string; regions: string; characters: string; style: string; budget: string }
+export const PLAN_EDITABLE_FIELDS = ['title', 'approach', 'engine', 'dimension', 'platform', 'coreLoop', 'features', 'assumptions', 'exclusions', 'design'] as const;
+export type PlanEditableField = typeof PLAN_EDITABLE_FIELDS[number];
+export interface PlanFieldLock { optionId: string; field: PlanEditableField }
+export interface PlanChangeImpact { scope: string[]; systems: string[]; saveCompatibility: string; regression: string[] }
 export interface PlanOption {
   id: string;
   title: string;
@@ -14,6 +19,7 @@ export interface PlanOption {
   exclusions: string[];
   requirementIds: string[];
   estimate: { timeRange: null; costRange: null; basis: string };
+  design?: PlanDesign;
 }
 export interface PlanVersion {
   id: string;
@@ -26,6 +32,11 @@ export interface PlanVersion {
   turnId: string;
   analysisDurationMs: number;
   analysisUsage: { inputTokens: number; outputTokens: number; totalTokens: number } | null;
+  authoredBy?: 'model' | 'user';
+  requiresReview?: boolean;
+  changes?: string[];
+  sourceHash?: string;
+  impact?: PlanChangeImpact;
 }
 export interface PlanRun {
   id: string;
@@ -80,6 +91,11 @@ export interface PlanDraft {
   error: string | null;
   version: PlanVersion | null;
   run: PlanRun | null;
+  history?: PlanVersion[];
+  locks?: PlanFieldLock[];
+  revisionRequest?: string;
+  importedPlan?: string;
+  mergeOptionId?: string;
 }
 export interface GeneratePlansInput {
   request: string;
@@ -93,4 +109,17 @@ export interface StartPlanInput {
   versionId: string;
   optionId: string;
   projectDirectory?: string;
+}
+export interface SavePlanEditsInput {
+  draftId: string;
+  versionId: string;
+  option: PlanOption;
+  locks: PlanFieldLock[];
+}
+export interface RevisePlansInput {
+  draftId: string;
+  versionId: string;
+  instruction: string;
+  importedPlan?: string;
+  mergeOptionId?: string;
 }

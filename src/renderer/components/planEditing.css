@@ -1,0 +1,17 @@
+.plan-editor,.plan-revision{margin-top:16px;padding:16px;border:1px solid var(--line,#d4d1c9);border-radius:14px;background:var(--surface,#fffef9);min-width:0}
+.plan-editor p,.plan-revision p{font-size:13px;line-height:1.6}
+.plan-editor textarea,.plan-editor select,.plan-revision textarea,.plan-revision select{display:block;width:100%;box-sizing:border-box;margin:6px 0 10px;padding:10px;border:1px solid var(--line,#cfcabe);border-radius:8px;background:var(--surface,#fff);color:inherit;font:inherit;resize:vertical;min-width:0}
+.plan-editor textarea:focus-visible,.plan-editor select:focus-visible,.plan-revision textarea:focus-visible,.plan-revision select:focus-visible{outline:2px solid #548969;outline-offset:2px}
+.plan-edit-field,.plan-design-field,.plan-revision>label{display:block;margin:12px 0;font-size:13px;font-weight:600}
+.plan-lock{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:400}
+.plan-edit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.plan-editor fieldset{min-width:0;margin-top:16px;border:1px solid var(--line,#d4d1c9);border-radius:10px;padding:12px}
+.plan-edit-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-top:16px}
+.plan-editor button,.plan-revision button{padding:9px 14px;border:1px solid var(--line,#b8b4a9);border-radius:9px;background:var(--surface,#fffef9);color:inherit;font:inherit;cursor:pointer}
+.plan-editor button:disabled,.plan-revision button:disabled{opacity:.5;cursor:default}
+.plan-version-history{margin-top:16px;padding:12px;border-top:1px solid var(--line,#d4d1c9);overflow-wrap:anywhere}
+.plan-version-history pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto}
+.plan-impact{padding:12px;border:1px solid var(--line,#d4d1c9);border-radius:10px;font-size:13px}
+@media(max-width:600px){.plan-edit-grid{grid-template-columns:1fr}.plan-editor,.plan-revision{padding:10px}}
+
+.plan-option.is-editing{grid-column:1/-1;order:-1}

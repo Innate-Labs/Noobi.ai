@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { latestProjectPlan, type GeneratePlansInput, type PlanDraft, type PlanOption, type PlanVersion, type StartPlanInput, type ResumeProjectInput } from '../shared/planning.js';
+import { latestProjectPlan, type GeneratePlansInput, type PlanDraft, type PlanOption, type PlanVersion, type StartPlanInput, type ResumeProjectInput, type SavePlanEditsInput, type RevisePlansInput } from '../shared/planning.js';
+import { lockedPlanChanges, planDifferences, validateEditedOption, validatePlanLocks } from './planEditing.js';
+import { PLAN_EDITABLE_FIELDS } from '../shared/planning.js';
 
 /** Host-owned, serialized atomic snapshots. A persisted run reservation is never replayed automatically. */
 export class PlanStore {
@@ -73,12 +75,58 @@ export class PlanStore {
       return draft;
     });
   }
+  saveEdits(input: SavePlanEditsInput): Promise<PlanDraft> {
+    return this.#mutate(() => {
+      const draft = this.#editable(input?.draftId, input?.versionId);
+      const option = validateEditedOption(input.option, draft);
+      const locks = validatePlanLocks(input.locks, draft);
+      const options = draft.version!.options.map(o => o.id === option.id ? option : o);
+      const retainedLocks = (draft.locks ?? []).filter(lock => locks.some(l => l.optionId === lock.optionId && l.field === lock.field));
+      const conflicts = lockedPlanChanges(draft, options, retainedLocks);
+      if (conflicts.length) throw new Error(`请先解锁再修改：${conflicts.join('、')}`);
+      const previous = draft.version!;
+      const changes = planDifferences(previous.options, options);
+      const contentChanged = changes.length > 0;
+      // Manual decisions survive regeneration. Unlocking is an explicit, versioned action.
+      for (const field of PLAN_EDITABLE_FIELDS) {
+        if (JSON.stringify(previous.options.find(o => o.id === option.id)?.[field]) !== JSON.stringify(option[field])
+          && !locks.some(lock => lock.optionId === option.id && lock.field === field)) locks.push({ optionId: option.id, field });
+      }
+      if (JSON.stringify(draft.locks ?? []) !== JSON.stringify(locks)) changes.push('更新字段锁定');
+      if (!changes.length) return draft;
+      draft.history = [...(draft.history ?? []), structuredClone(previous)];
+      draft.version = { ...structuredClone(previous), id: randomUUID(), number: previous.number + 1,
+        createdAt: new Date().toISOString(), options, authoredBy: 'user', requiresReview: contentChanged || previous.requiresReview, changes, model: null,
+        threadId: '', turnId: '', analysisDurationMs: 0, analysisUsage: null };
+      draft.locks = locks; draft.updatedAt = draft.version.createdAt; draft.status = 'ready'; draft.error = null;
+      return draft;
+    });
+  }
+  revise(input: RevisePlansInput): Promise<PlanDraft> {
+    return this.#mutate(() => {
+      const draft = this.#editable(input?.draftId, input?.versionId);
+      if (typeof input.instruction !== 'string' || !input.instruction.trim() || input.instruction.length > 3000) throw new Error('修改说明需要 1–3000 字');
+      if (input.importedPlan !== undefined && (typeof input.importedPlan !== 'string' || input.importedPlan.length > 12000 || /\u0000/u.test(input.importedPlan))) throw new Error('导入计划必须是最多 12000 字的文本');
+      const merged = input.mergeOptionId ? draft.version!.options.find(o => o.id === input.mergeOptionId) : null;
+      if (input.mergeOptionId && !merged) throw new Error('找不到待组合方案');
+      draft.revisionRequest = input.instruction.trim();
+      draft.mergeOptionId = merged?.id;
+      if (input.importedPlan !== undefined) draft.importedPlan = input.importedPlan.trim();
+      draft.status = 'generating'; draft.attemptId = randomUUID(); draft.error = null; draft.updatedAt = new Date().toISOString();
+      draft.analysisAttempts.push({ id: draft.attemptId, startedAt: draft.updatedAt, durationMs: null, usage: null, status: 'generating' });
+      return draft;
+    });
+  }
   finish(id: string, attemptId: string, version: PlanVersion | null, error: string | null): Promise<PlanDraft> {
     return this.#mutate(() => {
       const draft = this.#find(id);
       if (draft.attemptId !== attemptId || draft.status !== 'generating') return draft;
       draft.status = version ? 'ready' : 'failed'; draft.error = error;
-      if (version) draft.version = version;
+      if (version) {
+        const previous = draft.version;
+        if (previous) draft.history = [...(draft.history ?? []), structuredClone(previous)];
+        draft.version = { ...version, authoredBy: 'model', changes: previous ? planDifferences(previous.options, version.options) : [] };
+      }
       draft.updatedAt = new Date().toISOString(); return draft;
     });
   }
@@ -101,6 +149,7 @@ export class PlanStore {
       const draft = this.#find(input.draftId);
       const version = draft.version;
       if (draft.status !== 'ready' || !version || version.id !== input.versionId) throw new Error('方案版本已变化，请重新查看并选择');
+      if (version.requiresReview) throw new Error('手动修改已保存，请先校验方案冲突，再开始制作');
       const option = version.options.find(o => o.id === input.optionId);
       if (!option) throw new Error('请选择当前版本中的一个方案');
       if (draft.run) {
@@ -145,6 +194,13 @@ export class PlanStore {
     });
   }
   #find(id: string): PlanDraft { const d = this.#drafts.find(d => d.id === id); if (!d) throw new Error('找不到制作方案'); return d; }
+  #editable(id: string, versionId: string): PlanDraft {
+    const draft = this.#find(id);
+    if (draft.run) throw new Error('已开始制作的方案不可改写，请从项目提出新修改');
+    if (draft.status === 'generating') throw new Error('请等待当前方案生成结束');
+    if (!draft.version || draft.version.id !== versionId) throw new Error('方案版本已变化，请刷新后编辑');
+    return draft;
+  }
   #mutate<T>(operation: () => T): Promise<T> {
     const pending = this.#queue.then(async () => {
       const before = structuredClone(this.#drafts);

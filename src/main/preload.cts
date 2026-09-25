@@ -52,6 +52,8 @@ const api: NoobiApi = {
     ipcRenderer.invoke('noobi:dialog:project-directory') as Promise<string | null>,
   createProject: (input: CreateProjectInput) => ipcRenderer.invoke('noobi:project:create', input),
   generatePlans: (input: GeneratePlansInput) => ipcRenderer.invoke('noobi:plans:generate', input) as Promise<PlanDraft>,
+  savePlanEdits: input => ipcRenderer.invoke('noobi:plans:edit', input) as Promise<PlanDraft>,
+  revisePlans: input => ipcRenderer.invoke('noobi:plans:revise', input) as Promise<PlanDraft>,
   listPlans: () => ipcRenderer.invoke('noobi:plans:list') as Promise<PlanDraft[]>,
   getPlan: (id: string) => ipcRenderer.invoke('noobi:plans:get', id) as Promise<PlanDraft>,
   retryPlan: (id: string) => ipcRenderer.invoke('noobi:plans:retry', id) as Promise<PlanDraft>,

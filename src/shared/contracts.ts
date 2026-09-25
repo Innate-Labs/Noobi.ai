@@ -1,4 +1,4 @@
-import type { GeneratePlansInput, PlanDraft, StartPlanInput, ResumeProjectInput } from './planning.js';
+import type { GeneratePlansInput, PlanDraft, StartPlanInput, ResumeProjectInput, SavePlanEditsInput, RevisePlansInput } from './planning.js';
 import type { ProductionProgress } from './productionProgress.js';
 export type PipelineStage =
   | 'brief'
@@ -575,6 +575,8 @@ export interface LoginStartResult {
 
 export interface NoobiApi {
   generatePlans(input: GeneratePlansInput): Promise<PlanDraft>;
+  savePlanEdits(input: SavePlanEditsInput): Promise<PlanDraft>;
+  revisePlans(input: RevisePlansInput): Promise<PlanDraft>;
   listPlans(): Promise<PlanDraft[]>;
   getPlan(id: string): Promise<PlanDraft>;
   retryPlan(id: string): Promise<PlanDraft>;

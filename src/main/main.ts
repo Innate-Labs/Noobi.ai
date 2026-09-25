@@ -1,7 +1,7 @@
 import { ReferenceModel3dService } from './referenceModel3d.js';
 import { renderReferenceModel } from './referenceModelRenderer.js';
 import { PlanStore } from './planStore.js';
-import { PlanService } from './planService.js';
+import { PlanService, requirementsFor } from './planService.js';
 import { PlanStarter } from './planStarter.js';
 import { PlanResumer, continuationPrompt } from './planResumer.js';
 import { ProductionRunStore } from './production/productionRunStore.js';
@@ -9,7 +9,7 @@ import { GameVersionStore } from './production/gameVersionStore.js';
 import { GameVersionRestorer } from './production/gameVersionRestorer.js';
 import type { GameVersion, RestoreGameVersionInput } from '../shared/gameVersions.js';
 import type { ProductionProgress, ProductionSession } from '../shared/productionProgress.js';
-import { latestProjectPlan, type GeneratePlansInput, type PlanDraft, type PlanOption, type StartPlanInput, type ResumeProjectInput } from '../shared/planning.js';
+import { latestProjectPlan, type GeneratePlansInput, type PlanDraft, type PlanOption, type StartPlanInput, type ResumeProjectInput, type SavePlanEditsInput, type RevisePlansInput } from '../shared/planning.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -258,12 +258,19 @@ async function launch(): Promise<void> {
     if (project && !await projectDirectoryAvailable(project)) throw new Error('项目目录已移动，请重新连接后规划');
     if (!project) await mkdir(cwd, { recursive: true });
     const release = project ? acquireProjectFilesystemAccess(project.id) : undefined;
-    return { cwd, engine: project?.engine, projectBrief: project?.idea, godotAvailable: godot.canCreateProjects, release };
+    try {
+      return { cwd, engine: project?.engine, projectBrief: project?.idea, godotAvailable: godot.canCreateProjects, release,
+        ...(project ? { sourceHash: await godotBuildStore.fingerprint(project.root),
+          requirements: latestProjectPlan(await planStore.list(), project.id)?.version?.requirements ?? requirementsFor(project.idea) } : {}) };
+    } catch (error) { release?.(); throw error; }
   });
   planStarter = new PlanStarter(planStore, {
     getProject: id => projectStore.get(id),
     prepare: async (draft, option, input, attachments) => {
-      if (draft.projectId) return projectStore.get(draft.projectId);
+      if (draft.projectId) {
+        const project = await projectStore.get(draft.projectId);
+        return project;
+      }
       const actualCount = [attachments[0], attachments[1]].reduce<number>((count, value) => count + (Array.isArray(value) ? value.length : 0), 0);
       if (actualCount !== draft.attachmentCount) throw new Error('附件数量与规划时不一致，请重新添加参考附件');
       if (typeof input.projectDirectory !== 'string') throw new Error('请选择项目文件夹');
@@ -635,6 +642,10 @@ async function dispatchApprovedProject(input: RunProjectInput, draft: PlanDraft,
     const locatedProject = await ensureProjectLocation(project, { ignoreRunReservation: true });
     if (!locatedProject) throw new Error('尚未重新连接项目文件夹，本次制作没有启动。');
     project = locatedProject;
+    if (!continuation && draft.projectId && draft.version?.sourceHash
+      && await godotBuildStore.fingerprint(project.root) !== draft.version.sourceHash) {
+      throw new Error('工程在规划后已变化，请重新规划以确认影响范围');
+    }
     if (project.engine === 'godot') {
       const godot = await godotEnvironmentService.refresh();
       if (!godot.canCreateProjects) {
@@ -791,6 +802,20 @@ function bindIpc(): void {
     return draft;
   });
   handle('noobi:plans:list', () => planStore.list());
+  handle('noobi:plans:edit', async (_event, input: SavePlanEditsInput) => {
+    const draft = await planStore.get(input?.draftId);
+    if (draft.projectId && isProjectBusyForMutation(draft.projectId)) throw new Error('当前制作仍在运行，不能修改方案');
+    return planStore.saveEdits(input);
+  });
+  handle('noobi:plans:revise', async (_event, input: RevisePlansInput) => {
+    const status = await runtime.start();
+    if (!status.account) throw new Error('请先登录 ChatGPT，再修改方案');
+    const current = await planStore.get(input?.draftId);
+    if (current.projectId && isProjectBusyForMutation(current.projectId)) throw new Error('当前制作仍在运行，不能修改方案');
+    const draft = await planStore.revise(input);
+    trackBackgroundRun(planService.generate(draft));
+    return draft;
+  });
   handle('noobi:plans:get', (_event, id: string) => planStore.get(id));
   handle('noobi:plans:retry', async (_event, id: string) => {
     const draft = await planStore.retry(id);
