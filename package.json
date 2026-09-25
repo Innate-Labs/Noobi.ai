@@ -50,7 +50,8 @@
     "smoke:godot": "tsx scripts/godot-smoke.ts",
     "smoke:ui": "npm run build && cross-env NOOBI_SMOKE_CAPTURE=.noobi-smoke/workbench.png electron .",
     "verify": "npm run typecheck && npm run test && npm run build",
-    "package:mac": "npm run build && electron-builder --mac dmg --publish never"
+    "package:mac": "npm run build && electron-builder --mac dmg --publish never",
+    "smoke:planning": "tsx scripts/planning-smoke.ts"
   },
   "dependencies": {
     "@fontsource/press-start-2p": "^5.3.0",

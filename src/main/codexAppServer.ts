@@ -156,6 +156,7 @@ export interface StartTurnOptions {
   skills?: Array<{ name: string; path: string }>;
   /** Host-side completion deadline; never sent to App Server. */
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface CodexAppServerOptions {
@@ -409,6 +410,7 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async runTurn(options: StartTurnOptions): Promise<TurnResult> {
+    options.signal?.throwIfAborted();
     this.#runTurnStartsInFlight += 1;
     let turnId: string;
     try {
@@ -418,6 +420,11 @@ export class CodexAppServer extends EventEmitter {
       throw error;
     }
 
+    if (options.signal?.aborted) {
+      this.#releaseRunTurnStart();
+      await this.interruptTurn(options.threadId, turnId).catch(() => undefined);
+      options.signal.throwIfAborted();
+    }
     const early = this.#earlyTurnStates.get(turnId);
     this.#earlyTurnStates.delete(turnId);
     if (early?.completed) {
@@ -425,6 +432,7 @@ export class CodexAppServer extends EventEmitter {
       return early.completed;
     }
 
+    let onAbort: (() => void) | undefined;
     return new Promise<TurnResult>((resolve, reject) => {
       const timeoutMs = options.timeoutMs === undefined
         ? TURN_TIMEOUT_MS
@@ -435,9 +443,17 @@ export class CodexAppServer extends EventEmitter {
         reject(new Error(`Codex turn ${turnId} timed out`));
       }, timeoutMs);
       timer.unref();
+      onAbort = () => {
+        clearTimeout(timer);
+        this.#turnWaiters.delete(turnId);
+        void this.interruptTurn(options.threadId, turnId).catch(() => undefined);
+        reject(new Error('规划已取消'));
+      };
       this.#turnWaiters.set(turnId, { text: early?.text ?? '', resolve, reject, timer });
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
       this.#releaseRunTurnStart();
-    });
+    }).finally(() => { if (onAbort) options.signal?.removeEventListener('abort', onAbort); });
   }
 
   async interruptTurn(threadId: string, turnId: string): Promise<void> {

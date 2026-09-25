@@ -1,3 +1,4 @@
+import type { GeneratePlansInput, PlanDraft, StartPlanInput } from './planning.js';
 export type PipelineStage =
   | 'brief'
   | 'scaffold'
@@ -567,6 +568,12 @@ export interface LoginStartResult {
 }
 
 export interface NoobiApi {
+  generatePlans(input: GeneratePlansInput): Promise<PlanDraft>;
+  listPlans(): Promise<PlanDraft[]>;
+  getPlan(id: string): Promise<PlanDraft>;
+  retryPlan(id: string): Promise<PlanDraft>;
+  cancelPlan(id: string): Promise<PlanDraft>;
+  startPlan(input: StartPlanInput, files?: readonly unknown[]): Promise<ProjectRecord>;
   bootstrap(): Promise<BootstrapPayload>;
   refreshRuntime(): Promise<RuntimeStatus>;
   startLogin(): Promise<LoginStartResult>;

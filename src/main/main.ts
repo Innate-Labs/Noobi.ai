@@ -1,3 +1,7 @@
+import { PlanStore } from './planStore.js';
+import { PlanService } from './planService.js';
+import { PlanStarter } from './planStarter.js';
+import type { GeneratePlansInput, PlanDraft, PlanOption, StartPlanInput } from '../shared/planning.js';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -58,7 +62,6 @@ import { CodexAppServer } from './codexAppServer.js';
 import { EventLog } from './eventLog.js';
 import { notificationToEvent, routeThreadId, type ThreadRoute } from './eventMapper.js';
 import {
-  GameEngineAdvisor,
   type EngineAdvisorAttachment,
 } from './gameEngineAdvisor.js';
 import { GodotEnvironmentService } from './godotEnvironmentService.js';
@@ -139,7 +142,9 @@ app.setName('Noobi.ai');
 const runtime = new CodexAppServer({
   codexHome: join(app.getPath('userData'), 'codex-home'),
 });
-const engineAdvisor = new GameEngineAdvisor(runtime);
+let planStore: PlanStore;
+let planService: PlanService;
+let planStarter: PlanStarter;
 const harness = new GameHarness(runtime);
 const previews = new PreviewServer();
 const playtestPreviews = new PreviewServer();
@@ -222,6 +227,31 @@ async function launch(): Promise<void> {
   projectStore = new ProjectStore({
     storageFile: join(userData, 'projects.json'),
     defaultWorkspace,
+  });
+  planStore = new PlanStore(join(userData, 'production-plans.json'));
+  await planStore.init();
+  planService = new PlanService(planStore, runtime, async (draft) => {
+    const godot = await godotEnvironmentService.refresh();
+    const project = draft.projectId ? await projectStore.get(draft.projectId) : null;
+    const cwd = project?.root ?? join(userData, 'planning-context');
+    if (project && !await projectDirectoryAvailable(project)) throw new Error('项目目录已移动，请重新连接后规划');
+    if (!project) await mkdir(cwd, { recursive: true });
+    const release = project ? acquireProjectFilesystemAccess(project.id) : undefined;
+    return { cwd, engine: project?.engine, projectBrief: project?.idea, godotAvailable: godot.canCreateProjects, release };
+  });
+  planStarter = new PlanStarter(planStore, {
+    getProject: id => projectStore.get(id),
+    prepare: async (draft, option, input, attachments) => {
+      if (draft.projectId) return projectStore.get(draft.projectId);
+      const actualCount = [attachments[0], attachments[1]].reduce<number>((count, value) => count + (Array.isArray(value) ? value.length : 0), 0);
+      if (actualCount !== draft.attachmentCount) throw new Error('附件数量与规划时不一致，请重新添加参考附件');
+      if (typeof input.projectDirectory !== 'string') throw new Error('请选择项目文件夹');
+      const project = await createApprovedProject({ idea: draft.request, projectDirectory: input.projectDirectory, model: draft.model }, option, attachments[0] ?? [], attachments[1] ?? []);
+      await planStore.bindProject(draft.id, project.id);
+      if (project.status === 'failed') throw new Error(project.lastError ?? '创建失败');
+      return project;
+    },
+    dispatch: (project, draft) => dispatchApprovedProject({ projectId: project.id, prompt: draft.run!.prompt, model: draft.model, effort: draft.effort }, draft),
   });
   eventLog = new EventLog(join(userData, 'events'));
   assetPlanStore = new AssetPlanStore(join(userData, 'asset-plans.json'));
@@ -480,7 +510,206 @@ function bindHarnessEvents(): void {
   });
 }
 
+async function createApprovedProject(input: CreateProjectInput, option: PlanOption, attachmentPaths: unknown, inlineAttachments: unknown): Promise<ProjectRecord> {
+  const attachments = await inspectCreationAttachments(attachmentPaths, inlineAttachments);
+  try {
+    const projectDirectory = typeof input?.projectDirectory === 'string'
+      ? input.projectDirectory
+      : '';
+    if (!projectDirectory.trim()) throw new Error('请选择游戏项目文件夹');
+    const selectedProjectDirectory = await resolveEmptyProjectDirectory(projectDirectory);
+    const projectName = basename(selectedProjectDirectory).trim().slice(0, 100);
+    if (!projectName) throw new Error('请选择游戏项目文件夹');
+    const godot = await godotEnvironmentService.refresh();
+    const decision = { engine: option.engine, rationale: option.approach };
+    if (decision.engine === 'godot' && !godot.canCreateProjects) throw new Error('Godot 环境未就绪，请先修复环境');
+    const exportGodotStarter = decision.engine === 'godot'
+      && godot.canExportProjects
+      && godot.exportTemplates.targets.web;
+    const project = await withProceduralIcon(
+      await projectStore.create({
+        name: projectName,
+        idea: input.idea,
+        projectDirectory: selectedProjectDirectory,
+        model: input.model,
+        engine: decision.engine,
+      }),
+    );
+    const initialEvent: AgentEvent = {
+      id: randomUUID(),
+      projectId: project.id,
+      kind: 'user',
+      title: '游戏创意',
+      message: project.idea,
+      stage: 'brief',
+      timestamp: project.createdAt,
+      method: 'project/created',
+    };
+    emitAgentEvent(initialEvent);
+    emitAgentEvent({
+      id: randomUUID(),
+      projectId: project.id,
+      kind: 'assistant',
+      title: `引擎规划 · ${decision.engine === 'godot' ? 'Godot 4' : 'Web'}`,
+      message: decision.rationale,
+      stage: 'brief',
+      timestamp: new Date().toISOString(),
+      method: 'engine-advisor/selected',
+    });
+    if (attachments.paths.length > 0) {
+      try {
+        await importInitialProjectAttachments(project, attachments.paths);
+      } catch (error) {
+        const message = `附件导入失败：${asError(error).message}`;
+        const failed = await updateProject(project.id, {
+          status: 'failed',
+          stage: 'assets',
+          lastError: message,
+        });
+        broadcast('noobi:event:project', failed);
+        return failed;
+      }
+    }
+    if (project.engine === 'godot') {
+      try {
+        await verifyGodotProject(project, exportGodotStarter);
+      } catch (error) {
+        const failed = await updateProject(project.id, {
+          status: 'failed',
+          stage: 'verify',
+          lastError: asError(error).message,
+        });
+        return failed;
+      }
+    }
+    broadcast('noobi:event:project', project);
+    return project;
+  } finally { await attachments.cleanup(); }
+}
+
+async function dispatchApprovedProject(input: RunProjectInput, draft: PlanDraft): Promise<ProjectRecord> {
+  validateRunInput(input);
+  let project = await projectStore.get(input.projectId);
+  if (!draft.run || draft.run.projectId !== project.id) throw new Error('制作方案与项目不匹配');
+  if (isProjectBusyForMutation(project.id)) {
+    throw new Error('该项目已有正在执行或启动中的 Agent');
+  }
+  projectRunReservations.add(project.id);
+  try {
+    const locatedProject = await ensureProjectLocation(project, { ignoreRunReservation: true });
+    if (!locatedProject) throw new Error('尚未重新连接项目文件夹，本次制作没有启动。');
+    project = locatedProject;
+    if (project.engine === 'godot') {
+      const godot = await godotEnvironmentService.refresh();
+      if (!godot.canCreateProjects) {
+        throw new Error('Godot 4 环境未就绪；请先在设置 → 环境管理中修复引擎路径。');
+      }
+      if (!godot.canExportProjects || !godot.exportTemplates.targets.web) {
+        throw new Error(
+          `Godot ${godot.tool.version ?? '4'} 的 Web Export Templates 未就绪；请先在设置 → 环境管理中安装精确匹配的导出模板。`,
+        );
+      }
+    }
+    const status = await runtime.start();
+    if (!status.account) throw new Error('请先登录 ChatGPT，再启动游戏 Agent');
+    const settings = await projectStore.getSettings();
+    const model = input.model ?? project.model ?? settings.defaultModel ?? defaultModel(status.models);
+    const targetFrameRate = project.targetFrameRate;
+    const imageProvider = activeMediaProvider('image');
+    const audioProvider = activeMediaProvider('audio');
+    const miniMaxMusicRequired = Boolean(
+      audioProvider && isMiniMaxAudioPreset(audioProvider.presetId),
+    );
+    const imageGenerationSkill = await resolveImageGenerationSkill();
+    if (!imageProvider && (!status.capabilities.imageGeneration || !imageGenerationSkill)) {
+      throw new Error('没有可用的图像 API，当前 Codex 运行时也没有 ImageGen 能力；请先在设置中配置图像 API 或修复 Codex ImageGen');
+    }
+    const imageGenerationRequirement = await resolveHostImageGenerationRequirement(project);
+    const audioGenerationRequirement = await resolveHostAudioGenerationRequirement(
+      project,
+      miniMaxMusicRequired,
+    );
+    const promptAdditions = await promptTemplateStore.enabledAdditions();
+    const prepared = await updateProject(project.id, {
+      model,
+      lastError: null,
+    });
+    try {
+      await synchronizeWorkspaceHostPolicy(prepared.root, prepared);
+      if (prepared.engine === 'godot') {
+        await synchronizeGodotPresentationPolicy(prepared.root);
+      }
+    } catch (error) {
+      const message = `无法同步游戏引擎展示策略：${asError(error).message}`;
+      await updateProject(project.id, {
+        status: 'failed',
+        activeTurnId: null,
+        lastError: message,
+      }).catch(() => undefined);
+      throw new Error(message);
+    }
+    await archiveLatestGameplayExperienceReport(prepared.root).catch((error) => {
+      throw new Error(`无法归档上一轮体验评测：${asError(error).message}`);
+    });
+    const running = await updateProject(project.id, {
+      status: 'running',
+      stage: 'brief',
+      activeTurnId: null,
+      lastError: null,
+    });
+    emitAgentEvent({
+      id: randomUUID(),
+      projectId: project.id,
+      kind: 'user',
+      title: `已选方案 · ${draft.version!.options.find(option => option.id === draft.run!.optionId)!.title}`,
+      message: input.prompt.trim(),
+      stage: running.stage,
+      timestamp: new Date().toISOString(),
+      method: 'harness/approved-plan',
+    });
+    trackBackgroundRun(
+      executeHarness(
+        running,
+        input.prompt.trim(),
+        model,
+        input.effort ?? settings.defaultEffort,
+        imageGenerationSkill,
+        imageGenerationRequirement,
+        audioGenerationRequirement,
+        targetFrameRate,
+        imageProvider ? 'configured-api' : 'codex-imagegen',
+        promptAdditions,
+      ),
+    );
+    return running;
+  } finally {
+    projectRunReservations.delete(project.id);
+  }
+}
+
 function bindIpc(): void {
+  handle('noobi:plans:generate', async (_event, input: GeneratePlansInput) => {
+    const status = await runtime.start();
+    if (!status.account) throw new Error('请先登录 ChatGPT，再生成方案');
+    if (input?.projectId) {
+      const project = await projectStore.get(validateProjectId(input.projectId));
+      if (isProjectBusyForMutation(project.id)) throw new Error('当前制作仍在运行，请先停止再规划');
+    }
+    const settings = await projectStore.getSettings();
+    const draft = await planStore.create({ ...input, model: input?.model ?? settings.defaultModel ?? defaultModel(status.models), effort: input?.effort ?? settings.defaultEffort });
+    trackBackgroundRun(planService.generate(draft));
+    return draft;
+  });
+  handle('noobi:plans:list', () => planStore.list());
+  handle('noobi:plans:get', (_event, id: string) => planStore.get(id));
+  handle('noobi:plans:retry', async (_event, id: string) => {
+    const draft = await planStore.retry(id);
+    trackBackgroundRun(planService.generate(draft));
+    return draft;
+  });
+  handle('noobi:plans:cancel', (_event, id: string) => planService.cancel(id));
+  handle('noobi:plans:start', (_event, input: StartPlanInput, paths: unknown = [], inline: unknown = []) => planStarter.start(input, [paths, inline]));
+
   handle('noobi:bootstrap', async (): Promise<BootstrapPayload> => {
     const projects = await projectStore.list();
     const settings = await projectStore.getSettings();
@@ -549,105 +778,7 @@ function bindIpc(): void {
     }
   });
 
-  handle('noobi:project:create', async (
-    _event,
-    input: CreateProjectInput,
-    attachmentPaths: unknown = [],
-    inlineAttachments: unknown = [],
-  ) => {
-    const attachments = await inspectCreationAttachments(attachmentPaths, inlineAttachments);
-    const projectDirectory = typeof input?.projectDirectory === 'string'
-      ? input.projectDirectory
-      : '';
-    if (!projectDirectory.trim()) throw new Error('请选择游戏项目文件夹');
-    const selectedProjectDirectory = await resolveEmptyProjectDirectory(projectDirectory);
-    const projectName = basename(selectedProjectDirectory).trim().slice(0, 100);
-    if (!projectName) throw new Error('请选择游戏项目文件夹');
-    const [settings, godot] = await Promise.all([
-      projectStore.getSettings(),
-      godotEnvironmentService.refresh(),
-    ]);
-    const decision = await engineAdvisor.decide({
-      cwd: selectedProjectDirectory,
-      idea: typeof input?.idea === 'string' ? input.idea : '',
-      model: input?.model,
-      effort: settings.defaultEffort,
-      attachments: attachments.metadata,
-      godot: {
-        canCreateProjects: godot.canCreateProjects,
-        canExportWeb: godot.canExportProjects && godot.exportTemplates.targets.web,
-        version: godot.tool.version,
-      },
-    });
-    if (decision.engine === 'godot' && !godot.canCreateProjects) {
-      throw new Error('引擎判断 Agent 选择了 Godot，但 Godot 4 环境尚未就绪；请先打开设置 → 环境管理。');
-    }
-    const exportGodotStarter = decision.engine === 'godot'
-      && godot.canExportProjects
-      && godot.exportTemplates.targets.web;
-    const project = await withProceduralIcon(
-      await projectStore.create({
-        name: projectName,
-        idea: input.idea,
-        projectDirectory: selectedProjectDirectory,
-        model: input.model,
-        engine: decision.engine,
-      }),
-    );
-    const initialEvent: AgentEvent = {
-      id: randomUUID(),
-      projectId: project.id,
-      kind: 'user',
-      title: '游戏创意',
-      message: project.idea,
-      stage: 'brief',
-      timestamp: project.createdAt,
-      method: 'project/created',
-    };
-    emitAgentEvent(initialEvent);
-    emitAgentEvent({
-      id: randomUUID(),
-      projectId: project.id,
-      kind: 'assistant',
-      title: `引擎规划 · ${decision.engine === 'godot' ? 'Godot 4' : 'Web'}`,
-      message: decision.rationale,
-      stage: 'brief',
-      timestamp: new Date().toISOString(),
-      method: 'engine-advisor/selected',
-    });
-    if (attachments.paths.length > 0) {
-      try {
-        await importInitialProjectAttachments(project, attachments.paths);
-      } catch (error) {
-        const message = `附件导入失败：${asError(error).message}`;
-        const failed = await updateProject(project.id, {
-          status: 'failed',
-          stage: 'assets',
-          lastError: message,
-        });
-        broadcast('noobi:event:project', failed);
-        return failed;
-      } finally {
-        await attachments.cleanup();
-      }
-    } else {
-      await attachments.cleanup();
-    }
-    if (project.engine === 'godot') {
-      try {
-        await verifyGodotProject(project, exportGodotStarter);
-      } catch (error) {
-        const failed = await updateProject(project.id, {
-          status: 'failed',
-          stage: 'verify',
-          lastError: asError(error).message,
-        });
-        return failed;
-      }
-    }
-    broadcast('noobi:event:project', project);
-    return project;
-  });
+  handle('noobi:project:create', () => { throw new Error('请先生成并选择方案，再开始制作'); });
 
   handle('noobi:project:rename', (_event, projectId: string, name: unknown) => {
     const id = validateProjectId(projectId);
@@ -698,104 +829,7 @@ function bindIpc(): void {
     }
   });
 
-  handle('noobi:project:run', async (_event, input: RunProjectInput) => {
-    validateRunInput(input);
-    let project = await projectStore.get(input.projectId);
-    if (isProjectBusyForMutation(project.id)) {
-      throw new Error('该项目已有正在执行或启动中的 Agent');
-    }
-    projectRunReservations.add(project.id);
-    try {
-      const locatedProject = await ensureProjectLocation(project, { ignoreRunReservation: true });
-      if (!locatedProject) throw new Error('尚未重新连接项目文件夹，本次制作没有启动。');
-      project = locatedProject;
-      if (project.engine === 'godot') {
-        const godot = await godotEnvironmentService.refresh();
-        if (!godot.canCreateProjects) {
-          throw new Error('Godot 4 环境未就绪；请先在设置 → 环境管理中修复引擎路径。');
-        }
-        if (!godot.canExportProjects || !godot.exportTemplates.targets.web) {
-          throw new Error(
-            `Godot ${godot.tool.version ?? '4'} 的 Web Export Templates 未就绪；请先在设置 → 环境管理中安装精确匹配的导出模板。`,
-          );
-        }
-      }
-      const status = await runtime.start();
-      if (!status.account) throw new Error('请先登录 ChatGPT，再启动游戏 Agent');
-      const settings = await projectStore.getSettings();
-      const model = input.model ?? project.model ?? settings.defaultModel ?? defaultModel(status.models);
-      const targetFrameRate = project.targetFrameRate;
-      const imageProvider = activeMediaProvider('image');
-      const audioProvider = activeMediaProvider('audio');
-      const miniMaxMusicRequired = Boolean(
-        audioProvider && isMiniMaxAudioPreset(audioProvider.presetId),
-      );
-      const imageGenerationSkill = await resolveImageGenerationSkill();
-      if (!imageProvider && (!status.capabilities.imageGeneration || !imageGenerationSkill)) {
-        throw new Error('没有可用的图像 API，当前 Codex 运行时也没有 ImageGen 能力；请先在设置中配置图像 API 或修复 Codex ImageGen');
-      }
-      const imageGenerationRequirement = await resolveHostImageGenerationRequirement(project);
-      const audioGenerationRequirement = await resolveHostAudioGenerationRequirement(
-        project,
-        miniMaxMusicRequired,
-      );
-      const promptAdditions = await promptTemplateStore.enabledAdditions();
-      const prepared = await updateProject(project.id, {
-        model,
-        lastError: null,
-      });
-      try {
-        await synchronizeWorkspaceHostPolicy(prepared.root, prepared);
-        if (prepared.engine === 'godot') {
-          await synchronizeGodotPresentationPolicy(prepared.root);
-        }
-      } catch (error) {
-        const message = `无法同步游戏引擎展示策略：${asError(error).message}`;
-        await updateProject(project.id, {
-          status: 'failed',
-          activeTurnId: null,
-          lastError: message,
-        }).catch(() => undefined);
-        throw new Error(message);
-      }
-      await archiveLatestGameplayExperienceReport(prepared.root).catch((error) => {
-        throw new Error(`无法归档上一轮体验评测：${asError(error).message}`);
-      });
-      const running = await updateProject(project.id, {
-        status: 'running',
-        stage: 'brief',
-        activeTurnId: null,
-        lastError: null,
-      });
-      emitAgentEvent({
-        id: randomUUID(),
-        projectId: project.id,
-        kind: 'user',
-        title: '制作指令',
-        message: input.prompt.trim(),
-        stage: running.stage,
-        timestamp: new Date().toISOString(),
-        method: 'harness/user-request',
-      });
-      trackBackgroundRun(
-        executeHarness(
-          running,
-          input.prompt.trim(),
-          model,
-          input.effort ?? settings.defaultEffort,
-          imageGenerationSkill,
-          imageGenerationRequirement,
-          audioGenerationRequirement,
-          targetFrameRate,
-          imageProvider ? 'configured-api' : 'codex-imagegen',
-          promptAdditions,
-        ),
-      );
-      return running;
-    } finally {
-      projectRunReservations.delete(project.id);
-    }
-  });
+  handle('noobi:project:run', () => { throw new Error('请先生成并选择方案，再开始制作'); });
 
   handle('noobi:project:stop', async (_event, projectId: string) => {
     validateProjectId(projectId);
@@ -3228,6 +3262,7 @@ async function readSmokeAssistantState(window: BrowserWindow): Promise<{
 }
 
 async function shutdown(): Promise<void> {
+  planService?.stop();
   godotToolBroker?.close();
   approvalBroker?.closeAll();
   for (const controller of manualExperienceControllers.values()) controller.abort();

@@ -66,6 +66,7 @@ npm run smoke:codex
 npm run smoke:harness
 npm run smoke:media
 npm run smoke:image
+npm run smoke:planning
 ```
 
 ## Pull request checklist
@@ -78,3 +79,5 @@ npm run smoke:image
 - Avoid unrelated dependency or formatting churn.
 
 Security vulnerabilities should not be opened as public issues. Follow [`SECURITY.md`](SECURITY.md) instead.
+
+`smoke:planning` sends three fixed briefs to the real planning model and verifies their selected versions reach accepted Harness planner turns. It deliberately stops before implementation and does not certify generated-game quality. Local evidence is saved under `.noobi-private/stage-01/real-planning/`.

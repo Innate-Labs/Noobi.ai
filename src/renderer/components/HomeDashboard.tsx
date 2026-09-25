@@ -121,7 +121,7 @@ export function HomeDashboard({
   );
   const accountName = accountDisplayName(runtime);
   const runtimeReady = runtime.state === 'ready' && Boolean(runtime.account);
-  const launchReady = runtimeReady && imageGenerationAvailable && idea.trim().length > 0 && !busy;
+  const launchReady = runtimeReady && idea.trim().length > 0 && !busy;
 
   useEffect(() => {
     if (models.length === 0) {
@@ -348,13 +348,11 @@ export function HomeDashboard({
                 <button
                   className="home-create-button"
                   type="button"
-                  aria-label={busy ? '正在创建游戏' : '发送游戏创意'}
+                  aria-label={busy ? '正在提交规划' : '生成制作方案'}
                   disabled={!launchReady}
                   title={!runtimeReady
                     ? '请先让 Codex 运行时就绪并完成登录'
-                    : !imageGenerationAvailable
-                      ? '请先配置图像服务或修复 Codex ImageGen'
-                      : idea.trim() ? '创建项目并启动 Agent' : '先描述游戏创意'}
+                    : idea.trim() ? '先生成方案，由你选择后开始' : '先描述游戏创意'}
                   onClick={() => void submit()}
                 >
                   {busy
@@ -371,6 +369,7 @@ export function HomeDashboard({
               ) : null}
             </div>
 
+            <p className="plan-analysis-note">先生成方案 · 会调用模型并计入分析消耗 · 选定后才开始制作</p>
             <div className="home-idea-starters" aria-label="游戏创意快捷选项">
               {IDEA_STARTERS.map((starter) => (
                 <button key={starter.label} type="button" onClick={() => setIdea(starter.prompt)}>
@@ -423,7 +422,7 @@ export function HomeDashboard({
             <div className="home-project-empty">
               <Sparkles size={20} />
               <strong>第一个游戏会出现在这里</strong>
-              <span>从上面的一句话开始，Noobi 会建立完整工程。</span>
+              <span>从一句话开始，先比较制作方案，再开始开发。</span>
             </div>
           )}
         </section>

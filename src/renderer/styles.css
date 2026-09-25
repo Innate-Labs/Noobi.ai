@@ -10894,3 +10894,63 @@ a {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+
+/* Production planning: comparable routes, with one explicit selection and start. */
+.plan-dialog { width: min(1160px, calc(100vw - 48px)); max-width: none; max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--panel); color: var(--text); box-shadow: 0 24px 90px var(--shadow); }
+.plan-dialog[open] { display: flex; flex-direction: column; }
+.plan-dialog::backdrop { background: rgba(12, 14, 12, .6); backdrop-filter: blur(5px); }
+.plan-heading { padding: 26px 30px 22px; display: flex; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); }
+.plan-eyebrow { color: var(--accent); font: 11px var(--mono); letter-spacing: .1em; }
+.plan-heading h2 { margin: 10px 0; font-size: 27px; }
+.plan-heading p, .plan-analysis-note, .plan-version { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.plan-heading p { margin: 0; }
+.plan-scroll { padding: 22px 30px; overflow-y: auto; overscroll-behavior: contain; min-height: 140px; }
+.plan-request { margin: 0 0 12px; padding-left: 14px; border-left: 3px solid var(--accent); font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plan-requirements { padding: 15px 18px; background: var(--panel-raised); border-radius: 10px; margin: 18px 0; }
+.plan-requirements h3 { margin: 0 0 10px; font-size: 12px; }
+.plan-requirements ul { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0; margin: 0; list-style: none; }
+.plan-requirements li { display: flex; align-items: baseline; gap: 7px; color: var(--text-soft); font-size: 12px; line-height: 1.6; }
+.plan-requirements svg { flex-shrink: 0; color: var(--green); }
+.plan-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; border: 0; padding: 0; margin: 22px 0 0; min-width: 0; }
+.plan-options legend { margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+.plan-option { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: var(--panel-raised); overflow-wrap: anywhere; }
+.plan-option.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.plan-option-select { display: flex; gap: 9px; align-items: baseline; cursor: pointer; min-height: 38px; }
+.plan-option-select input { accent-color: var(--accent); width: 17px; height: 17px; flex-shrink: 0; }
+.plan-number { color: var(--accent); font: 12px var(--mono); }
+.plan-option h3 { margin: 0; font-size: 17px; line-height: 1.5; }
+.plan-approach { font-size: 13px; line-height: 1.75; color: var(--text-soft); }
+.plan-tags { display: flex; gap: 6px; margin: 16px 0; }
+.plan-tags span { border: 1px solid var(--line); padding: 4px 8px; border-radius: 5px; color: var(--muted); font-size: 11px; }
+.plan-option h4 { font-size: 12px; margin: 20px 0 8px; }
+.plan-option ul, .plan-option ol { font-size: 12px; line-height: 1.85; color: var(--text-soft); padding-left: 20px; margin: 0; }
+.plan-option details { border-top: 1px solid var(--line); padding-top: 15px; margin-top: 20px; font-size: 12px; }
+.plan-option summary { cursor: pointer; line-height: 1.7; min-height: 26px; }
+.plan-estimate { color: var(--muted); line-height: 1.8; }
+.plan-footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 30px; border-top: 1px solid var(--line); }
+.plan-footer strong { display: block; font-size: 13px; }
+.plan-footer small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+.plan-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.plan-actions button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 42px; border: 1px solid var(--line-strong); background: var(--panel-raised); padding: 10px 15px; color: var(--text); border-radius: 8px; cursor: pointer; }
+.plan-actions .plan-start { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.plan-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.plan-dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.plan-loading { padding: 45px 12px; text-align: center; }
+.plan-loading svg { color: var(--accent); }
+.plan-loading h3 { font-size: 17px; }
+.plan-loading p { font-size: 13px; color: var(--muted); line-height: 1.8; }
+.plan-error { border: 1px solid var(--red); color: var(--red); padding: 12px 16px; border-radius: 8px; font-size: 13px; line-height: 1.7; }
+.saved-plans { position: fixed; bottom: 18px; right: 22px; z-index: 45; max-width: 360px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel-raised); color: var(--text); box-shadow: 0 4px 20px var(--shadow); font-size: 12px; }
+.saved-plans summary { padding: 12px 16px; cursor: pointer; }
+.saved-plans > div { max-height: 250px; overflow-y: auto; }
+.saved-plans button { display: block; width: 100%; background: transparent; border: 0; border-top: 1px solid var(--line); color: var(--text); text-align: left; padding: 12px 16px; cursor: pointer; }
+.saved-plans button:hover { background: var(--panel-hover); }
+@media (max-width: 720px) {
+  .plan-dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
+  .plan-heading, .plan-scroll { padding: 18px; }
+  .plan-heading h2 { font-size: 22px; }
+  .plan-options { grid-template-columns: 1fr; }
+  .plan-footer { padding: 14px 18px; align-items: stretch; flex-direction: column; gap: 12px; }
+  .plan-actions { flex-wrap: wrap; }
+  .plan-actions .plan-start { flex: 1; }
+}

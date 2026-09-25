@@ -1,3 +1,4 @@
+import type { GeneratePlansInput, PlanDraft, StartPlanInput } from '../shared/planning.js';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   AgentEvent,
@@ -48,7 +49,13 @@ const api: NoobiApi = {
   chooseDirectory: () => ipcRenderer.invoke('noobi:dialog:directory') as Promise<string | null>,
   chooseProjectDirectory: () =>
     ipcRenderer.invoke('noobi:dialog:project-directory') as Promise<string | null>,
-  createProject: (input: CreateProjectInput, files: readonly unknown[] = []) => {
+  createProject: (input: CreateProjectInput) => ipcRenderer.invoke('noobi:project:create', input),
+  generatePlans: (input: GeneratePlansInput) => ipcRenderer.invoke('noobi:plans:generate', input) as Promise<PlanDraft>,
+  listPlans: () => ipcRenderer.invoke('noobi:plans:list') as Promise<PlanDraft[]>,
+  getPlan: (id: string) => ipcRenderer.invoke('noobi:plans:get', id) as Promise<PlanDraft>,
+  retryPlan: (id: string) => ipcRenderer.invoke('noobi:plans:retry', id) as Promise<PlanDraft>,
+  cancelPlan: (id: string) => ipcRenderer.invoke('noobi:plans:cancel', id) as Promise<PlanDraft>,
+  startPlan: (input: StartPlanInput, files: readonly unknown[] = []) => {
     if (!Array.isArray(files) || files.length > 50) {
       return Promise.reject(new Error('一次最多上传 50 个附件'));
     }
@@ -85,7 +92,7 @@ const api: NoobiApi = {
       return inline;
     };
     return encode().then((inlineAttachments) =>
-      ipcRenderer.invoke('noobi:project:create', input, paths, inlineAttachments) as Promise<ProjectRecord>,
+      ipcRenderer.invoke('noobi:plans:start', input, paths, inlineAttachments) as Promise<ProjectRecord>,
     );
   },
   renameProject: (projectId: string, name: string) =>

@@ -30,6 +30,12 @@ Noobi.ai gives Codex a bounded game-production loop instead of asking one agent 
 
 > **Current status:** developer preview for macOS. No signed or notarized binary is published yet; run it from source. The output is a standalone Web or Godot 4 project in your own workspace.
 
+### Choose a production plan first
+
+Submitting a new idea or a change request now generates comparable plans before production starts. New games offer 2–3 routes; a small existing-project adjustment may offer one. Review the gameplay loop, scope, assumptions and delivery platform, then choose **Start with this plan**. Planning calls the configured model and consumes analysis quota; it does not implement the game or generate assets. Time and price remain unknown without measured evidence.
+
+Plans are saved locally and can be reopened from the saved-plans menu. Retry/cancel planning without starting a game. The host binds a start to one immutable plan version and prevents duplicate production runs. After restarting the app, reattach any reference files before starting; this stage plans from text only. Free-form editing and visual-reference understanding are later stages.
+
 ## Why Noobi.ai
 
 | | What you get |
