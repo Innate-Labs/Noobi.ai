@@ -12,6 +12,7 @@ import { PreviewServer } from '../dist/main/previewServer.js';
 
 const smokeResultPath = process.env.NOOBI_PLAYTEST_SMOKE_RESULT?.trim() || null;
 const keepSmokeWorkspace = process.env.NOOBI_PLAYTEST_SMOKE_KEEP === '1';
+const blankPauseFixture = process.env.NOOBI_PLAYTEST_SMOKE_BLANK_PAUSE === '1';
 
 const GAME_HTML = `<!doctype html>
 <html lang="en">
@@ -135,7 +136,15 @@ try {
   root = await mkdtemp(join(tmpdir(), 'noobi-playtest-smoke-'));
   await mkdir(join(root, 'dist'), { recursive: true });
   await mkdir(join(root, '.noobi'), { recursive: true });
-  await writeFile(join(root, 'dist/index.html'), GAME_HTML);
+  // Explicit engineering fault fixture, never an edit to a generated game.
+  const html = blankPauseFixture ? GAME_HTML
+    .replace('border:2px solid #5de4a3', 'border:0')
+    .replace('      requestAnimationFrame(frame);', `
+      if (mode === 'paused') {
+        context.fillStyle = '#000'; context.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      requestAnimationFrame(frame);`) : GAME_HTML;
+  await writeFile(join(root, 'dist/index.html'), html);
   await writeFile(
     join(root, '.noobi/playtest.json'),
     `${JSON.stringify(playtestManifest(new Date().toISOString()), null, 2)}\n`,
@@ -156,7 +165,8 @@ try {
     expectedEntrypoint: 'dist/index.html',
   });
   const persisted = JSON.parse(await readFile(join(root, report.reportPath), 'utf8'));
-  if (report.verdict !== 'pass' || persisted.verdict !== 'pass') {
+  const expectedVerdict = blankPauseFixture ? 'repair' : 'pass';
+  if (report.verdict !== expectedVerdict || persisted.verdict !== expectedVerdict) {
     const startImage = nativeImage.createFromBuffer(await readFile(join(
       root,
       'artifacts/playtest/latest/screenshots/01-start.png',
@@ -174,10 +184,21 @@ try {
     );
     throw new Error(`Playtest smoke failed (PNG diff ${JSON.stringify(pngDifference)}): ${JSON.stringify(report)}`);
   }
-  if (smokeResultPath) {
-    await writeFile(smokeResultPath, `${JSON.stringify({ ok: true, root, report }, null, 2)}\n`);
+  if (blankPauseFixture) {
+    const observations = persisted.observations;
+    for (const description of ['暂停首帧画面有效', '暂停延迟帧画面有效']) {
+      if (!observations.some((item) => item.description === description && item.status === 'repair')) {
+        throw new Error(`Black pause evidence was not rejected: ${description}`);
+      }
+    }
+    if (!observations.some((item) => item.description === '暂停后玩法画面基本冻结' && item.status === 'pass')) {
+      throw new Error('Negative fixture must prove frozen black pixels independently of visibility.');
+    }
   }
-  process.stdout.write(`Noobi experience playtest passed: ${report.score}/100 · ${report.durationMs}ms\n`);
+  if (smokeResultPath) {
+    await writeFile(smokeResultPath, `${JSON.stringify({ ok: true, blankPauseFixture, root, report }, null, 2)}\n`);
+  }
+  process.stdout.write(`Noobi experience playtest ${blankPauseFixture ? 'rejected blank pause as expected' : 'passed'}: ${report.score}/100 · ${report.durationMs}ms\n`);
 } catch (error) {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   if (smokeResultPath) {

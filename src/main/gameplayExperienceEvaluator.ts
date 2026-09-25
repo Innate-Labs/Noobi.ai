@@ -1030,6 +1030,19 @@ export class GameplayExperienceEvaluator {
           signal,
         );
         state.screenshots.action.push(probe.path);
+        // Physics can be correctly paused while the compositor shows black.
+        // Keep both captures as independent evidence: a later valid menu must
+        // not erase a blank first frame, and frozen black frames must not pass.
+        for (const [label, frame] of [['首帧', captured], ['延迟帧', probe]] as const) {
+          const visualResults = await evaluateObservations(
+            window, step.id,
+            [{ kind: 'canvas-not-blank', description: `${isPause ? '暂停' : '恢复'}${label}画面有效` }],
+            frame, captured, state.framesByStepId, INPUT_CHANGE_RATIO, signal,
+          );
+          for (const result of visualResults) result.message += ` 截图：${frame.path}`;
+          observationResults.push(...visualResults);
+          state.observations.push(...visualResults);
+        }
         const probeDifference = compareFrames(captured, probe);
         let passed = isPause
           ? probeDifference.changedPixelRatio <= PAUSE_FROZEN_MAX_RATIO

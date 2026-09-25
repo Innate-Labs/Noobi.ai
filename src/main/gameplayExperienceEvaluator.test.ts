@@ -246,6 +246,36 @@ describe('GameplayExperienceEvaluator', () => {
     expect(await readdir(join(root, 'artifacts/playtest/staging'))).toEqual([]);
   });
 
+  it.each([
+    { blankCaptures: [11], failed: ['暂停首帧画面有效'], frozen: false },
+    { blankCaptures: [12], failed: ['暂停延迟帧画面有效'], frozen: false },
+    { blankCaptures: [11, 12], failed: ['暂停首帧画面有效', '暂停延迟帧画面有效'], frozen: true },
+    { blankCaptures: [13], failed: ['恢复首帧画面有效'], frozen: true },
+    { blankCaptures: [14], failed: ['恢复延迟帧画面有效'], frozen: true },
+  ])('retains blank pause/resume evidence at captures $blankCaptures', async ({ blankCaptures, failed, frozen }) => {
+    const root = await temporaryRoot();
+    await writeManifest(root);
+    const window = new MockWindow((index) => blankCaptures.includes(index) ? solidFrame(0) : animatedFrame(index));
+    const report = await evaluatorFor(window).evaluate({
+      projectRoot: root, previewUrl: 'http://127.0.0.1:41004/',
+      initialDelayMs: 0, keyHoldMs: 0, actionDelayMs: 0, settleDelayMs: 0,
+    });
+    expect(report.verdict).toBe('repair');
+    const visual = report.observations.filter((item) => /(?:暂停|恢复)(?:首帧|延迟帧)画面有效/.test(item.description));
+    expect(visual).toHaveLength(4);
+    expect(visual.filter((item) => item.status === 'repair').map((item) => item.description)).toEqual(failed);
+    if (frozen) expect(report.observations).toContainEqual(expect.objectContaining({
+      description: '暂停后玩法画面基本冻结', status: 'pass',
+    }));
+    for (const item of visual.filter((observation) => observation.status === 'repair')) {
+      const screenshotPath = item.message.split('截图：')[1];
+      expect(await readFile(join(root, screenshotPath), 'utf8')).toBe('mock-png-0');
+    }
+    const persisted = JSON.parse(await readFile(join(root, report.reportPath), 'utf8'));
+    expect(persisted.verdict).toBe('repair');
+    expect(persisted.observations).toEqual(report.observations);
+  });
+
   it('dispatches look and drag as bounded multi-step mouse input', async () => {
     const root = await temporaryRoot();
     const manifest = validManifest() as any;
