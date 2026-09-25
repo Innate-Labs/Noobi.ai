@@ -26,7 +26,7 @@ export const renderReferenceModel: ModelRenderer = async input => {
     const resource = req.method === 'GET' ? files.get((req.url ?? '').split('?')[0]!) : undefined;
     if (!resource) { res.writeHead(404).end(); return; }
     res.writeHead(200, { 'Content-Type': resource.type, 'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'" });
+      'Content-Security-Policy': "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; worker-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'" });
     res.end(resource.bytes);
   });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -49,7 +49,8 @@ export const renderReferenceModel: ModelRenderer = async input => {
     win.webContents.session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
       let allowed = false;
       try { const url = new URL(details.url); allowed = (url.origin === origin && files.has(url.pathname))
-          || (details.resourceType === 'image' && ((url.protocol === 'blob:' && url.origin === origin) || /^data:image\/(png|jpeg|webp);/u.test(details.url))); } catch { /* deny */ }
+          || (url.protocol === 'blob:' && url.origin === origin && (details.resourceType === 'image' || !files.has('/factory.js')))
+          || (details.resourceType === 'image' && /^data:image\/(png|jpeg|webp);/u.test(details.url)); } catch { /* deny */ }
       callback({ cancel: !allowed });
     });
     return win;
@@ -89,8 +90,8 @@ export const renderReferenceModel: ModelRenderer = async input => {
     await ready();
     const stats = await wait(window.webContents.executeJavaScript('window.__modelState.stats'));
     if (input.animation && (stats.skins < 1 || stats.animations.length < 1)) throw new Error('Animated model needs a skin and real clips');
-    const views = {} as Record<'front' | 'side' | 'back', Buffer>;
-    for (const angle of ['front', 'side', 'back'] as const) {
+    const views = {} as Record<'front' | 'side' | 'back' | 'perspective', Buffer>;
+    for (const angle of ['front', 'side', 'back', 'perspective'] as const) {
       await wait(window.webContents.executeJavaScript(`window.__captureModel(${JSON.stringify(angle)})`));
       const shot = await wait(window.webContents.capturePage());
       const pixels = shot.toBitmap();
@@ -130,21 +131,31 @@ try {
     window.__modelState = {ready:true, glb:btoa(binary)};
   } else {
     const gltf = await new GLTFLoader().loadAsync('/model.glb');
+    // GLTFLoader can tolerate failed texture fetches. Evidence must not silently lose them.
+    const loadedMaterials = await gltf.parser.getDependencies('material');
+    for (const [i, definition] of (gltf.parser.json.materials || []).entries()) {
+      const material=loadedMaterials[i], pbr=definition.pbrMetallicRoughness || {};
+      for (const [declared, slot] of [[pbr.baseColorTexture,'map'],[pbr.metallicRoughnessTexture,'roughnessMap'],
+        [definition.normalTexture,'normalMap'],[definition.emissiveTexture,'emissiveMap'],[definition.occlusionTexture,'aoMap']]) {
+        if (declared && !material?.[slot]?.image) throw Error('GLB texture failed to reload: '+slot);
+      }
+    }
     const stats = check(gltf.scene, gltf.animations);
     const scene = new THREE.Scene(); scene.background = new THREE.Color('#e8edf1');
     const bounds = new THREE.Box3().setFromObject(gltf.scene), center=bounds.getCenter(new THREE.Vector3());
     const size=bounds.getSize(new THREE.Vector3()), radius=size.length()/2;
     gltf.scene.position.sub(center); scene.add(gltf.scene);
-    scene.add(new THREE.HemisphereLight(0xffffff,0x687887,2.4));
-    const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(3,5,4);scene.add(light);
+    scene.add(new THREE.HemisphereLight(0xffffff,0x687887,.7));
+    const light=new THREE.DirectionalLight(0xffffff,2);light.position.set(3,5,4);scene.add(light);
     const camera = new THREE.PerspectiveCamera(38,1,Math.max(radius/1000,0.001),radius*100);
     const renderer = new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
     const pmrem = new THREE.PMREMGenerator(renderer);scene.environment = pmrem.fromScene(new RoomEnvironment(), .04).texture;
     renderer.setSize(640,640);renderer.setPixelRatio(1);renderer.outputColorSpace=THREE.SRGBColorSpace;
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.9;
     document.body.appendChild(renderer.domElement);
     window.__captureModel = async view => {
-      const angle={front:0,side:Math.PI/2,back:Math.PI}[view], distance=radius/Math.sin(38*Math.PI/360)*1.12;
-      camera.position.set(Math.sin(angle)*distance,distance*0.15,Math.cos(angle)*distance);camera.lookAt(0,0,0);
+      const angle={front:0,side:Math.PI/2,back:Math.PI,perspective:Math.PI/4}[view], distance=radius/Math.sin(38*Math.PI/360)*1.12;
+      camera.position.set(Math.sin(angle)*distance,distance*(view==='perspective'?.55:.15),Math.cos(angle)*distance);camera.lookAt(0,0,0);
       renderer.render(scene,camera);
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
     };

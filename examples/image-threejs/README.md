@@ -19,3 +19,5 @@ export async function createModel(THREE, { referenceUrl }) {
 样板为近似静态道具：四个拓宽叶片、黄铜轮毂、琥珀中心、青色立柱和阶梯底座已建模；精细石纹、磨损、完全一致的高光仍未完成。后部轴承由单图推断。技术检查不代表外观或完整游戏验收通过。
 
 本机 img2threejs 技能用于流程参考；其 `validate_sculpt_spec.py` 当前有语法错误，未作为可发布依赖，未宣称通过该技能全套精细雕刻验收。Noobi 使用仓库内可测试的宿主校验与独立 Reviewer 流程。
+
+后续实际游戏接入见 [浮岛机关与桥梁](island-props/README.md)。当前宿主额外提供 `perspective.png` 斜上方视图；贴图必须成功重新加载，不能将丢失贴图的截图作为成功证据。

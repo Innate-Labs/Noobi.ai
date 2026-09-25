@@ -8,7 +8,7 @@ import type { GameAssetRecord } from '../shared/contracts.js';
 
 export interface ModelRenderResult {
   glb: Buffer;
-  views: { front: Buffer; side: Buffer; back: Buffer };
+  views: { front: Buffer; side: Buffer; back: Buffer; perspective?: Buffer };
   triangles: number;
   meshes: number;
   skins: number;
@@ -63,7 +63,7 @@ export class ReferenceModel3dService {
     await safeDirectory(input.project.root, evidencePath);
     const evidence: Record<string, string> = {};
     for (const [name, bytes] of Object.entries({ 'reference' : reference, 'source.mjs': source,
-      'front.png': result.views.front, 'side.png': result.views.side, 'back.png': result.views.back })) {
+      'front.png': result.views.front, 'side.png': result.views.side, 'back.png': result.views.back, ...(result.views.perspective ? { 'perspective.png': result.views.perspective } : {}) })) {
       const file = name === 'reference' ? `reference.${image.mimeType === 'image/jpeg' ? 'jpg' : image.mimeType === 'image/webp' ? 'webp' : 'png'}` : name;
       const path = `${evidencePath}/${file}`;
       await writeFile(join(input.project.root, path), bytes, { flag: 'wx' });

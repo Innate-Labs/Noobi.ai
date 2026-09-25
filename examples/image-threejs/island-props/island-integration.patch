@@ -1,0 +1,158 @@
+--- a/scripts/main.gd
++++ b/scripts/main.gd
+@@ -153,6 +153,17 @@
+ 	l.visibility_range_end = 28.0
+ 	l.visibility_range_end_margin = 3.0
+ 	return l
++
++func _bridge_collision(parent: Node3D, label: String, center: Vector3, size: Vector3) -> void:
++	var body := StaticBody3D.new()
++	body.name = label
++	body.position = center
++	var collider := CollisionShape3D.new()
++	var shape := BoxShape3D.new()
++	shape.size = size
++	collider.shape = shape
++	body.add_child(collider)
++	parent.add_child(body)
+ 
+ func _build_world() -> void:
+ 	world = Node3D.new()
+@@ -211,25 +222,33 @@
+ 		mechanism.position = Vector3(0, 0, z-9)
+ 		var art := IslandAssets.model(["wind-machine", "gear-machine", "ring-machine"][r])
+ 		mechanism.add_child(art)
+-		art.scale = Vector3.ONE * 0.7
++		art.scale = Vector3.ONE * (0.86 if r < 2 else 0.7)
+ 		var dials: Array = []
+-		for k in range(r+1):
+-			var dial := Node3D.new()
+-			mechanism.add_child(dial)
+-			dial.position = Vector3((float(k)-float(r)*0.5)*1.4, 2.1, 0)
+-			var torus := MeshInstance3D.new()
+-			var ring := TorusMesh.new()
+-			ring.inner_radius = 0.38
+-			ring.outer_radius = 0.5
+-			ring.rings = 16
+-			ring.ring_segments = 8
+-			torus.mesh = ring
+-			torus.rotation.x = PI/2
+-			torus.material_override = mat(GOLD)
+-			dial.add_child(torus)
+-			box(dial, Vector3(0, 0.35, 0), Vector3(0.13, 0.5, 0.15), TEAL)
+-			dials.append(dial)
+-		var caption := label3d(mechanism, "", Vector3(0, 3.1, 0), 30)
++		if r < 2:
++			# Drive the authored GLB part pivots; keep the cabinet/plinth stationary.
++			var pivot_names: Array = ["RotorPivot"] if r == 0 else ["GearLeftPivot", "GearRightPivot"]
++			for pivot_name in pivot_names:
++				var dial := art.find_child(pivot_name, true, false) as Node3D
++				assert(dial != null, "Missing image-guided model pivot: " + pivot_name)
++				dials.append(dial)
++		else:
++			for k in range(r+1):
++				var dial := Node3D.new()
++				mechanism.add_child(dial)
++				dial.position = Vector3((float(k)-float(r)*0.5)*1.4, 2.1, 0)
++				var torus := MeshInstance3D.new()
++				var ring := TorusMesh.new()
++				ring.inner_radius = 0.38
++				ring.outer_radius = 0.5
++				ring.rings = 16
++				ring.ring_segments = 8
++				torus.mesh = ring
++				torus.rotation.x = PI/2
++				torus.material_override = mat(GOLD)
++				dial.add_child(torus)
++				box(dial, Vector3(0, 0.35, 0), Vector3(0.13, 0.5, 0.15), TEAL)
++				dials.append(dial)
++		var caption := label3d(mechanism, "", Vector3(0, 3.6, 0), 30)
+ 		machines.append({"node": mechanism, "dials": dials, "caption": caption})
+ 		var beacon := cylinder(world, Vector3(3, 0.5, z+8), 0.55, 1, TEAL)
+ 		var beacon_art := IslandAssets.model("checkpoint")
+@@ -252,14 +271,13 @@
+ 			var bridge := Node3D.new()
+ 			world.add_child(bridge)
+ 			bridge.position = Vector3(0, -5, z-20)
+-			for k in range(7):
+-				box(bridge, Vector3(0, -0.18, 6-k*2), Vector3(3, 0.35, 1.9), Color("b79c70"), true)
+-				for side in [-1,1]:
+-					box(bridge, Vector3(side*1.55, 0.4, 6-k*2), Vector3(0.12, 1.1, 0.12), GOLD)
++			bridge.name = "RepairableBridge%d" % r
+ 			var bridge_art := IslandAssets.model("bridge")
+ 			bridge.add_child(bridge_art)
+-			bridge_art.position = Vector3(2.1, 0, 5)
+-			bridge_art.scale = Vector3.ONE * 0.7
++			# Authored GLB spans the full gap; collision is separate and matches its deck.
++			_bridge_collision(bridge, "WalkableDeck", Vector3(0, -0.11, 0), Vector3(3, 0.22, 14))
++			for side in [-1, 1]:
++				_bridge_collision(bridge, "RailCollision%d" % side, Vector3(side*1.55, 0.48, 0), Vector3(0.18, 1.05, 14))
+ 			bridges.append(bridge)
+ 	var lighthouse := IslandAssets.model("lighthouse")
+ 	world.add_child(lighthouse)
+--- a/scripts/asset_catalog.gd
++++ b/scripts/asset_catalog.gd
+@@ -1,5 +1,7 @@
+ extends RefCounted
+ class_name IslandAssets
++
++const IMAGE_GUIDED_MODELS = ["wind-machine", "gear-machine", "bridge"]
+ 
+ const PATHS = {
+ 	"music": "res://public/assets/audio/exploration.ogg",
+@@ -17,11 +19,11 @@
+ 	"repairer": "res://public/assets/models/repairer-2345beb66156-2ce91e17-a3a0-451d-a3bf-2a14a96e73b0.glb",
+ 	"guardian": "res://public/assets/models/guardian-39f33abac0c5-3c500a3e-18f4-4c4f-8037-0a47ca2f0a6f.glb",
+ 	"energy-crystal": "res://public/assets/models/energy-crystal-fa88ee1c4d95-f2bb0231-fa4e-4eb5-ada1-5507b57a4264.glb",
+-	"wind-machine": "res://public/assets/models/wind-machine-7004a46061bf-402144b3-00b3-47a8-b80e-340838561c9c.glb",
+-	"gear-machine": "res://public/assets/models/gear-machine-bd4582f7ad3e-89a27a7c-5f92-4585-8887-547a8a2321c7.glb",
++	"wind-machine": "res://public/assets/models/8695ce19-b6d0-4ee1-bf28-a49a0152bbbc.glb",
++	"gear-machine": "res://public/assets/models/46c12866-74a0-4899-8e39-78a3c3f7f4bf.glb",
+ 	"ring-machine": "res://public/assets/models/ring-machine-19afd6b79fee-eb01ef91-ea0c-4dbd-aaf7-69176e1e119f.glb",
+ 	"lighthouse": "res://public/assets/models/lighthouse-492c3bcdd21e-32a4fba7-40d9-454f-8531-7d037c205eca.glb",
+-	"bridge": "res://public/assets/models/bridge-40cf79b4f415-4214214c-2872-4200-8d93-cb61d7f45c46.glb",
++	"bridge": "res://public/assets/models/2a78b8f3-cbec-42ee-9ac0-e9e742760477.glb",
+ 	"repair-diagram": "res://public/assets/images/exec-21ce03ca-a459-442f-825f-4d097cbadc2f.png",
+ }
+ 
+@@ -31,7 +33,8 @@
+ 		var scene = load(path)
+ 		if scene is PackedScene:
+ 			var instance: Node3D = scene.instantiate()
+-			apply_palette(instance, id)
++			if not id in IMAGE_GUIDED_MODELS:
++				apply_palette(instance, id)
+ 			return instance
+ 	push_warning("Missing model: " + id)
+ 	return Node3D.new()
+--- a/GAME_DESIGN.md
++++ b/GAME_DESIGN.md
+@@ -61,11 +61,11 @@
+ | player-repairer | `public/assets/models/repairer-2345beb66156-2ce91e17-a3a0-451d-a3bf-2a14a96e73b0.glb` | scripts/player_controller.gd:_ready → visual；play_clip / add_action_clips |
+ | enemy-guardian | `public/assets/models/guardian-39f33abac0c5-3c500a3e-18f4-4c4f-8037-0a47ca2f0a6f.glb` | scripts/main.gd:_build_world → IslandAssets.model("guardian") |
+ | pickup-energy | `public/assets/models/energy-crystal-fa88ee1c4d95-f2bb0231-fa4e-4eb5-ada1-5507b57a4264.glb` | scripts/main.gd:_build_world → IslandAssets.model("energy-crystal") |
+-| mechanism-wind | `public/assets/models/wind-machine-7004a46061bf-402144b3-00b3-47a8-b80e-340838561c9c.glb` | scripts/main.gd:_build_world → IslandAssets.model("wind-machine") |
+-| mechanism-gear | `public/assets/models/gear-machine-bd4582f7ad3e-89a27a7c-5f92-4585-8887-547a8a2321c7.glb` | scripts/main.gd:_build_world → IslandAssets.model("gear-machine") |
++| mechanism-wind | `public/assets/models/8695ce19-b6d0-4ee1-bf28-a49a0152bbbc.glb` | scripts/main.gd:_build_world → IslandAssets.model("wind-machine") |
++| mechanism-gear | `public/assets/models/46c12866-74a0-4899-8e39-78a3c3f7f4bf.glb` | scripts/main.gd:_build_world → IslandAssets.model("gear-machine") |
+ | mechanism-ring | `public/assets/models/ring-machine-19afd6b79fee-eb01ef91-ea0c-4dbd-aaf7-69176e1e119f.glb` | scripts/main.gd:_build_world → IslandAssets.model("ring-machine") |
+ | structure-lighthouse | `public/assets/models/lighthouse-492c3bcdd21e-32a4fba7-40d9-454f-8531-7d037c205eca.glb` | scripts/main.gd:_build_world → IslandAssets.model("lighthouse") |
+-| structure-bridge | `public/assets/models/bridge-40cf79b4f415-4214214c-2872-4200-8d93-cb61d7f45c46.glb` | scripts/main.gd:_build_world → IslandAssets.model("bridge") |
++| structure-bridge | `public/assets/models/2a78b8f3-cbec-42ee-9ac0-e9e742760477.glb` | scripts/main.gd:_build_world → IslandAssets.model("bridge") |
+ | document-repair-diagram | `public/assets/images/exec-21ce03ca-a459-442f-825f-4d097cbadc2f.png` | scripts/main.gd:MAP → board.material_override.albedo_texture 与 map_view.texture |
+ | ability-glider | `public/assets/models/glider-e127c95c295a-53940092-6aea-4174-b98d-5df8efb2a15a.glb` | scripts/player_controller.gd:_ready → wing/dash_module；_physics_process visibility |
+ | ability-dash | `public/assets/models/dash-module-e08084786be2-cc364b22-4c43-48b7-bec9-e5cc4ea9d020.glb` | scripts/player_controller.gd:_ready → wing/dash_module；_physics_process visibility |
+@@ -85,3 +85,13 @@
+ scripts/asset_catalog.gd 保存具体资源路径；scripts/main.gd 在玩家开始或继续旅程后启动单个 BackgroundMusic，暂停时暂停流，恢复后继续。已有 M 静音和主音量滑条同时控制音乐与音效。OGG 使用循环播放；当前配乐为免费库样例，不承诺定制配器或无缝乐句。
+ 
+ 本次仅改变音频来源和播放；3D 表现、角色动画及 60 Hz 物理不变，姿态素材评估为 not-needed（音频变更无需新姿态）。完整玩法、30–45 分钟内容与旧试玩失败仍未因本次音频接入而通过验收。
++
++## 2026-09-25 图片参考模型接入（第一批）
++
++风向机关、双齿轮机关与两座桥梁已改用图片参考 → Three.js 编码 → 宿主导出 GLB 的模型。model-sources/ 保留参考规格、可编辑源码和复核记录；artifacts/model3d/ 保存宿主独立加载 GLB 的多角度图。其余 13 种旧模型仍待后续升级。
++
++IslandAssets 对这三种模型保留 GLB 原材质。RotorPivot、GearLeftPivot / GearRightPivot 接入原有 0.55 秒 E 转动与 Q 选择逻辑，底座和机箱保持静止。桥梁 GLB 覆盖整个 14 米通路；碰撞体对齐 y=0 桥面和两侧护栏，随 1.8 秒升桥一起运动。存档恢复仍通过 dial_values 初始化转轴。
++
++本批为低多边形近似重建，背部由单图推断，精细磨损和石纹未复刻；桥面木纹为程序化纹理。动画需求评估：not-needed（机械部件使用引擎驱动转轴，无需新骨骼姿态）；角色与守卫现有骨骼继续复用。三件资产合计 5,336 三角形，桥梁重复实例化一次。
++
++专项隔离测试覆盖真实 E/Q 输入、中间旋转、独立齿轮、升桥过程、桥面碰撞与暂停音乐。该测试设置能源和位置来隔离机关，不代表完整收集路线或 30–45 分钟体验通过。

@@ -1,0 +1,15 @@
+{
+  "referenceImage": "public/assets/images/gear-machine.png",
+  "parts": [
+    {"name":"Cabinet","shape":"rectangular box with framed front and side access panel; four feet on two stone steps","material":"muted teal painted metal, brass fasteners, cream stone"},
+    {"name":"GearLeftPivot","shape":"larger 16-tooth open cog, three spokes, teal hub and brass axle cap","material":"aged brass"},
+    {"name":"GearRightPivot","shape":"smaller 12-tooth open cog, three spokes, teal hub and brass axle cap","material":"aged brass"},
+    {"name":"EnergySocket","shape":"vertical amber capsule below cogs, brass rim and protective struts","material":"amber emissive glass approximation"}
+  ],
+  "criticalFeatures": ["two separate toothed wheels with three open spokes each", "left wheel larger than right", "teal cabinet with brass perimeter trim", "amber socket below wheels", "two cream stone steps and four feet"],
+  "inferredSurfaces": ["rear service panel, depth and hidden underside inferred from single view"],
+  "dimensionsMeters": {"width":3.3,"height":3.05,"depth":1.35},
+  "interaction": "Godot rotates two named gear pivots independently in 0.55 seconds; no skeletal animation claim",
+  "approximation": "structure and color reconstruction; fine scratches, stone veins and exact weathering not reproduced",
+  "review": "pending"
+}

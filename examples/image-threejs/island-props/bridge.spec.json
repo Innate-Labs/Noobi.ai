@@ -1,0 +1,15 @@
+{
+  "referenceImage": "public/assets/images/bridge.png",
+  "parts": [
+    {"name":"DeckPanel1-7","shape":"seven crosswise broad plank panels, 14m total length and 3m usable width","material":"warm oak"},
+    {"name":"GirderLeft/Right","shape":"continuous teal longitudinal girders under deck","material":"teal painted metal"},
+    {"name":"RailPosts","shape":"eight posts on each side with brass foot plates, caps and fasteners","material":"teal and brass"},
+    {"name":"Rails","shape":"two continuous horizontal brass rails per side","material":"aged brass"}
+  ],
+  "criticalFeatures": ["long straight rectangular walkable deck", "seven broad deck panels", "eight posts per side", "two brass rails per side", "teal girders with bolted brass brackets"],
+  "inferredSurfaces": ["underside crossmembers inferred; world dimensions adapted to existing 14m gap"],
+  "dimensionsMeters": {"width":3.5,"height":1.65,"length":14},
+  "interaction": "entire bridge rises for 1.8 seconds; Godot collision uses matching deck top at y=0 and rails outside walkable width",
+  "approximation": "wood grain uses deterministic procedural lines; no claim to reproduce exact image pixels",
+  "review": "pending"
+}

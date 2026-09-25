@@ -9,3 +9,4 @@
 后续阶段使用 [汇报模板](../REPORT-TEMPLATE.md)，不得预填完成或验收通过。
 
 - [图片参考 → Three.js 建模](01-image-threejs.md)：默认 3D 流程专项自验，待用户验收。
+- [浮岛图片模型接入：第一批](01-island-model-upgrade.md)：风向机关、双齿轮机关和桥梁已接入真实游戏，待用户验收。

@@ -17,7 +17,7 @@ async function setup() {
   const assets = new AssetStore(); const [image] = await assets.importFiles(project.id, root, [join(root, 'reference.png')]);
   await writeFile(join(root,'model-sources/object.spec.json'),JSON.stringify({referenceImage:image!.relativePath,parts:[{name:'body',shape:'box',material:'wood'}],criticalFeatures:['box silhouette'],inferredSurfaces:['back']}));
   const fixture = await createProceduralModel3dGlb({name:'test-fixture',prompt:'crate'});
-  const render = vi.fn(async () => ({glb:fixture.bytes, views:{front:png,side:png,back:png}, triangles:36,meshes:3,skins:0,animations:[] as string[]}));
+  const render = vi.fn(async () => ({glb:fixture.bytes, views:{front:png,side:png,back:png,perspective:png}, triangles:36,meshes:3,skins:0,animations:[] as string[]}));
   const service = new ReferenceModel3dService(assets, join(root, 'private-ledger'), render);
   const input = { project, kind:'model3d' as const, name:'object', prompt:'reference-based test', options:{ referenceImage:image!.relativePath,sourcePath:'model-sources/object.mjs' } };
   return {root,project,assets,render,service,input};
@@ -32,6 +32,9 @@ describe('reference model evidence', () => {
     expect(await c.service.verify(c.project,[result.asset])).toHaveLength(1);
     await writeFile(join(c.root,c.input.options.sourcePath),source);
     await writeFile(join(c.root,String(result.asset.metadata?.evidencePath),'side.png'),'fake screenshot');
+    expect(await c.service.verify(c.project,[result.asset])).toHaveLength(1);
+    await writeFile(join(c.root,String(result.asset.metadata?.evidencePath),'side.png'),png);
+    await writeFile(join(c.root,String(result.asset.metadata?.evidencePath),'perspective.png'),'tampered perspective');
     expect(await c.service.verify(c.project,[result.asset])).toHaveLength(1);
   });
   it('accepts a corrected source without blocking on superseded unused evidence', async () => {
