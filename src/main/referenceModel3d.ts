@@ -5,6 +5,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import type { AssetStore } from './assetStore.js';
 import type { MediaGenerationInput, MediaGenerationAssetResult } from './mediaGenerationService.js';
 import type { GameAssetRecord } from '../shared/contracts.js';
+import { parseArtBible, parseModelAssetSpec, validateModelInspection, type ModelInspection } from './modelAssetSpec.js';
 
 export interface ModelRenderResult {
   glb: Buffer;
@@ -13,8 +14,9 @@ export interface ModelRenderResult {
   meshes: number;
   skins: number;
   animations: string[];
+  inspection?: ModelInspection;
 }
-export type ModelRenderer = (input: { source: string; reference: Buffer; mimeType: string; animation: boolean }) => Promise<ModelRenderResult>;
+export type ModelRenderer = (input: { source: string; reference: Buffer; mimeType: string; animation: boolean; glb?: Buffer }) => Promise<ModelRenderResult>;
 const hash = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
 
 /** Host-owned evidence binds source, reference, exported GLB and captures. Visual judgment remains with the reviewer. */
@@ -29,6 +31,7 @@ export class ReferenceModel3dService {
   }
 
   async #generate(input: MediaGenerationInput): Promise<MediaGenerationAssetResult> {
+    const started = Date.now();
     const referencePath = String(input.options?.referenceImage ?? '');
     const sourcePath = String(input.options?.sourcePath ?? '');
     if (referencePath.length > 480 || sourcePath.length > 480) throw new Error('Model input paths must be at most 480 characters');
@@ -38,22 +41,37 @@ export class ReferenceModel3dService {
     const source = await readProjectBytes(input.project.root, sourcePath, 256 * 1024);
     const specPath = sourcePath.replace(/\.mjs$/u, '.spec.json');
     const specBytes = await readProjectBytes(input.project.root, specPath, 128 * 1024);
-    let spec: { referenceImage?: unknown; parts?: unknown[]; criticalFeatures?: unknown[]; inferredSurfaces?: unknown[] };
-    try { spec = JSON.parse(specBytes.toString('utf8')); } catch { throw new Error('Model spec must be valid JSON'); }
-    if (!spec || spec.referenceImage !== referencePath || !Array.isArray(spec.parts) || !spec.parts.length
-      || !Array.isArray(spec.criticalFeatures) || !spec.criticalFeatures.length || !Array.isArray(spec.inferredSurfaces)) {
-      throw new Error('Model .spec.json requires matching referenceImage, nonempty parts and criticalFeatures, and inferredSurfaces');
-    }
-    const image = (await this.assets.list(input.project.id, input.project.root)).find(asset => asset.kind === 'image'
+    let rawSpec: unknown;
+    try { rawSpec = JSON.parse(specBytes.toString('utf8')); } catch { throw new Error('Model spec must be valid JSON'); }
+    const spec = parseModelAssetSpec(rawSpec, referencePath);
+    const artBytes = spec.version === 2 ? await readProjectBytes(input.project.root, spec.artBiblePath!, 32 * 1024) : null;
+    const art = artBytes ? parseArtBible(JSON.parse(artBytes.toString('utf8'))) : null;
+    const knownAssets = await this.assets.list(input.project.id, input.project.root);
+    const image = knownAssets.find(asset => asset.kind === 'image'
       && asset.relativePath === referencePath && asset.sha256 === hash(reference));
     if (!image) throw new Error('Register the reference image before building its 3D model');
+    const ledgerDir = join(this.storage, hash(input.project.id));
+    const inputHash = hash(JSON.stringify({ renderer: 2, name: input.name, reference: hash(reference), source: hash(source),
+      spec: hash(specBytes), art: artBytes ? hash(artBytes) : null, animation: input.options?.animation === true }));
+    // Reuse only host-bound evidence with every referenced byte still intact.
+    try {
+      const pointer = JSON.parse(await readFile(join(ledgerDir, `latest-${hash(sourcePath)}.json`), 'utf8'));
+      if (!/^[a-f0-9-]{36}$/u.test(pointer.id)) throw new Error('Invalid evidence pointer');
+      const record = JSON.parse(await readFile(join(ledgerDir, `${pointer.id}.json`), 'utf8'));
+      const asset = knownAssets.find(a => a.relativePath === record.assetPath && a.sha256 === record.assetHash);
+      if (!asset || asset.metadata?.evidenceId !== record.id || record.inputHash !== inputHash) throw new Error('Inputs changed');
+      for (const [path, expected] of Object.entries({ [record.assetPath]: record.assetHash, ...record.evidence })) {
+        if (hash(await readProjectBytes(input.project.root, path, 16 * 1024 * 1024)) !== expected) throw new Error('Evidence changed');
+      }
+      return modelResult(asset);
+    } catch { /* Missing, stale or damaged evidence must be rebuilt, never certified. */ }
     const result = await this.render({ source: source.toString('utf8'), reference, mimeType: image.mimeType, animation: input.options?.animation === true });
     if (result.glb.length > 16 * 1024 * 1024 || result.glb.length < 20 || result.glb.toString('ascii', 0, 4) !== 'glTF'
       || result.meshes < 1 || result.triangles < 1 || result.triangles > 100_000) throw new Error('Invalid model geometry or model exceeds the 100,000 triangle / 16 MiB budget');
     if (input.options?.animation === true && (result.skins < 1 || result.animations.length < 1)) throw new Error('animation=true requires a real skin and animation clip');
+    if (art) validateModelInspection(spec, art, result);
     const id = randomUUID();
     // Project id is hashed; arbitrary tool/project strings can never select storage paths.
-    const ledgerDir = join(this.storage, hash(input.project.id));
     await mkdir(ledgerDir, { recursive: true });
     const staging = join(ledgerDir, `${id}.glb`);
     await writeFile(staging, result.glb, { flag: 'wx' });
@@ -69,7 +87,8 @@ export class ReferenceModel3dService {
       await writeFile(join(input.project.root, path), bytes, { flag: 'wx' });
       evidence[path] = hash(bytes);
     }
-    const record = { version: 1, id, createdAt: new Date().toISOString(), specPath, specHash: hash(specBytes), referencePath, referenceHash: hash(reference), sourcePath, sourceHash: hash(source),
+    const record = { version: 2, id, inputHash, durationMs: Date.now() - started, createdAt: new Date().toISOString(), specPath, specHash: hash(specBytes), referencePath, referenceHash: hash(reference), sourcePath, sourceHash: hash(source),
+      ...(artBytes ? { artBiblePath: spec.artBiblePath, artBibleHash: hash(artBytes) } : {}), inspection: result.inspection ?? null,
       assetPath: imported.relativePath, assetHash: imported.sha256, evidence, triangles: result.triangles,
       meshes: result.meshes, skins: result.skins, animations: result.animations, visualReview: 'pending' };
     await writeFile(join(ledgerDir, `${id}.json`), JSON.stringify(record, null, 2), { flag: 'wx' });
@@ -79,9 +98,11 @@ export class ReferenceModel3dService {
       metadata: { route: 'image-threejs', generator: 'image-threejs-v1', referenceImage: referencePath,
         referenceSha256: hash(reference), sourcePath, sourceSha256: hash(source), specPath, evidenceId: id, evidencePath,
         triangleCount: result.triangles, rigged: result.skins > 0, animations: result.animations.join(','),
+        assetSpecVersion: spec.version ?? 1, assemblyCheck: art ? 'measured-contract-passed-runtime-pending' : 'legacy-unverified',
+        ...(artBytes ? { artBibleSha256: hash(artBytes) } : {}),
+        durationMs: Date.now() - started,
         visualReview: 'pending', approximation: 'Single-image reconstruction; hidden surfaces are inferred' } });
-    return { outcome: 'asset', asset, provider: { id: 'builtin-image-threejs', presetId: 'image-threejs',
-      displayName: '图片参考 → Three.js 建模', model: 'image-threejs-v1', route: 'image-threejs' } };
+    return modelResult(asset);
   }
 
   async verify(project: { id: string; root: string }, assets: GameAssetRecord[]): Promise<string[]> {
@@ -103,7 +124,8 @@ export class ReferenceModel3dService {
         if (!asset || record.assetHash !== asset.sha256) throw new Error('model missing or changed');
         covered.add(record.sourcePath);
         for (const [path, expected] of Object.entries({ [record.referencePath]: record.referenceHash,
-          [record.sourcePath]: record.sourceHash, [record.specPath]: record.specHash, [record.assetPath]: record.assetHash, ...record.evidence })) {
+          [record.sourcePath]: record.sourceHash, [record.specPath]: record.specHash, [record.assetPath]: record.assetHash,
+          ...(record.artBiblePath ? { [record.artBiblePath]: record.artBibleHash } : {}), ...record.evidence })) {
           if (hash(await readProjectBytes(project.root, path, 16 * 1024 * 1024)) !== expected) throw new Error('source, reference or evidence changed');
         }
       } catch { findings.push(`MODEL_REFERENCE: ${label} 的模型、参考图、源码或多角度证据缺失/已变化；重新运行 noobi_model3d_generate。`); }
@@ -118,6 +140,11 @@ export class ReferenceModel3dService {
     }
     return findings;
   }
+}
+
+function modelResult(asset: GameAssetRecord): MediaGenerationAssetResult {
+  return { outcome: 'asset', asset, provider: { id: 'builtin-image-threejs', presetId: 'image-threejs',
+    displayName: '图片参考 → Three.js 建模', model: 'image-threejs-v1', route: 'image-threejs' } };
 }
 
 export async function readProjectBytes(root: string, path: string, max: number): Promise<Buffer> {

@@ -75,14 +75,18 @@ export const renderReferenceModel: ModelRenderer = async input => {
     }
   }
   try {
-    window = create();
-    await wait(window.loadURL(`${origin}/?author=1`));
-    await ready();
-    const base64 = await wait(window.webContents.executeJavaScript('window.__modelState.glb'));
-    if (typeof base64 !== 'string' || base64.length > 24 * 1024 * 1024) throw new Error('Export exceeds GLB budget');
-    const glb = Buffer.from(base64, 'base64');
+    let glb = input.glb;
+    if (!glb) {
+      window = create();
+      await wait(window.loadURL(`${origin}/?author=1`));
+      await ready();
+      const base64 = await wait(window.webContents.executeJavaScript('window.__modelState.glb'));
+      if (typeof base64 !== 'string' || base64.length > 24 * 1024 * 1024) throw new Error('Export exceeds GLB budget');
+      glb = Buffer.from(base64, 'base64');
+      window.destroy(); window = undefined;
+    }
+    if (glb.length > 16 * 1024 * 1024 || glb.length < 20 || glb.toString('ascii', 0, 4) !== 'glTF') throw new Error('Invalid or oversized GLB');
     files.set('/model.glb', { bytes: glb, type: 'model/gltf-binary' });
-    window.destroy(); window = undefined;
     // Remove author code before loading the independent GLB inspection renderer.
     files.delete('/factory.js');
     window = create();
@@ -141,6 +145,7 @@ try {
       }
     }
     const stats = check(gltf.scene, gltf.animations);
+    stats.inspection = inspect(gltf.scene, gltf.animations);
     const scene = new THREE.Scene(); scene.background = new THREE.Color('#e8edf1');
     const bounds = new THREE.Box3().setFromObject(gltf.scene), center=bounds.getCenter(new THREE.Vector3());
     const size=bounds.getSize(new THREE.Vector3()), radius=size.length()/2;
@@ -180,5 +185,33 @@ function check(root, animations) {
   if(!Number.isFinite(size.length()) || size.length()<0.0001 || size.length()>10000)throw Error('Invalid model bounds');
   if(animations.length>32 || animations.some(a=>!a.tracks?.length || !Number.isFinite(a.duration) || a.duration<=0 || a.duration>600))throw Error('Invalid animation clips');
   return {meshes,skins,triangles:Math.ceil(triangles),animations:animations.map(a=>a.name)};
+}
+function inspect(root, animations) {
+  root.updateMatrixWorld(true);
+  const box=new THREE.Box3().setFromObject(root), nodes=[], materials=new Set(); let maxTextureSize=0;
+  root.traverse(node=>{
+    nodes.push({name:node.name,position:node.getWorldPosition(new THREE.Vector3()).toArray()});
+    for(const material of (Array.isArray(node.material)?node.material:node.material?[node.material]:[])) {
+      materials.add(material);
+      for(const value of Object.values(material)) if(value?.isTexture) {
+        const image=value.image;
+        if(!image || !Number.isFinite(image.width) || !Number.isFinite(image.height)) throw Error('Texture has no decoded dimensions');
+        maxTextureSize=Math.max(maxTextureSize,image.width,image.height);
+      }
+    }
+  });
+  const clips=[];
+  for(const clip of animations) {
+    const bindings=clip.tracks.map(track=>({binding:THREE.PropertyBinding.create(root,track.name),size:track.getValueSize()}));
+    const read=()=>bindings.flatMap(({binding,size})=>{const value=new Array(size).fill(NaN);binding.getValue(value,0);if(value.some(x=>!Number.isFinite(x)))throw Error('Unbound/non-numeric animation track in '+clip.name);return value;});
+    bindings.forEach(({binding})=>binding.bind());
+    const mixer=new THREE.AnimationMixer(root),action=mixer.clipAction(clip);action.play();mixer.setTime(0);
+    const initial=read();let motionObserved=false;
+    for(const ratio of [.25,.5,.75]){mixer.setTime(clip.duration*ratio);const current=read();if(current.some((x,i)=>Math.abs(x-initial[i])>1e-6))motionObserved=true;}
+    mixer.stopAllAction();mixer.uncacheRoot(root);bindings.forEach(({binding})=>binding.unbind());
+    clips.push({name:clip.name,duration:clip.duration,targets:bindings.length,motionObserved});
+  }
+  root.updateMatrixWorld(true);
+  return {bounds:{min:box.min.toArray(),max:box.max.toArray()},nodeCount:nodes.length,materialCount:materials.size,maxTextureSize,nodes,clips};
 }
 `;

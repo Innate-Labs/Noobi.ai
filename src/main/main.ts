@@ -12,6 +12,7 @@ import { PlanService, requirementsFor } from './planService.js';
 import { PlanStarter } from './planStarter.js';
 import { PlanResumer, continuationPrompt } from './planResumer.js';
 import { ProductionRunStore } from './production/productionRunStore.js';
+import { FreeModelLibrary } from './freeModelLibrary.js';
 import { GameVersionStore } from './production/gameVersionStore.js';
 import { GameVersionRestorer } from './production/gameVersionRestorer.js';
 import type { GameVersion, RestoreGameVersionInput } from '../shared/gameVersions.js';
@@ -375,6 +376,7 @@ async function launch(): Promise<void> {
     assetStore,
     assetPlanStore,
     generationService: mediaGenerationService,
+    modelLibrary: new FreeModelLibrary(assetStore),
     resolveProject: async (threadId) => {
       const route = threadRoutes.get(threadId);
       if (!route || route.role !== 'implementer') return null;

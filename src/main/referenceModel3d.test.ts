@@ -46,6 +46,39 @@ describe('reference model evidence', () => {
     await writeFile(join(c.root,c.input.options.referenceImage),'changed image');
     expect((await c.service.verify(c.project,[stripped])).length).toBeGreaterThan(0);
   });
+  it('reuses identical bound output but rebuilds changed or damaged evidence', async () => {
+    const c = await setup();
+    const first = await c.service.generate(c.input);
+    const again = await c.service.generate(c.input);
+    expect(again.asset.id).toBe(first.asset.id);
+    expect(c.render).toHaveBeenCalledTimes(1);
+    await writeFile(join(c.root, String(first.asset.metadata?.evidencePath), 'front.png'), 'damaged');
+    await c.service.generate(c.input);
+    expect(c.render).toHaveBeenCalledTimes(2);
+    await writeFile(join(c.root, c.input.options.sourcePath), '// corrected');
+    await c.service.generate(c.input);
+    expect(c.render).toHaveBeenCalledTimes(3);
+  });
+
+  it('binds a v2 art bible and rejects bad assembly before importing a model', async () => {
+    const c = await setup();
+    const specFile = join(c.root, 'model-sources/object.spec.json');
+    const original = JSON.parse(await readFile(specFile, 'utf8'));
+    const art = { version: 1, id: 'wood', style: 'wooden props', palette: ['#aa8844'], units: 'meters', up: '+Y', forward: '-Z', budgets: {triangles:1000,nodes:20,materials:4,textureSize:512} };
+    await mkdir(join(c.root, '.noobi'), {recursive:true});
+    await writeFile(join(c.root, '.noobi/art-bible.json'), JSON.stringify(art));
+    await writeFile(specFile, JSON.stringify({...original,version:2,artBiblePath:'.noobi/art-bible.json', game:{dimensions:[1,1,1],tolerance:0.1,pivot:{node:'Root',position:[0,0,0]},sockets:[],collision:{kind:'box',purpose:'solid crate'}},animation:{mode:'none',required:[]}}));
+    const base = await c.render();
+    c.render.mockResolvedValue({...base,inspection:{bounds:{min:[-0.5,0,-0.5],max:[0.5,1,0.5]},nodeCount:3,materialCount:1,maxTextureSize:0,nodes:[{name:'Root',position:[0,0,0]}],clips:[]}} as typeof base);
+    const result = await c.service.generate(c.input);
+    expect(result.asset.metadata?.assemblyCheck).toBe('measured-contract-passed-runtime-pending');
+    await writeFile(join(c.root, '.noobi/art-bible.json'), JSON.stringify({...art, budgets:{...art.budgets, triangles:10}}));
+    expect(await c.service.verify(c.project,[result.asset])).toHaveLength(1);
+    await expect(c.service.generate(c.input)).rejects.toThrow('budget');
+    const models = (await c.assets.list(c.project.id,c.root)).filter(a=>a.kind==='model3d');
+    expect(models).toHaveLength(1);
+  });
+
   it('requires an explicit shape specification before executing authored code', async () => {
     const c=await setup();await writeFile(join(c.root,'model-sources/object.spec.json'),'{}');
     await expect(c.service.generate(c.input)).rejects.toThrow('criticalFeatures');

@@ -54,6 +54,10 @@ Godot 3D production now validates a representative scene before expanding conten
 
 The experience report separates automatic scene checks from visual-review priorities. Complete registration does not certify appearance: the independent reviewer still inspects screenshots for placeholder art, style, proportions, lighting, occlusion and collision alignment. This probe currently covers Godot 3D, not Web Three.js scenes; unobserved, undeclared levels are not certified. See the [scene-quality acceptance report](docs/development-plan/reports/10-platform-scene-quality.md).
 
+New workspaces also include `MODEL_ASSETS_V2.md`: a shared art bible and explicit scale, pivot/socket, collision-intent and animation requirements. The host measures independently reloaded GLBs and checks sampled clip motion; actual collision, facing, style and in-game animation still need runtime/visual review. Identical model inputs reuse output only while their bound files and evidence remain intact. Legacy assets remain assembly-unverified.
+
+The offline [CC0 model library](resources/free-models/LICENSES.md) includes 14 Kenney environment props with previews, measurements and source hashes. Production can list/import matching props through dedicated tools, retaining their third-party provenance. They include no gameplay collision and do not replace requested unique characters.
+
 ### Reusable 3D mechanics
 
 New Godot projects include optional versioned third-person control, collision camera, interaction, melee/enemy and checkpoint components in `runtime/noobi/ADVENTURE_V1.md` and `CHECKPOINT_V1.md`. Use only mechanics selected in the plan and supply game-specific visuals, collision shapes and save validation. Real Godot physics and browser drag-camera/checkpoint fixtures have been exercised; these fixtures are not generated games or finished artwork. Native pointer capture remains unverified in the tested Electron environment. The [stage 06 report](docs/development-plan/reports/06-delivery.md) tracks remaining autonomous-generation acceptance.

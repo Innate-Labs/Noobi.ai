@@ -1,3 +1,4 @@
+import { FreeModelLibrary } from './freeModelLibrary.js';
 import { createProceduralModel3dGlb } from './proceduralModel3d.js';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -27,8 +28,10 @@ afterEach(async () => {
 
 describe('media tool broker', () => {
   it('publishes bounded top-level asset and generation function tools', () => {
-    expect(MEDIA_DYNAMIC_TOOLS.map((tool) => tool.type)).toEqual(Array(7).fill('function'));
+    expect(MEDIA_DYNAMIC_TOOLS.map((tool) => tool.type)).toEqual(Array(9).fill('function'));
     expect(MEDIA_DYNAMIC_TOOLS.map((tool) => tool.name)).toEqual([
+      'noobi_model3d_library_list',
+      'noobi_model3d_library_import',
       'noobi_asset_list',
       'noobi_asset_plan',
       'noobi_asset_register',
@@ -67,6 +70,28 @@ describe('media tool broker', () => {
     });
     expect(registerTool?.inputSchema.properties?.atlasColumns).toMatchObject({ minimum: 1, maximum: 64 });
     expect(registerTool?.description).toContain('stable subjectId');
+  });
+
+  it('imports an offline model through the tool with provenance and a durable plan', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-library-broker-')); roots.push(root);
+    const assetStore = new AssetStore(), assetPlanStore = await makePlanStore(), responses: Array<{id:string|number;result:unknown}> = [];
+    const generated = vi.fn();
+    const broker = new MediaToolBroker({server:{respondToServerRequest:(id,result)=>{responses.push({id,result})}},assetStore,assetPlanStore,
+      modelLibrary:new FreeModelLibrary(assetStore),resolveProject:async()=>({id:'library-project',root}),onGeneratedAsset:generated});
+    broker.handle(toolRequest(1501,'noobi_model3d_library_list',{}));
+    await vi.waitFor(()=>expect(responses).toHaveLength(1));
+    const entries = readToolResponse(responses[0]!.result).payload.entries as Array<{id:string}>;
+    expect(entries).toHaveLength(14);
+    broker.handle(toolRequest(1502,'noobi_model3d_library_import',{libraryId:entries[0]!.id,planId:'tree',name:'tree',prompt:'Use suitable low-poly forest prop'}));
+    await vi.waitFor(()=>expect(responses).toHaveLength(2));
+    expect(readToolResponse(responses[1]!.result)).toMatchObject({success:true,payload:{source:'imported',asset:{source:'imported',metadata:{license:'CC0-1.0',mediaGeneration:false}},plan:{route:'free-library'}}});
+    expect(generated).not.toHaveBeenCalled();
+    expect(await assetPlanStore.get('library-project','tree')).toMatchObject({kind:'model3d',route:'free-library',attemptCount:1});
+    await assetPlanStore.upsert({id:'audio-existing',projectId:'library-project',kind:'audio',name:'theme',prompt:'music'});
+    broker.handle(toolRequest(1503,'noobi_model3d_library_import',{libraryId:entries[0]!.id,planId:'audio-existing',name:'tree',prompt:'must not change audio plan'}));
+    await vi.waitFor(()=>expect(responses).toHaveLength(3));
+    expect(readToolResponse(responses[2]!.result).success).toBe(false);
+    expect(await assetPlanStore.get('library-project','audio-existing')).toMatchObject({kind:'audio',attemptCount:0});
   });
 
   it('ignores non-tool requests and safely rejects malformed calls', async () => {

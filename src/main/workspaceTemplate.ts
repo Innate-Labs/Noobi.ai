@@ -1,3 +1,4 @@
+import { MODEL_ASSET_GUIDE } from './runtime/modelAssetGuide.js';
 import { CHECKPOINT_KIT, CHECKPOINT_GUIDE } from './runtime/checkpointKit.js';
 import { ADVENTURE_KIT_FILES } from './runtime/adventureKit.js';
 import { constants } from 'node:fs';
@@ -197,6 +198,7 @@ function workspaceFiles(project: WorkspaceProject): Record<string, string> {
       'scenes/main.tscn': godotMainScene(),
       'scripts/main.gd': godotMainScript(project),
       ...ADVENTURE_KIT_FILES,
+      'runtime/noobi/MODEL_ASSETS_V2.md': MODEL_ASSET_GUIDE,
       'runtime/noobi/checkpoint_v1.gd': CHECKPOINT_KIT,
       'runtime/noobi/CHECKPOINT_V1.md': CHECKPOINT_GUIDE,
       'runtime/noobi/platformer_controller.gd': PLATFORMER_CONTROLLER,

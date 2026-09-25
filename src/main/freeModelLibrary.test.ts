@@ -1,0 +1,22 @@
+import { mkdtemp, readFile, writeFile, rm, copyFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve, join } from 'node:path';
+import { afterEach, expect, it } from 'vitest';
+import { AssetStore } from './assetStore.js';
+import { FreeModelLibrary } from './freeModelLibrary.js';
+const roots: string[] = [];
+afterEach(async()=>{await Promise.all(roots.splice(0).map(root=>rm(root,{recursive:true,force:true})));});
+it('rejects changed bundled bytes and path-shaped IDs without importing an asset', async()=>{
+  const root=await mkdtemp(join(tmpdir(),'noobi-free-model-'));roots.push(root);
+  const directory=await mkdtemp(join(tmpdir(),'noobi-free-catalog-'));roots.push(directory);
+  const entries=JSON.parse(await readFile(resolve('resources/free-models/catalog.json'),'utf8'));
+  await writeFile(join(directory,'catalog.json'),JSON.stringify([entries[0]]));
+  await copyFile(resolve('resources/free-models',entries[0].file),join(directory,entries[0].file));
+  const store=new AssetStore(),library=new FreeModelLibrary(store,directory),project={id:'test',root};
+  await expect(library.import(project,'../../private')).rejects.toThrow('Unknown');
+  await writeFile(join(directory,entries[0].file),'corrupt');
+  await expect(library.import(project,entries[0].id)).rejects.toThrow('checksum');
+  expect(await store.list(project.id,root)).toEqual([]);
+  await writeFile(join(directory,'catalog.json'),JSON.stringify([{...entries[0],file:'../outside.glb'}]));
+  await expect(library.list()).rejects.toThrow('catalog');
+});

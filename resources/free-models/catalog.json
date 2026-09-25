@@ -1,0 +1,378 @@
+[
+  {
+    "id": "kenney-tree-oak",
+    "file": "kenney-tree-oak.glb",
+    "title": "橡树",
+    "tags": [
+      "tree",
+      "forest",
+      "树",
+      "森林"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "d7fd8773674928c50c11b66d12c636d49bdcc15a8b1c7fbb98e6f63a3439a3f3",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.6406,
+      1.2262,
+      0.7396
+    ],
+    "triangles": 196,
+    "nodes": 4,
+    "preview": "previews/kenney-tree-oak.png"
+  },
+  {
+    "id": "kenney-tree-pinedefaulta",
+    "file": "kenney-tree-pinedefaulta.glb",
+    "title": "松树",
+    "tags": [
+      "tree",
+      "pine",
+      "松树"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "60d8f352fa3659ed275e06cbddfecf8f92c8effe2977c2f2d7b29b6c9b582e46",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.532,
+      1.5458,
+      0.532
+    ],
+    "triangles": 230,
+    "nodes": 4,
+    "preview": "previews/kenney-tree-pinedefaulta.png"
+  },
+  {
+    "id": "kenney-tree-palm",
+    "file": "kenney-tree-palm.glb",
+    "title": "棕榈",
+    "tags": [
+      "tree",
+      "palm",
+      "棕榈",
+      "海岛"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "27bbb23d26ed788d84de6df2f7fab0acc3fe0ff16c7d08cdcfa1fffcb11de324",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.9355,
+      1.5146,
+      1.0128
+    ],
+    "triangles": 186,
+    "nodes": 4,
+    "preview": "previews/kenney-tree-palm.png"
+  },
+  {
+    "id": "kenney-rock-largea",
+    "file": "kenney-rock-largea.glb",
+    "title": "大岩石",
+    "tags": [
+      "rock",
+      "large",
+      "岩石"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "6dd15390fd96501dcd1454765a17ba61dbbd8d47705dfe5149c8dd92b353ce25",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.7849,
+      0.2598,
+      1.0155
+    ],
+    "triangles": 80,
+    "nodes": 4,
+    "preview": "previews/kenney-rock-largea.png"
+  },
+  {
+    "id": "kenney-rock-smalla",
+    "file": "kenney-rock-smalla.glb",
+    "title": "小岩石",
+    "tags": [
+      "rock",
+      "small",
+      "石头"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "df9fff9d711e61370e8df0caa2514c89b8f8a8dc6c6fafaf4eb2ec79c5ae07c1",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.3608,
+      0.1912,
+      0.3608
+    ],
+    "triangles": 16,
+    "nodes": 4,
+    "preview": "previews/kenney-rock-smalla.png"
+  },
+  {
+    "id": "kenney-grass-large",
+    "file": "kenney-grass-large.glb",
+    "title": "草丛",
+    "tags": [
+      "grass",
+      "草"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "af49a595624abca7249824eeefb944d4baf974abeeb5b16110d175da3563d6cd",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.409,
+      0.254,
+      0.4079
+    ],
+    "triangles": 224,
+    "nodes": 2,
+    "preview": "previews/kenney-grass-large.png"
+  },
+  {
+    "id": "kenney-flower-reda",
+    "file": "kenney-flower-reda.glb",
+    "title": "红花",
+    "tags": [
+      "flower",
+      "花"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "171930b7789ddbf735af3745576b5393750beb9133b9ff4a444bb6bb2986c020",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.1591,
+      0.2925,
+      0.1811
+    ],
+    "triangles": 76,
+    "nodes": 4,
+    "preview": "previews/kenney-flower-reda.png"
+  },
+  {
+    "id": "kenney-mushroom-red",
+    "file": "kenney-mushroom-red.glb",
+    "title": "蘑菇",
+    "tags": [
+      "mushroom",
+      "蘑菇"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "843e2de43dce78920a5675a67bac4b72f500e6220315e713fe08381642cfc571",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.174,
+      0.2028,
+      0.2009
+    ],
+    "triangles": 48,
+    "nodes": 4,
+    "preview": "previews/kenney-mushroom-red.png"
+  },
+  {
+    "id": "kenney-bridge-wood",
+    "file": "kenney-bridge-wood.glb",
+    "title": "木桥",
+    "tags": [
+      "bridge",
+      "wood",
+      "桥"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "3da4c208b0f72b7f2ba42db521b62ec4b0278050c75256a6982c40d21aab5701",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      1.04,
+      0.4,
+      1.04
+    ],
+    "triangles": 220,
+    "nodes": 5,
+    "preview": "previews/kenney-bridge-wood.png"
+  },
+  {
+    "id": "kenney-cliff-block-rock",
+    "file": "kenney-cliff-block-rock.glb",
+    "title": "岩壁地块",
+    "tags": [
+      "cliff",
+      "terrain",
+      "地形"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "2f31de8502288d6adcdae4d5605cfe65d4bcd4369dd0decd116c2615b9d3d01f",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      1,
+      1,
+      1
+    ],
+    "triangles": 12,
+    "nodes": 4,
+    "preview": "previews/kenney-cliff-block-rock.png"
+  },
+  {
+    "id": "kenney-cliff-blockslope-rock",
+    "file": "kenney-cliff-blockslope-rock.glb",
+    "title": "斜坡地块",
+    "tags": [
+      "slope",
+      "terrain",
+      "斜坡"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "82fe2e0477c7ce2c5994435f44074022cb2a36f56ff40bd34598cbfc87286885",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      1.2,
+      1,
+      1
+    ],
+    "triangles": 70,
+    "nodes": 4,
+    "preview": "previews/kenney-cliff-blockslope-rock.png"
+  },
+  {
+    "id": "kenney-stump-old",
+    "file": "kenney-stump-old.glb",
+    "title": "树桩",
+    "tags": [
+      "stump",
+      "树桩"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "4c2d2da34804c1662c6a776a9d60fe4449e6f6fdd50914bfec7d5cca3e9ceddb",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.3565,
+      0.2665,
+      0.371
+    ],
+    "triangles": 120,
+    "nodes": 2,
+    "preview": "previews/kenney-stump-old.png"
+  },
+  {
+    "id": "kenney-tent-smallopen",
+    "file": "kenney-tent-smallopen.glb",
+    "title": "帐篷",
+    "tags": [
+      "tent",
+      "camp",
+      "帐篷"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "d32c3f7a5926de03521a012774316d38e09c27bd6dbae7cefdb01debe003ecdd",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.5476,
+      0.5611,
+      0.6664
+    ],
+    "triangles": 224,
+    "nodes": 5,
+    "preview": "previews/kenney-tent-smallopen.png"
+  },
+  {
+    "id": "kenney-campfire-stones",
+    "file": "kenney-campfire-stones.glb",
+    "title": "营火石圈",
+    "tags": [
+      "campfire",
+      "camp",
+      "营火"
+    ],
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/nature-kit",
+    "sourceVersion": "Nature Kit 2.1 (archive license)",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "54869db23243a3f4905bc00bd4cd93b1037b28556ab3ef93e7a893a093791e35",
+    "animated": false,
+    "collision": "Game must add and validate collision",
+    "style": "low-poly nature",
+    "dimensions": [
+      0.5408,
+      0.0778,
+      0.5155
+    ],
+    "triangles": 264,
+    "nodes": 2,
+    "preview": "previews/kenney-campfire-stones.png"
+  }
+]

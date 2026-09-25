@@ -1,5 +1,6 @@
 import { classifyDeliveryFailure } from './production/deliveryFailure.js';
 import type { AssetStore } from './assetStore.js';
+import type { FreeModelLibrary } from './freeModelLibrary.js';
 import type { AssetPlanStore, AssetPlanUpsertInput } from './assetPlanStore.js';
 import type { CodexAppServer, DynamicToolSpec, JsonValue } from './codexAppServer.js';
 import type { JsonRpcServerRequest } from './jsonRpcPeer.js';
@@ -47,6 +48,7 @@ export interface MediaToolBrokerOptions {
     'list' | 'get' | 'upsert' | 'begin' | 'waitForAgent' | 'generated' | 'fail'
   >;
   generationService?: Pick<MediaGenerationService, 'generate'> & Partial<Pick<MediaGenerationService, 'usesFreeAudio' | 'usesReferenceModels'>>;
+  modelLibrary?: Pick<FreeModelLibrary, 'list' | 'import'>;
   resolveProject(threadId: string): Promise<MediaToolProject | null>;
   onAssetsChanged?(projectId: string, assets: GameAssetRecord[]): void | Promise<void>;
   onAssetPlansChanged?(projectId: string, assetPlans: AssetPlanRecord[]): void | Promise<void>;
@@ -74,6 +76,12 @@ const ASSET_PLAN_ARGUMENT_KEYS = [
 ] as const;
 
 export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
+  { type: 'function', name: 'noobi_model3d_library_list',
+    description: 'List bundled CC0 low-poly environment props with source, measured size and tags. These are existing Kenney assets, not generated or reference-matched. Use only if style fits the selected plan; characters and requested unique objects still need suitable modeling.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { type: 'function', name: 'noobi_model3d_library_import',
+    description: 'Import one listed CC0 GLB offline and track its asset plan. Supply libraryId, planId, name and prompt. Keeps source/license metadata and reports imported, never AI-generated. Add and verify gameplay collision, scale and actual scene binding.',
+    inputSchema: { type: 'object', properties: { libraryId: {type:'string',maxLength:100}, planId:{type:'string',maxLength:96}, name:{type:'string',maxLength:100}, prompt:{type:'string',maxLength:4000} }, required:['libraryId','planId','name','prompt'], additionalProperties:false } },
   {
     type: 'function',
     name: 'noobi_asset_list',
@@ -250,6 +258,15 @@ export class MediaToolBroker {
 
       let payload: unknown;
       switch (params.tool) {
+        case 'noobi_model3d_library_list': {
+          assertOnlyKeys(objectArguments(params.arguments), []);
+          if (!this.#options.modelLibrary) throw new ToolInputError('Free model library is unavailable');
+          payload = { entries: await this.#options.modelLibrary.list() };
+          break;
+        }
+        case 'noobi_model3d_library_import':
+          payload = await this.#importLibraryModel(project, params.arguments);
+          break;
         case 'noobi_asset_list':
           payload = await this.#list(project, params.arguments);
           break;
@@ -277,6 +294,34 @@ export class MediaToolBroker {
       this.#respond(request.id, payload, true);
     } catch (error) {
       this.#respond(request.id, { error: safeError(error, project?.root) }, false);
+    }
+  }
+
+  async #importLibraryModel(project: MediaToolProject, rawArguments: JsonValue): Promise<unknown> {
+    const args = objectArguments(rawArguments);
+    assertOnlyKeys(args, ['libraryId', 'planId', 'name', 'prompt']);
+    if (!this.#options.modelLibrary) throw new ToolInputError('Free model library is unavailable');
+    const libraryId = requiredMultilineString(args.libraryId, 'libraryId', 100);
+    const id = optionalPlanId(args.planId);
+    if (!id) throw new ToolInputError('planId is required');
+    const name = requiredGenerationName(args.name), prompt = requiredMultilineString(args.prompt, 'prompt', 4000);
+    if (!(await this.#options.modelLibrary.list()).some(entry => entry.id === libraryId)) throw new ToolInputError('Unknown free 3D library ID');
+    if (this.#options.assetPlanStore) {
+      const existing = (await this.#options.assetPlanStore.list(project.id)).find(plan => plan.id === id);
+      if (existing && existing.kind !== 'model3d') throw new ToolInputError('Asset plan kind must be model3d');
+    }
+    let plan = await this.#preparePlan(project, { id, projectId: project.id, name, kind: 'model3d', prompt, options: { libraryId } });
+    let began = false;
+    try {
+      if (plan) { plan = await this.#beginPlan(project, id, 'free-library'); began = true; }
+      const asset = await this.#options.modelLibrary.import(project, libraryId);
+      await this.#notify(project);
+      if (plan) plan = await this.#recordGeneratedPlan(project, id, asset, 'free-library');
+      return { asset: publicAsset(asset), ...(plan ? { plan: publicAssetPlan(plan) } : {}), source: 'imported',
+        instruction: 'Existing CC0 prop; fit to the chosen style and validate collision/scale in the actual scene. Not AI-generated or automatically approved artwork.' };
+    } catch (error) {
+      if (began && plan) await this.#recordFailedPlan(project, id, error);
+      throw error;
     }
   }
 
@@ -561,7 +606,7 @@ export class MediaToolBroker {
     const current = await this.#requireAssetPlanStore().get(project.id, planId);
     if (current.status === 'failed' && current.error?.code === 'provider-blocked'
       && !(current.kind === 'audio' && route === 'free-library')
-      && !(current.kind === 'model3d' && route === 'image-threejs')) {
+      && !(current.kind === 'model3d' && (route === 'image-threejs' || route === 'free-library'))) {
       throw new ToolInputError(`外部素材服务仍被阻塞：${current.error.message}。更新服务配置后在素材面板重新排队；不要反复调用生成。`);
     }
     const plan = await this.#requireAssetPlanStore().begin(project.id, planId, route);
@@ -983,7 +1028,7 @@ function publicGenerationResult(
       ...(result.fallback === 'codex-imagegen'
         ? { instruction: `Invoke the Codex $imagegen skill now, then register the generated image with Noobi.ai${plan ? ` using planId=${plan.id}` : ''}.` }
         : result.fallback === 'image-threejs'
-          ? { instruction: 'Generate/import and VIEW one object reference image first. First write model-sources/<name>.spec.json with {referenceImage, parts:[{name,shape,material}], criticalFeatures:[string], inferredSurfaces:[string]}. Write model-sources/<name>.mjs exporting async createModel(THREE, {referenceUrl}) returning {root: THREE.Group, animations: []}. Use actual image proportions, component hierarchy, materials, pivots and sockets; no canned keyword templates. No npm install, Node APIs or external network. Built-in Three.js is provided. Model budget: 100000 triangles, 2048 nodes, 2048px textures, 16 MiB GLB, 30 seconds. Retry noobi_model3d_generate with the SAME planId, referenceImage and sourcePath. Inspect the returned reference/front/side/back evidence before use. Correct up to 3 times; report remaining mismatch honestly. animation=true requires real skin and clips.' }
+          ? { instruction: 'Generate/import and VIEW one object reference image first. Read runtime/noobi/MODEL_ASSETS_V2.md when available and use its v2 art bible/assembly contract. First write model-sources/<name>.spec.json with {referenceImage, parts:[{name,shape,material}], criticalFeatures:[string], inferredSurfaces:[string]}. Write model-sources/<name>.mjs exporting async createModel(THREE, {referenceUrl}) returning {root: THREE.Group, animations: []}. Use actual image proportions, component hierarchy, materials, pivots and sockets; no canned keyword templates. No npm install, Node APIs or external network. Built-in Three.js is provided. Model budget: 100000 triangles, 2048 nodes, 2048px textures, 16 MiB GLB, 30 seconds. Retry noobi_model3d_generate with the SAME planId, referenceImage and sourcePath. Inspect the returned reference/front/side/back evidence before use. Correct up to 3 times; report remaining mismatch honestly. animation=true requires real skin and clips.' }
         : result.fallback === 'procedural-audio'
           ? { instruction: `Use noobi_audio_synthesize${plan ? ` with planId=${plan.id}` : ''} for a short deterministic effect, deterministic Web Audio for a custom/ambient fallback, or import a licensed WAV/MP3/OGG. Do not claim MiniMax generated generic SFX or ambience.` }
           : { instruction: 'Call noobi_model3d_generate again. Check the selected model source in Settings; do not silently fall back to fixed templates.' }),
