@@ -31,6 +31,7 @@
 | 09 | 参考对照、长流程与体验质量 | [开发与验收标准](09-quality-and-reference-match.md) |
 | 10 | 一键游玩、导出与浏览器试玩 | [开发与验收标准](10-delivery-and-release.md) |
 | 11 | 多作品验证与首版验收 | [开发与验收标准](11-benchmark-and-beta.md) |
+| 12 | 完整游戏 UI 与状态绑定 | [开发与验收标准](12-game-ui.md) |
 
 ## 两套流程必须区分
 

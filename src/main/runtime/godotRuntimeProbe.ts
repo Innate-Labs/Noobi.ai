@@ -101,6 +101,7 @@ func _collect(node: Node, scene: Node) -> void:
     if node is CanvasLayer:
         item["layer"] = node.layer
     if node is Control:
+        item["focused"] = node.has_focus()
         var bounds: Rect2 = node.get_global_rect()
         item["rect"] = [bounds.position.x, bounds.position.y, bounds.size.x, bounds.size.y]
         item["minimumSize"] = [node.get_combined_minimum_size().x, node.get_combined_minimum_size().y]
@@ -164,6 +165,13 @@ func _collect(node: Node, scene: Node) -> void:
         item["shape"] = node.shape.get_class() if node.shape else "missing"
         if node.shape is RectangleShape2D:
             item["size"] = [node.shape.size.x, node.shape.size.y]
+    if node is BaseButton:
+        item["disabled"] = node.disabled
+        item["pressed"] = node.button_pressed
+    if node is Range:
+        item["value"] = node.value
+        item["minimum"] = node.min_value
+        item["maximum"] = node.max_value
     if node is Label or node is Button:
         var text_value: String = node.text
         item["text"] = text_value.left(180)

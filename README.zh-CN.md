@@ -233,3 +233,5 @@ npm run package:mac
 [运行样板](examples/image-threejs/README.md)包含参考图、建模规格和源码。使用 `npm run smoke:model3d` 验证隔离导出、贴图、三视图、执行限制与 Godot 导入。默认模式无需 3D API；可在“设置 → 媒体 API”手动切换为外部服务并保存。
 
 新 Godot 工程内置 OFL-1.1 中文字体及其组件许可证，离线可用，不复制开发电脑上的系统字体。详见 `resources/game-fonts/README.md`。
+
+新 Godot 工程提供完整原生游戏 UI 组件，需连接真实游戏状态；版本历史可导出固定产物的 Web 试玩包（需要 HTTP 服务，尚无独立桌面启动器）。完整生成作品接入和设备验收仍以阶段报告为准。

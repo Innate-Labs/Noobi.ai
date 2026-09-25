@@ -1,3 +1,4 @@
+import { GAME_UI_KIT, GAME_UI_GUIDE } from './runtime/gameUiKit.js';
 import { MODEL_ASSET_GUIDE } from './runtime/modelAssetGuide.js';
 import { bundledGameFonts } from './gameFonts.js';
 import { PROGRESSION_KIT, PROGRESSION_GUIDE } from './runtime/progressionKit.js';
@@ -202,6 +203,8 @@ function workspaceFiles(project: WorkspaceProject): Record<string, string> {
       ...ADVENTURE_KIT_FILES,
       'runtime/noobi/MODEL_ASSETS_V2.md': MODEL_ASSET_GUIDE,
       'runtime/noobi/progression_v1.gd': PROGRESSION_KIT,
+      'runtime/noobi/ui_v1.gd': GAME_UI_KIT,
+      'runtime/noobi/GAME_UI_V1.md': GAME_UI_GUIDE,
       'runtime/noobi/PROGRESSION_V1.md': PROGRESSION_GUIDE,
       'runtime/noobi/checkpoint_v1.gd': CHECKPOINT_KIT,
       'runtime/noobi/CHECKPOINT_V1.md': CHECKPOINT_GUIDE,
@@ -419,6 +422,7 @@ Set explicit budgets for texture dimensions, concurrent sounds, model count, tri
 
 ## 4. Implement safely
 
+- New Godot projects include runtime/noobi/GAME_UI_V1.md and ui_v1.gd for a complete native title/HUD/inventory/quests/regions/pause/settings/failure/ending flow. Wire every action to authoritative game state and persistent saves; missing adapters must not look successful. Theme it to the approved art direction and verify actual mouse/keyboard interaction.
 - New Godot projects include an offline OFL-1.1 Chinese font in runtime/noobi/fonts/ with source hashes and licenses. Use that FontFile, or a properly licensed replacement matching the art direction. Never copy developer system fonts for distribution. Retain all font licenses in game exports.
 - Reuse programmatic shapes, gradients, typography, and ${project.engine === 'godot' ? 'Godot-native procedural SFX' : 'Web Audio'} when they fit the art direction or provide an explicit fallback, but never treat them as satisfying the host-generated image gate.
 - For generated or reused 2D/2.5D animation, load the real keyframe assets and advance frames during gameplay with explicit timing and state transitions. Merely moving one static image, rendering a full sheet without cropping, or leaving poses unused is not animation integration.
