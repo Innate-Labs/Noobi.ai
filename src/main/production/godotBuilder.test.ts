@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -47,4 +47,16 @@ it('avoids repeated engine work only while source, engine and exported bytes rem
   const fifth = await buildGodotCandidate(input);
   expect(fifth.record.buildId).not.toBe(fourth.record.buildId);
   expect(execute).toHaveBeenCalledTimes(16);
+});
+
+it('rejects an impossible progression graph before engine work and retains its evidence', async () => {
+  const root=await mkdtemp(join(tmpdir(),'noobi-graph-build-'));roots.push(root);
+  const projectRoot=join(root,'game');await mkdir(join(projectRoot,'data'),{recursive:true});
+  await writeFile(join(projectRoot,'project.godot'),'[application]\nconfig/name="Graph"\n');
+  const d=JSON.parse(await readFile(new URL('../../../examples/progression/three-regions.json',import.meta.url),'utf8'));
+  d.quests[0].region='ruins';await writeFile(join(projectRoot,'data/progression.json'),JSON.stringify(d));
+  const execute=vi.fn();const environment={getStatus:async()=>({canExportProjects:true,tool:{version:'4.7.1'},exportTemplates:{expectedVersion:'4.7.1'}}),execute} as unknown as GodotEnvironmentService;
+  const store=new GodotBuildStore(join(root,'private'));
+  await expect(buildGodotCandidate({projectId:'test',projectRoot,environment,store})).rejects.toThrow('No reachable ending');
+  expect(execute).not.toHaveBeenCalled();expect(await store.latest('test')).toBeNull();
 });

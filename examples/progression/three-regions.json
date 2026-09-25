@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "items": {
+    "key": {
+      "max": 1
+    },
+    "gem": {
+      "max": 2
+    }
+  },
+  "abilities": [
+    "dash",
+    "glide"
+  ],
+  "regions": [
+    "camp",
+    "ruins",
+    "summit"
+  ],
+  "start": "camp",
+  "goals": [
+    "summit"
+  ],
+  "goalQuests": [
+    "finale"
+  ],
+  "initial": {
+    "items": {},
+    "abilities": []
+  },
+  "quests": [
+    {
+      "id": "camp-key",
+      "region": "camp",
+      "requires": {
+        "quests": [],
+        "abilities": [],
+        "items": {}
+      },
+      "reward": {
+        "items": {
+          "key": 1
+        },
+        "abilities": [
+          "dash"
+        ]
+      }
+    },
+    {
+      "id": "ruins-glide",
+      "region": "ruins",
+      "requires": {
+        "quests": [
+          "camp-key"
+        ],
+        "abilities": [
+          "dash"
+        ],
+        "items": {}
+      },
+      "reward": {
+        "items": {
+          "gem": 1
+        },
+        "abilities": [
+          "glide"
+        ]
+      }
+    },
+    {
+      "id": "finale",
+      "region": "summit",
+      "requires": {
+        "quests": [
+          "ruins-glide"
+        ],
+        "abilities": [
+          "glide"
+        ],
+        "items": {
+          "gem": 1
+        }
+      },
+      "reward": {
+        "items": {
+          "gem": 1
+        },
+        "abilities": []
+      }
+    }
+  ],
+  "links": [
+    {
+      "id": "camp-ruins",
+      "from": "camp",
+      "to": "ruins",
+      "bidirectional": true,
+      "requires": {
+        "quests": [
+          "camp-key"
+        ],
+        "abilities": [
+          "dash"
+        ],
+        "items": {
+          "key": 1
+        }
+      },
+      "consume": {
+        "key": 1
+      }
+    },
+    {
+      "id": "ruins-summit",
+      "from": "ruins",
+      "to": "summit",
+      "bidirectional": true,
+      "requires": {
+        "quests": [
+          "ruins-glide"
+        ],
+        "abilities": [
+          "glide"
+        ],
+        "items": {}
+      },
+      "consume": {}
+    }
+  ]
+}
