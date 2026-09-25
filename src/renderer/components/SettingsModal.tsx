@@ -240,7 +240,16 @@ export function SettingsModal({
               </select>
             </label></div>
             <p className="module-message">免费库包含 2 首音乐和 16 个音效，可离线使用，来源与授权会随素材记录保存。选择后点击“保存设置”。</p>
-            <MediaApiSettings controller={extensions} freeAudio={value.audioSource !== 'configured-api'} />
+            <div className="settings-form"><label>
+              <span>3D 模型制作方式</span>
+              <select value={draft.model3dSource ?? 'image-threejs'} disabled={busy}
+                onChange={event => setDraft(current => ({ ...current, model3dSource: event.target.value as 'image-threejs' | 'configured-api' }))}>
+                <option value="image-threejs">参考图片 → AI 编写 Three.js 模型</option>
+                <option value="configured-api">已配置的 3D API（可能收费）</option>
+              </select>
+            </label></div>
+            <p className="module-message">先确认参考图，再按图建模并检查多角度效果。图片生成与 AI 编码会消耗相应额度；Three.js 建模无需 3D API。</p>
+            <MediaApiSettings controller={extensions} freeAudio={value.audioSource !== 'configured-api'} imageThreejs={value.model3dSource !== 'configured-api'} />
           </> : null}
 
           {section === 'defaults' ? (

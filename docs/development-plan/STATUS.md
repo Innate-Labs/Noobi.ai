@@ -37,3 +37,7 @@
 阶段 00 在隔离分支 `codex/stage-00-baseline-20260925`，使用 `git worktree list` 定位；后续开发从该整合基线继续。原分支不含本次整合代码，不能误作为验收版。
 
 阶段 01 工作分支：`codex/stage-01-plan-selection`，从阶段 00 整合基线 `e89def7` 开始，仍使用同一隔离工作树。
+
+## 3D 制作专项
+
+2026-09-25：默认 3D 路由改为图片参考 → AI 编写 Three.js → GLB → Godot，专项开发者自验完成，待用户验收。见 [专项报告](reports/01-image-threejs.md)。本项不改变上表各阶段的验收状态，历史游戏资产未批量重做。

@@ -101,7 +101,7 @@ describe('createWorkspaceTemplate', () => {
     expect(agents).toContain('Every Planner pass must include an explicit animation needs assessment');
     expect(agents).toContain('choose `generate`, `reuse`, or `not-needed`');
     expect(agents).toContain('Do not regenerate an already suitable animation asset');
-    expect(agents).toContain('self-contained Three.js-authored GLB');
+    expect(agents).toContain('image-guided Three.js model');
     expect(agents).toContain('real rigged GLB clip');
     expect(agents).toContain('noobi_audio_synthesize');
     expect(agents).toContain('noobi_audio_generate');
@@ -112,8 +112,8 @@ describe('createWorkspaceTemplate', () => {
     expect(agents).toContain('`procedural-audio`');
     expect(agents).toContain('noobi_model3d_generate');
     expect(agents).toContain('self-contained GLB 2.0');
-    expect(agents).toContain('host automatically prioritizes an active 3D API');
-    expect(agents).toContain('built-in Three.js exporter');
+    expect(agents).toContain('default route requires a viewed reference image');
+    expect(agents).toContain('AI-authored Three.js source');
     expect(agents).toContain('playable vertical slices');
     expect(agents).toContain('`.noobi/playtest.json`');
     expect(agents).toContain('all five common action mappings');
@@ -156,7 +156,7 @@ describe('createWorkspaceTemplate', () => {
     expect(skill).toContain('hold subject design, art style, palette, lighting, scale, frame size, anchor, and view/camera angle constant');
     expect(skill).toContain('Merely moving one static image');
     expect(skill).toContain('Rotating or translating the entire mesh does not prove clip playback');
-    expect(skill).toContain('routes to a configured 3D API first');
+    expect(skill).toContain('defaults to image-guided Three.js authoring');
     expect(skill).toContain('Three.js fallback output is an asset');
     expect(skill).toContain('set `animation=true`');
     expect(skill).toContain('same-frame automated actions');

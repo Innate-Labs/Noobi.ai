@@ -1,3 +1,5 @@
+import { ReferenceModel3dService } from './referenceModel3d.js';
+import { renderReferenceModel } from './referenceModelRenderer.js';
 import { PlanStore } from './planStore.js';
 import { PlanService } from './planService.js';
 import { PlanStarter } from './planStarter.js';
@@ -172,6 +174,7 @@ let approvalBroker: ApprovalBroker;
 let mediaToolBroker: MediaToolBroker;
 let godotToolBroker: GodotToolBroker;
 let mediaProviderStore: MediaProviderStore;
+let referenceModels: ReferenceModel3dService;
 let mediaGenerationService: MediaGenerationService;
 let mcpConfigManager: McpConfigManager;
 let promptTemplateStore: PromptTemplateStore;
@@ -280,7 +283,10 @@ async function launch(): Promise<void> {
       return safeStorage.decryptString(encrypted);
     },
   });
+  referenceModels = new ReferenceModel3dService(assetStore, join(userData, 'model-reference-evidence'), renderReferenceModel);
   mediaGenerationService = new MediaGenerationService({
+    referenceModels,
+    model3dSource: async () => (await projectStore.getSettings()).model3dSource ?? 'image-threejs',
     providerStore: mediaProviderStore,
     assetStore,
     audioSource: async () => (await projectStore.getSettings()).audioSource ?? 'free-library',
@@ -1125,6 +1131,9 @@ function bindIpc(): void {
   });
   handle('noobi:media-provider:test', async (_event, capability: MediaCapability) => {
     const kind = validateMediaCapability(capability);
+    if (kind === 'model3d' && (await projectStore.getSettings()).model3dSource !== 'configured-api') {
+      return { capability: kind, ok: true, message: '当前使用图片参考 + Three.js 建模，未调用 3D API。', latencyMs: 0, testedAt: new Date().toISOString() };
+    }
     if (kind === 'audio' && (await projectStore.getSettings()).audioSource !== 'configured-api') {
       return { capability: kind, ok: true, message: '当前使用内置 CC0 免费音频库，未调用外部 API。', latencyMs: 0, testedAt: new Date().toISOString() };
     }
@@ -1898,6 +1907,7 @@ async function validateProjectDelivery(
   }
 
   try {
+    findings.push(...await referenceModels.verify(project, assets));
     const assetPlans = await assetPlanStore.reconcile(project.id, project.root, assets);
     broadcast('noobi:event:asset-plans', { projectId: project.id, assetPlans });
     const unresolvedRequired = assetPlans.filter((plan) => plan.required && plan.status !== 'ready');
@@ -3358,6 +3368,7 @@ function validateSettingsPatch(value: Partial<AppSettings>): Partial<AppSettings
     'defaultModel',
     'defaultEffort',
     'audioSource',
+    'model3dSource',
     'defaultNoobiStageMode',
     'defaultNoobiSoloSceneId',
     'defaultNoobiSceneId',

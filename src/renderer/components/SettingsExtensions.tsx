@@ -444,7 +444,7 @@ export function useExtensionSettings(onMessage: (message: string) => void) {
 
 export type ExtensionSettingsController = ReturnType<typeof useExtensionSettings>;
 
-export function MediaApiSettings({ controller, freeAudio = false }: { controller: ExtensionSettingsController; freeAudio?: boolean }) {
+export function MediaApiSettings({ controller, freeAudio = false, imageThreejs = false }: { controller: ExtensionSettingsController; freeAudio?: boolean; imageThreejs?: boolean }) {
   return (
     <section>
       <SettingsPanelHeading
@@ -459,7 +459,7 @@ export function MediaApiSettings({ controller, freeAudio = false }: { controller
             key={capability}
             index={index + 1}
             value={controller.snapshot.mediaProviders.find((item) => item.capability === capability) ?? EMPTY_MEDIA[index]!}
-            disabled={!controller.supported || (capability === 'audio' && freeAudio)}
+            disabled={!controller.supported || (capability === 'audio' && freeAudio) || (capability === 'model3d' && imageThreejs)}
             onSave={controller.saveMedia}
             onTest={controller.testMedia}
           />
@@ -469,7 +469,7 @@ export function MediaApiSettings({ controller, freeAudio = false }: { controller
         <Sparkles size={16} />
         <div>
           <strong>媒体路由与连接检查</strong>
-          <span>图像优先使用已配置 API，否则由 Codex ImageGen 接管。3D 始终先走已配置 API；未配置时，Noobi 在宿主内用 Three.js 自动导出可由 Godot 直接导入的 GLB。MiniMax 仅负责音乐、语音和人声音效；枪声、爆炸等通用 SFX 使用程序化回退。MiniMax 音频检查会发起一次极短 Speech 鉴权探测，但 Music 3.0 账户资格仍在首次实际音乐生成时确认。其他服务的实际模型可用性也在生成时确认。</span>
+          <span>图像优先使用已配置 API，否则由 Codex ImageGen 接管。3D 默认先生成参考图，再由 AI 编写 Three.js 建模代码；宿主导出 GLB 并生成多角度检查图。只有手动选择 3D API 才使用外部模型服务。MiniMax 仅负责音乐、语音和人声音效；枪声、爆炸等通用 SFX 使用程序化回退。MiniMax 音频检查会发起一次极短 Speech 鉴权探测，但 Music 3.0 账户资格仍在首次实际音乐生成时确认。其他服务的实际模型可用性也在生成时确认。</span>
         </div>
       </div>
     </section>
@@ -684,7 +684,7 @@ function ProviderModule({
       {value.statusMessage ? <p className="module-message">{value.statusMessage}</p> : null}
       {dirty ? <p className="module-message is-dirty">当前更改尚未保存；保存后才能检查服务。</p> : null}
       {value.capability === 'model3d' ? (
-        <p className="module-message">未启用有效 3D API 时无需手动选择策略：系统会自动生成 Three.js 程序化 GLB；Godot 仍是最终游戏运行时。</p>
+        <p className="module-message">图片参考建模模式无需配置此 API。请先生成或导入参考图，再按图编写 Three.js 模型；Godot 仍是最终游戏运行时。</p>
       ) : null}
     </article>
   );

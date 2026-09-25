@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createProceduralModel3dGlb } from './proceduralModel3d.js';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -57,9 +58,9 @@ describe('media tool broker', () => {
       description: expect.stringContaining('music-3.0'),
     });
     const model3dTool = MEDIA_DYNAMIC_TOOLS.find((tool) => tool.name === 'noobi_model3d_generate');
-    expect(model3dTool?.description).toContain('configured 3D model API first');
+    expect(model3dTool?.description).toContain('reference image');
     expect(model3dTool?.description).toContain('Three.js');
-    expect(model3dTool?.description).toContain('final game must load the returned GLB');
+    expect(model3dTool?.description).toContain('front/side/back');
     const registerTool = MEDIA_DYNAMIC_TOOLS.find((tool) => tool.name === 'noobi_asset_register');
     expect(registerTool?.inputSchema.properties?.role).toMatchObject({
       enum: expect.arrayContaining(['card-art', 'card-face', 'card-art-atlas']),
@@ -279,16 +280,11 @@ describe('media tool broker', () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-model-role-'));
     roots.push(root);
     const assetStore = new AssetStore();
-    const generationService = new MediaGenerationService({
-      providerStore: { withActiveProvider: async () => null } as never,
-      assetStore,
-    });
     const project = { id: 'project-model-role', root };
-    const generated = await generationService.generate({
-      project, kind: 'model3d', name: 'repairer', prompt: 'Low poly repairer character',
-      options: { animation: true },
-    });
-    if (generated.outcome !== 'asset') throw new Error('Expected GLB');
+    const fixture = await createProceduralModel3dGlb({name:'repairer',prompt:'character',animation:true});
+    await writeFile(join(root,'fixture.glb'),fixture.bytes);
+    const [asset] = await assetStore.importFiles(project.id,root,[join(root,'fixture.glb')]);
+    const generated = {asset:asset!};
     const assetPlanStore = await makePlanStore();
     await assetPlanStore.upsert({
       id: 'model3d-repairer', projectId: project.id, name: 'repairer',
@@ -462,47 +458,20 @@ describe('media tool broker', () => {
     });
   });
 
-  it('returns a registered Three.js GLB through the same 3D tool when no provider exists', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'noobi-model-broker-fallback-'));
-    roots.push(root);
-    const project = { id: 'project-model-fallback', root };
+  it('keeps the model plan waiting for image-guided code instead of returning a canned model', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-model-reference-')); roots.push(root);
     const responses: Array<{ id: string | number; result: unknown }> = [];
-    const assetStore = new AssetStore();
-    const generationService = new MediaGenerationService({
-      providerStore: { withActiveProvider: vi.fn(async () => null) } as never,
-      assetStore,
-      fetch: vi.fn() as never,
-    });
-    const broker = brokerWith({
-      responses,
-      assetStore,
-      generationService,
-      resolveProject: async () => project,
-    });
-
-    broker.handle(toolRequest(9, 'noobi_model3d_generate', {
-      name: 'zombie_runner',
-      prompt: 'Low-poly zombie enemy',
-      animation: true,
-    }));
-    await vi.waitFor(() => expect(responses).toHaveLength(1), { timeout: 5_000 });
-    const response = readToolResponse(responses[0]!.result);
-    expect(response).toMatchObject({
-      success: true,
-      payload: {
-        asset: {
-          name: 'zombie_runner',
-          kind: 'model3d',
-          source: 'procedural',
-          relativePath: expect.stringMatching(/^public\/assets\/models\/.+\.glb$/u),
-        },
-        provider: {
-          id: 'builtin-threejs',
-          presetId: 'threejs-procedural',
-          route: 'threejs-fallback',
-        },
-      },
-    });
+    const assetStore = new AssetStore(), assetPlanStore = await makePlanStore();
+    const provider = vi.fn(async () => null);
+    const generationService = new MediaGenerationService({ providerStore: { withActiveProvider: provider }, assetStore });
+    const broker = brokerWith({ responses, assetStore, assetPlanStore, generationService,
+      resolveProject: async () => ({id:'reference-project',root}) });
+    broker.handle(toolRequest(9,'noobi_model3d_generate',{name:'bridge',prompt:'Arched stone bridge'}));
+    await vi.waitFor(()=>expect(responses).toHaveLength(1));
+    const result = readToolResponse(responses[0]!.result);
+    expect(result).toMatchObject({success:true,payload:{fallback:{type:'image-threejs',instruction:expect.stringContaining('referenceImage')},plan:{route:'image-threejs',status:'waiting-agent'}}});
+    expect(provider).not.toHaveBeenCalled();
+    expect(await assetStore.list('reference-project',root)).toHaveLength(0);
   });
 
   it('passes explicit MiniMax audio purpose, instrumental mode, and lyrics as provider options', async () => {

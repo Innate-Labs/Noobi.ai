@@ -12,18 +12,23 @@ afterEach(async () => {
 });
 
 describe('ProjectStore renaming', () => {
-  it('defaults to free audio and persists an explicit source change', async () => {
+  it('defaults to local media routes and persists explicit provider changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-audio-settings-'));
     roots.push(root);
     const file = join(root, 'projects.json');
     const store = new ProjectStore(file, join(root, 'games'));
     expect((await store.getSettings()).audioSource).toBe('free-library');
-    await store.saveSettings({ audioSource: 'configured-api' });
+    expect((await store.getSettings()).model3dSource).toBe('image-threejs');
+    await store.saveSettings({ audioSource: 'configured-api', model3dSource: 'configured-api' });
+    expect((await new ProjectStore(file, join(root, 'games')).getSettings()).model3dSource).toBe('configured-api');
     expect((await new ProjectStore(file, join(root, 'games')).getSettings()).audioSource).toBe('configured-api');
     const old = JSON.parse(await readFile(file, 'utf8'));
     delete old.settings.audioSource;
+    delete old.settings.model3dSource;
     await writeFile(file, JSON.stringify(old));
     expect((await new ProjectStore(file, join(root, 'games')).getSettings()).audioSource).toBe('free-library');
+    expect((await new ProjectStore(file, join(root, 'games')).getSettings()).model3dSource).toBe('image-threejs');
+    await expect(store.saveSettings({ model3dSource: 'invalid' as never })).rejects.toThrow('3D source');
     await expect(store.saveSettings({ audioSource: 'invalid' as never })).rejects.toThrow('Audio source');
   });
   it('persists a sidebar display name without moving the workspace directory', async () => {

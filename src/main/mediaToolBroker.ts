@@ -46,7 +46,7 @@ export interface MediaToolBrokerOptions {
     AssetPlanStore,
     'list' | 'get' | 'upsert' | 'begin' | 'waitForAgent' | 'generated' | 'fail'
   >;
-  generationService?: Pick<MediaGenerationService, 'generate'> & Partial<Pick<MediaGenerationService, 'usesFreeAudio'>>;
+  generationService?: Pick<MediaGenerationService, 'generate'> & Partial<Pick<MediaGenerationService, 'usesFreeAudio' | 'usesReferenceModels'>>;
   resolveProject(threadId: string): Promise<MediaToolProject | null>;
   onAssetsChanged?(projectId: string, assets: GameAssetRecord[]): void | Promise<void>;
   onAssetPlansChanged?(projectId: string, assetPlans: AssetPlanRecord[]): void | Promise<void>;
@@ -70,7 +70,7 @@ const ASSET_PLAN_ARGUMENT_KEYS = [
   'planId', 'name', 'kind', 'prompt', 'required', 'model',
   'width', 'height', 'quality', 'background',
   'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format',
-  'animation', 'textureResolution', 'libraryId',
+  'animation', 'textureResolution', 'libraryId', 'referenceImage', 'sourcePath',
 ] as const;
 
 export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
@@ -113,6 +113,8 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
         format: { type: 'string', enum: ['wav', 'mp3', 'ogg'] },
         animation: { type: 'boolean' },
         textureResolution: { type: 'integer', minimum: 256, maximum: 8192 },
+        referenceImage: { type: 'string', maxLength: 1000, description: 'Registered project-relative reference image under public/assets/images.' },
+        sourcePath: { type: 'string', maxLength: 1000, description: 'Project-relative model-sources/*.mjs exporting createModel(THREE, {referenceUrl}) -> {root, animations}.' },
       },
       additionalProperties: false,
     },
@@ -206,7 +208,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
   {
     type: 'function',
     name: 'noobi_model3d_generate',
-    description: 'Generate and register a self-contained GLB. Noobi.ai automatically uses the configured 3D model API first; when no 3D API is configured, the host uses Three.js to author and export a procedural GLB. The final game must load the returned GLB (including in Godot); Three.js is not the game runtime. Set animation=true for a fallback rig with real idle, walk, and run clips.',
+    description: 'Build a GLB from a reference image and AI-authored Three.js factory code. First generate/import and VIEW a single-object reference image, then write model-sources/<name>.mjs. Pass referenceImage and sourcePath; without them returns authoring instructions, never a canned mesh. The host exports in a sandbox and reloads the GLB to capture front/side/back evidence for visual review. animation=true requires authored skin and clips. Explicit configured-api mode remains available through Settings.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -216,6 +218,8 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
         model: { type: 'string', minLength: 1, maxLength: 200 },
         animation: { type: 'boolean' },
         textureResolution: { type: 'integer', minimum: 256, maximum: 8192 },
+        referenceImage: { type: 'string', maxLength: 1000, description: 'Registered project-relative reference image under public/assets/images.' },
+        sourcePath: { type: 'string', maxLength: 1000, description: 'Project-relative model-sources/*.mjs exporting createModel(THREE, {referenceUrl}) -> {root, animations}.' },
       },
       required: ['name', 'prompt'],
       additionalProperties: false,
@@ -480,7 +484,8 @@ export class MediaToolBroker {
     try {
       if (plan) {
         const freeAudio = kind === 'audio' && await this.#options.generationService?.usesFreeAudio?.();
-        plan = await this.#beginPlan(project, plan.id, freeAudio ? 'free-library' : undefined);
+        const referenceModel = kind === 'model3d' && await this.#options.generationService?.usesReferenceModels?.();
+        plan = await this.#beginPlan(project, plan.id, freeAudio ? 'free-library' : referenceModel ? 'image-threejs' : undefined);
         began = true;
       }
       if (!this.#options.generationService) throw new ToolInputError('Media API generation is not configured');
@@ -500,6 +505,7 @@ export class MediaToolBroker {
         if (plan) {
           const route: AssetPlanRoute = result.provider.route === 'threejs-fallback'
             ? 'threejs-fallback'
+            : result.provider.route === 'image-threejs' ? 'image-threejs'
             : result.provider.route === 'free-library' ? 'free-library'
             : 'configured-api';
           plan = await this.#recordGeneratedPlan(project, plan.id, result.asset, route);
@@ -507,6 +513,7 @@ export class MediaToolBroker {
       } else if (plan) {
         const route: AssetPlanRoute = result.fallback === 'codex-imagegen'
           ? 'codex-imagegen'
+          : result.fallback === 'image-threejs' ? 'image-threejs'
           : result.fallback === 'procedural-audio'
             ? 'procedural-audio'
             : 'workspace-agent';
@@ -553,7 +560,8 @@ export class MediaToolBroker {
   ): Promise<AssetPlanRecord> {
     const current = await this.#requireAssetPlanStore().get(project.id, planId);
     if (current.status === 'failed' && current.error?.code === 'provider-blocked'
-      && !(current.kind === 'audio' && route === 'free-library')) {
+      && !(current.kind === 'audio' && route === 'free-library')
+      && !(current.kind === 'model3d' && route === 'image-threejs')) {
       throw new ToolInputError(`外部素材服务仍被阻塞：${current.error.message}。更新服务配置后在素材面板重新排队；不要反复调用生成。`);
     }
     const plan = await this.#requireAssetPlanStore().begin(project.id, planId, route);
@@ -675,7 +683,7 @@ function generationArgumentKeys(kind: GameAssetKind): readonly string[] {
   if (kind === 'audio') {
     return ['name', 'prompt', 'model', 'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format', 'libraryId'];
   }
-  return ['name', 'prompt', 'model', 'animation', 'textureResolution'];
+  return ['name', 'prompt', 'model', 'animation', 'textureResolution', 'referenceImage', 'sourcePath'];
 }
 
 function generationOptions(
@@ -715,6 +723,10 @@ function generationOptions(
     if (voice) options.voice = voice;
     if (format) options.format = format;
     return options;
+  }
+  for (const key of ['referenceImage', 'sourcePath'] as const) {
+    const value = optionalString(args[key], key, 1000);
+    if (value) options[key] = value;
   }
   const animation = optionalBoolean(args.animation, 'animation');
   const textureResolution = optionalInteger(args.textureResolution, 'textureResolution', 256, 8_192);
@@ -970,9 +982,11 @@ function publicGenerationResult(
       ...(plan ? { planId: plan.id } : {}),
       ...(result.fallback === 'codex-imagegen'
         ? { instruction: `Invoke the Codex $imagegen skill now, then register the generated image with Noobi.ai${plan ? ` using planId=${plan.id}` : ''}.` }
+        : result.fallback === 'image-threejs'
+          ? { instruction: 'Generate/import and VIEW one object reference image first. First write model-sources/<name>.spec.json with {referenceImage, parts:[{name,shape,material}], criticalFeatures:[string], inferredSurfaces:[string]}. Write model-sources/<name>.mjs exporting async createModel(THREE, {referenceUrl}) returning {root: THREE.Group, animations: []}. Use actual image proportions, component hierarchy, materials, pivots and sockets; no canned keyword templates. No npm install, Node APIs or external network. Built-in Three.js is provided. Model budget: 100000 triangles, 2048 nodes, 2048px textures, 16 MiB GLB, 30 seconds. Retry noobi_model3d_generate with the SAME planId, referenceImage and sourcePath. Inspect the returned reference/front/side/back evidence before use. Correct up to 3 times; report remaining mismatch honestly. animation=true requires real skin and clips.' }
         : result.fallback === 'procedural-audio'
           ? { instruction: `Use noobi_audio_synthesize${plan ? ` with planId=${plan.id}` : ''} for a short deterministic effect, deterministic Web Audio for a custom/ambient fallback, or import a licensed WAV/MP3/OGG. Do not claim MiniMax generated generic SFX or ambience.` }
-          : { instruction: 'Call noobi_model3d_generate again. It automatically routes to a configured 3D API or the built-in Three.js GLB exporter.' }),
+          : { instruction: 'Call noobi_model3d_generate again. Check the selected model source in Settings; do not silently fall back to fixed templates.' }),
     },
     ...(plan ? { plan: publicAssetPlan(plan) } : {}),
   };

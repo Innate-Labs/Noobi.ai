@@ -26,7 +26,7 @@ Electron Main
   ├─ AssetStore (PNG/JPEG/WebP · WAV/MP3/OGG · self-contained GLB)
   ├─ AssetPlanStore (宿主私有预期素材 · 生成状态 · 失败重试)
   ├─ MediaProviderStore (app-private API config · redacted IPC)
-  ├─ MediaGenerationService (image/audio/3D API-first · Three.js GLB fallback · bounded ingest)
+  ├─ MediaGenerationService (image routing · CC0 audio · image-guided Three.js / explicit 3D API)
   ├─ MediaToolBroker (dynamic tools · fixed routing · procedural media)
   ├─ PromptTemplateStore
   ├─ McpConfigManager
@@ -164,7 +164,7 @@ export   godot --headless --recovery-mode --path <project> --export-release Web 
 - 帧率变体：新项目使用 60 FPS 内部目标；为兼容既有工程，项目记录和 Harness 仍识别原有 30/60/120 FPS 技术目标，但 Renderer 不提供选择或切换入口。素材 manifest 或邻接元数据记录 `targetFps`、`sourceAnimationFps`、`frameCount`、`durationMs`、`timingMode` 与稳定 variant/group id；生产代码选择匹配目标或经验证明确兼容的共享变体。目标 FPS 与位图姿态数分离，禁止用重复位图伪装高帧率；确定性持帧、插值、骨骼/morph 或引擎采样用于保持时长和运动质量。
 - 音频：`noobi_audio_generate` 要求 Agent 明确传入 `purpose=music|speech|vocal-sfx|sfx|ambience`。MiniMax 路由中，`music` 调用 Music 模型并透传 `instrumental`/`lyrics`，`speech` 与 `vocal-sfx` 调用 Speech 模型；后者只代表对白、喊声、喘息、嘶吼等人声素材，不冒充通用 Foley/SFX 模型。`sfx` 与 `ambience`（枪声、爆炸、撞击、脚步、风声、房间底噪等）不调用 MiniMax，而是返回 `purpose-not-supported + procedural-audio`，随后由 `noobi_audio_synthesize` 生成最长 8 秒、24 kHz mono PCM16 WAV，或使用确定性 Web Audio / 导入 WAV、MP3、OGG。没有可用音频 Provider 时同样返回明确的程序化回退。
 - MiniMax API 密钥只在 Main 中短暂解密使用；Provider Store 仅保存由 macOS Keychain 支撑的 Electron safeStorage 密文。Renderer 只在用户提交设置时经隔离 IPC 发送新值，后续查询仅得到 `hasApiKey`，不会回传密钥明文。Agent、Dynamic Tool 参数、JSON-RPC 响应、文档和项目文件也不会获得密钥。
-- 3D：`noobi_model3d_generate` 是唯一的 3D 生成入口。存在 active Provider 时先调用 Meshy、Tripo、Rodin 或自定义同步 REST 网关；只有未配置 Provider 时，Electron Main 才用 Three.js + `GLTFExporter` 构造纯色 PBR 模型、导出二进制 GLB，并通过同一 AssetStore 入库为 `source=procedural`。`animation=true` 生成真实 SkinnedMesh 与 idle / walk / run clips。Three.js 仅是宿主构建期素材工具，Godot 运行时只实例化 `res://public/assets/models/...`。配置的 API 若 401、429、超时或返回坏文件会显式失败，不静默回退，以免掩盖付费调用或重复扣费。同步网关应直接返回受支持媒体、内联 base64，或与配置 Endpoint 同源的下载 URL；跨源二次下载和重定向均被拒绝。宿主拒绝外部 URI、无效 chunk、超预算结构和普通多文件 glTF。
+- 3D：`noobi_model3d_generate` 默认走 `image-threejs`。未提供 `referenceImage` / `sourcePath` 时返回建模指引并保持工单 waiting-agent；不生成固定模板。Agent 先查看注册图片，写 `model-sources/<name>.spec.json` 与导出 `createModel(THREE, {referenceUrl})` 的 `.mjs`。ReferenceModel3dService 校验图片、路径与规格；ReferenceModelRenderer 在无 Node/预加载脚本、无外网的独立 Electron renderer 中运行代码并导出 GLB，再关闭作者窗口，由新窗口重新加载 GLB、统计几何并截图。每次 30 秒、100000 三角面、2048 节点、16 MiB GLB，空白视图失败。图片纹理可内嵌 GLB。私有台账绑定原图、规格、源码、GLB 和三视图哈希，后续交付检测变更；同一源码的修正只验证最新证据，旧候选仍保留。独立 Reviewer 负责外形与实际游戏效果，技术导出不等于外观验收。显式 configured-api 设置才调用旧 REST 服务，错误不退回固定模板。Three.js 是素材制作工具，Godot 仍为最终运行时。
 - 统一登记：`public/assets/asset-pack.json` 是项目清单，但始终视为不可信 Agent 数据；Main 重算 MIME、大小和 SHA-256，拒绝路径逃逸与 symlink。
 - 预期素材：`AssetPlanStore` 独立保存在 Electron `userData`，不写入 Agent 可改的 workspace。`noobi_asset_plan` 和所有生成工具用稳定 `planId` 串起 planned → generating → generated → ready；失败进入 failed/waiting-agent，Inspector 仍展示占位并允许重新生成。Codex ImageGen 的完成通知由宿主关联最近的对应工单。
 - UI：Inspector 素材页等比例展示图片、播放音频并索引 GLB；文件选择器支持全部素材，拖拽区只接受 PNG/JPEG/WebP。Web 项目在开发态把 `/assets/*` 映射到 Vite `public/assets/*`；Godot 只预览 `build/web/` 中完成验收的导出。
@@ -205,11 +205,11 @@ export   godot --headless --recovery-mode --path <project> --export-release Web 
 
 ## 测试策略
 
-- 单元：JSONL request/response/notification/server request；路径约束；新项目内部 60 FPS、legacy 缺省回填与既有 30/60/120 FPS 值保留；Web 与 Godot starter；Godot 4 自动发现、手动 `.app` 解析、精确 Export Templates 版本、平台目标、固定 headless argv、路径约束、fatal 输出和缺失产物失败关闭；媒体 Provider 密钥隔离、API 响应签名、Three.js 静态/SkinnedMesh GLB、API 优先级、音频合成与 Dynamic Tool broker；MCP 配置校验/重载；提示词持久化和五类 Harness 注入；外部 API/Codex fallback、动画和内部 FPS 契约；私有生成证明、文件哈希与生产路径引用门禁。
+- 单元：JSONL request/response/notification/server request；路径约束；新项目内部 60 FPS、legacy 缺省回填与既有 30/60/120 FPS 值保留；Web 与 Godot starter；Godot 4 自动发现、手动 `.app` 解析、精确 Export Templates 版本、平台目标、固定 headless argv、路径约束、fatal 输出和缺失产物失败关闭；媒体 Provider 密钥隔离、API 响应签名、Three.js GLB、图片参考路由、规格与证据变更检查、显式 API 路由、音频合成与 Dynamic Tool broker；MCP 配置校验/重载；提示词持久化和五类 Harness 注入；外部 API/Codex fallback、动画和内部 FPS 契约；私有生成证明、文件哈希与生产路径引用门禁。
 - 协议 smoke：真实 Codex 二进制完成 initialize、account/read、model/list、ephemeral thread/start、turn/start。
 - 产品 smoke：在隔离 Codex Home 与临时项目中让完整 Harness 写入验证文件，等待审查终态并检查文件。
 - 媒体 smoke：真实 App Server 调用程序化音频工具；真实 Codex ImageGen 生成 PNG，并由 AssetStore 复制和登记。
-- 3D smoke：无 Provider 时经 MediaGenerationService 产出并登记 Three.js GLB，再由真实 Godot headless import 实例化并断言 MeshInstance3D、Skeleton3D 与 idle / walk / run clips。
+- 3D smoke：`npm run smoke:model3d` 在真实 Electron 中从参考图和源码生成风车样板，独立加载 GLB、检查三视图与贴图，拒绝 Node/外网访问与无限循环，再用真实 Godot 导入并实例化，检查 21 个网格、4 个叶片和转轴节点。
 - 体验 smoke：真实 Electron 隐藏窗口加载严格 `dist/`，执行启动、移动、主要动作、暂停/恢复和重开，验证截图、连续帧、错误采集与最终报告。
 - UI smoke：构建 Renderer，启动 Electron，断言已进入工作台，再截图检查项目与游戏预览。
 - 构建：Renderer 与 Main 分别 typecheck，随后生成生产 bundle。

@@ -131,7 +131,7 @@ Good first directions include a new provider adapter, Windows/Linux packaging, s
 - configurable image, audio and 3D REST providers
 - Codex ImageGen fallback for required image generation
 - music, speech, vocal effects, procedural WAV and Web Audio paths
-- API-first self-contained GLB generation with a procedural Three.js fallback
+- Image reference → AI-authored Three.js source → self-contained GLB, with independent front/side/back captures
 - image and file attachments that influence planning, visual direction and asset reuse
 - retryable asset work orders that preserve placeholders after generation failures
 - native Codex Skills, stdio/HTTP MCP servers, and role-specific prompt customization
@@ -208,7 +208,7 @@ Public distribution still requires Developer ID signing, Apple notarization and 
 - Web and Godot 4/GDScript workspaces are supported. Godot delivery currently targets a Compatibility-renderer Web export; automatic native macOS, Windows and Linux exports are not connected yet.
 - macOS is the current release target. Windows and Linux desktop workflows are on the roadmap.
 - Meshy, Tripo and Rodin currently use a synchronous REST gateway contract rather than native asynchronous job orchestration for every vendor.
-- The built-in Three.js fallback produces functional low-poly, self-contained GLB assets; it does not claim provider-level high-fidelity organic topology or texturing.
+- 3D defaults to image-guided Three.js authoring. Generate/import a reference, retain an editable shape spec and `.mjs` factory, and review host-rendered GLB captures before delivery. A single image does not determine hidden geometry. The old six-preset generator is no longer the default production route. A 3D API is used only when explicitly selected in Settings.
 - Quality and completion depend on the selected model, prompt, dependencies and available media routes. A run that cannot satisfy the proof gate remains `blocked` instead of being presented as complete.
 
 ## Contributing
@@ -227,3 +227,7 @@ No project license has been published yet. Until the repository owners select an
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
+
+### Image-guided 3D authoring
+
+See [the runnable reference example](examples/image-threejs/README.md) and [delivery report](docs/development-plan/reports/01-image-threejs.md). Run `npm run smoke:model3d` after installing the project dependencies and Godot with matching templates. Three.js runs only in an isolated authoring/export renderer; Godot remains the final game runtime. Image generation and AI coding still use their configured quotas. No external 3D API is called in the default mode.

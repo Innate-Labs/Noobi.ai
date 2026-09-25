@@ -46,63 +46,20 @@ describe('media generation service', () => {
     expect(assetStore.importFiles).not.toHaveBeenCalled();
   });
 
-  it('exports and registers a real animated Three.js GLB when no 3D provider is configured', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'noobi-threejs-fallback-'));
-    roots.push(root);
-    const providerStore = { withActiveProvider: vi.fn(async () => null) };
-    const fetchMock = vi.fn();
-    const assetStore = new AssetStore();
-    const service = new MediaGenerationService({
-      providerStore: providerStore as never,
-      assetStore,
-      fetch: fetchMock as never,
-    });
-
-    const result = await service.generate({
-      project: { id: 'project-threejs-fallback', root },
-      kind: 'model3d',
-      name: 'zombie-runner',
-      prompt: 'Low-poly zombie enemy with readable limbs',
-      options: { animation: true, textureResolution: 1024 },
-    });
-
-    expect(result).toMatchObject({
-      outcome: 'asset',
-      asset: {
-        name: 'zombie-runner',
-        kind: 'model3d',
-        source: 'procedural',
-        mimeType: 'model/gltf-binary',
-        provider: 'Noobi:Three.js Procedural GLB',
-        metadata: {
-          route: 'threejs-fallback',
-          generator: 'threejs-procedural-v1',
-          rigged: true,
-          animated: true,
-          animations: 'idle,walk,run',
-          selfContained: true,
-        },
-      },
-      provider: {
-        id: 'builtin-threejs',
-        presetId: 'threejs-procedural',
-        route: 'threejs-fallback',
-      },
-    });
-    if (result.outcome !== 'asset') throw new Error('Expected a generated Three.js asset');
-    const bytes = await readFile(join(root, result.asset.relativePath));
-    const gltf = readGlbJson(bytes);
-    expect(gltf.meshes).toHaveLength(1);
-    expect(gltf.skins).toHaveLength(1);
-    expect(gltf.animations?.map((animation) => animation.name)).toEqual(['idle', 'walk', 'run']);
-    expect(gltf.buffers?.every((buffer) => buffer.uri === undefined)).toBe(true);
-    expect(await assetStore.list('project-threejs-fallback', root)).toContainEqual(
-      expect.objectContaining({ relativePath: result.asset.relativePath, source: 'procedural' }),
-    );
-    expect(fetchMock).not.toHaveBeenCalled();
+  it('requires an image and authored source by default without using configured providers', async () => {
+    const withActiveProvider = vi.fn(async () => { throw new Error('Must not call 3D API'); });
+    const generate = vi.fn();
+    const service = new MediaGenerationService({ providerStore: { withActiveProvider }, assetStore: new AssetStore(), referenceModels: { generate } });
+    const input = { project: { id: 'reference', root: '/unused' }, kind: 'model3d' as const, name: 'bridge', prompt: 'arched bridge' };
+    expect(await service.generate(input)).toMatchObject({ outcome: 'fallback', fallback: 'image-threejs' });
+    expect(generate).not.toHaveBeenCalled();
+    generate.mockResolvedValue({ outcome: 'asset', provider: { route: 'image-threejs' } });
+    expect(await service.generate({ ...input, options: { referenceImage: 'public/assets/images/bridge.png', sourcePath: 'model-sources/bridge.mjs' } })).toMatchObject({ outcome: 'asset', provider: { route: 'image-threejs' } });
+    expect(withActiveProvider).not.toHaveBeenCalled();
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ sourcePath: 'model-sources/bridge.mjs' }) }));
   });
 
-  it('always prefers an active 3D provider and does not hide provider errors with a fallback', async () => {
+  it('uses an explicitly selected 3D provider and does not hide provider errors with a fallback', async () => {
     const fixture = await createProceduralModel3dGlb({ name: 'fixture', prompt: 'test crate' });
     const { root, providerStore } = await configuredStore({
       presetId: 'custom-model3d',
@@ -114,6 +71,7 @@ describe('media generation service', () => {
       headers: { 'content-type': 'model/gltf-binary' },
     }));
     const service = new MediaGenerationService({
+      model3dSource: async () => 'configured-api',
       providerStore,
       assetStore,
       fetch: fetchMock as unknown as typeof fetch,
@@ -143,6 +101,7 @@ describe('media generation service', () => {
     });
     const failedAssetStore = new AssetStore();
     const failedService = new MediaGenerationService({
+      model3dSource: async () => 'configured-api',
       providerStore: failedStore,
       assetStore: failedAssetStore,
       fetch: vi.fn(async () => new Response('provider unavailable', { status: 503 })) as unknown as typeof fetch,

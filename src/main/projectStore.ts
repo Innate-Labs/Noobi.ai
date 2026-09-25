@@ -873,6 +873,9 @@ function validatedToolsetVersion(value: unknown, projectId: string): number {
 
 function validateSettings(value: unknown): AppSettings {
   if (!isRecord(value)) throw new Error('Project settings are invalid');
+  if (value.model3dSource !== undefined && !['image-threejs', 'configured-api'].includes(String(value.model3dSource))) {
+    throw new Error('3D source setting is invalid');
+  }
   if (value.audioSource !== undefined && !['free-library', 'configured-api'].includes(String(value.audioSource))) {
     throw new Error('Audio source setting is invalid');
   }
@@ -913,6 +916,7 @@ function validateSettings(value: unknown): AppSettings {
     defaultWorkspace: resolve(value.defaultWorkspace),
     defaultModel: value.defaultModel === null ? null : value.defaultModel.trim(),
     defaultEffort: value.defaultEffort.trim(),
+    model3dSource: value.model3dSource === 'configured-api' ? 'configured-api' : 'image-threejs',
     audioSource: value.audioSource === 'configured-api' ? 'configured-api' : 'free-library',
     defaultNoobiStageMode,
     defaultNoobiSoloSceneId,
@@ -928,6 +932,7 @@ function defaultSettings(defaultWorkspace: string): AppSettings {
     defaultWorkspace,
     defaultModel: null,
     defaultEffort: 'medium',
+    model3dSource: 'image-threejs',
     audioSource: 'free-library',
     defaultNoobiStageMode: DEFAULT_NOOBI_STAGE_MODE,
     defaultNoobiSoloSceneId: DEFAULT_NOOBI_SOLO_SCENE_ID,

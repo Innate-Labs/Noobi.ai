@@ -24,7 +24,7 @@ const ROUTES = new Set<AssetPlanRoute>([
   'configured-api',
   'codex-imagegen',
   'procedural-audio',
-  'threejs-fallback',
+  'threejs-fallback', 'image-threejs',
   'workspace-agent',
 ]);
 

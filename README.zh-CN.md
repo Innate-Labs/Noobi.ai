@@ -127,7 +127,7 @@ Noobi.ai 把关键能力放在可替换的边界上，一个有价值的 Fork �
 - 可配置图片、音频与 3D REST Provider
 - 必需图片生成的 Codex ImageGen 回退
 - 音乐、语音、人声音效、程序化 WAV 与 Web Audio 路线
-- 3D API 优先；未配置时自动生成自包含 Three.js GLB
+- 默认先生成参考图片，再由 AI 编写 Three.js 模型；宿主导出 GLB 并独立拍摄正、侧、背面检查图
 - 上传的图片和文件可影响需求拆解、视觉方向与素材复用
 - 失败素材工单保留占位、错误与尝试次数，可单项重新生成
 - Codex 原生 Skills、stdio/HTTP MCP Server 与分角色提示词
@@ -176,7 +176,7 @@ npm run package:mac
 - 当前支持 Web 与 Godot 4/GDScript 工程。Godot 自动交付目前使用 Compatibility renderer 的 Web 导出，尚未接通原生 macOS、Windows、Linux 可执行包。
 - 当前发行目标是 macOS；Windows 与 Linux 桌面工作流在路线图中。
 - Meshy、Tripo、Rodin 当前使用同步 REST 网关契约，并非全部厂商异步任务 API 的原生编排。
-- 内置 Three.js 回退提供功能性低多边形自包含 GLB，不冒充外部 3D Provider 的高保真有机拓扑与贴图能力。
+- 图片参考建模保留规格和可编辑源码，默认不调用 3D API，也不再按关键词套六种固定模板。模型外形由 Reviewer 对照参考图和多角度证据验收；单图不可见的背面只能推断。图片生成和 AI 编码仍消耗相应额度。
 - 生成质量与完成率取决于模型、提示、依赖和媒体能力；不能通过证明门禁的任务会保持 `blocked`，不会伪装完成。
 
 ## 参与贡献
@@ -199,3 +199,7 @@ npm run package:mac
 ### 免费游戏音频
 
 默认使用内置 CC0 素材库：2 首背景音乐、16 个音效，离线选取并导入，不调用音频 API。素材保留作者、来源和授权信息。这是现成素材选取，暂不提供定制配乐或语音；需要云端生成时，可在“设置 → 媒体 API”手动切换音频来源并保存。参见[素材来源与授权](resources/free-audio/LICENSES.md)。
+
+### 图片参考 → Three.js 模型
+
+[运行样板](examples/image-threejs/README.md)包含参考图、建模规格和源码。使用 `npm run smoke:model3d` 验证隔离导出、贴图、三视图、执行限制与 Godot 导入。默认模式无需 3D API；可在“设置 → 媒体 API”手动切换为外部服务并保存。

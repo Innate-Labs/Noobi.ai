@@ -1,0 +1,15 @@
+{
+  "referenceImage": "public/assets/images/wind-beacon.png",
+  "parts": [
+    {"name": "PlinthLower/PlinthUpper", "shape": "two octagonal cylinder tiers", "material": "matte sandstone"},
+    {"name": "Column", "shape": "slender faceted support", "material": "teal paint"},
+    {"name": "RotorPivot", "shape": "four cardinal tapered paddles around concentric discs", "material": "teal and brass"},
+    {"name": "AmberLens", "shape": "faceted disc", "material": "emissive amber"},
+    {"name": "BrassTab/Bolt", "shape": "four rectangular mounts with octagonal fasteners", "material": "brass"}
+  ],
+  "criticalFeatures": ["exactly four broad outward-widening paddles", "brass central hub and amber lens", "narrow teal support", "two-tier octagonal stone base"],
+  "inferredSurfaces": ["Rear axle and rotor thickness are inferred from the single front image.", "Surface roughness is an approximation; this sample is not photogrammetry."],
+  "scale": "overall height 3.42 meters, rotor width 2.2 meters",
+  "animation": "Static sample with a named rotor pivot; no skeletal animation claimed",
+  "acceptance": "Engineering sample for the full image/source/export/reload/evidence chain. Fine material detail and artistic acceptance remain pending."
+}

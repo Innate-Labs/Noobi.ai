@@ -11,7 +11,7 @@ import {
   type MediaProviderStore,
   type ResolvedMediaProvider,
 } from './mediaProviderStore.js';
-import { createProceduralModel3dGlb } from './proceduralModel3d.js';
+import type { ReferenceModel3dService } from './referenceModel3d.js';
 import { FreeAudioLibrary } from './freeAudioLibrary.js';
 import type { GameAssetRecord, GameAssetSource } from '../shared/contracts.js';
 
@@ -37,14 +37,14 @@ export interface MediaGenerationAssetResult {
     presetId: string;
     displayName: string;
     model: string;
-    route: 'configured-api' | 'threejs-fallback' | 'free-library';
+    route: 'configured-api' | 'threejs-fallback' | 'free-library' | 'image-threejs';
   };
 }
 
 export interface MediaGenerationFallbackResult {
   outcome: 'fallback';
-  fallback: 'codex-imagegen' | 'procedural-audio' | 'none';
-  reason: 'provider-not-configured' | 'purpose-not-supported';
+  fallback: 'codex-imagegen' | 'procedural-audio' | 'image-threejs' | 'none';
+  reason: 'provider-not-configured' | 'purpose-not-supported' | 'reference-input-required';
   prompt: string;
 }
 
@@ -78,6 +78,8 @@ export interface MediaGenerationServiceOptions {
   assetStore: Pick<AssetStore, 'list' | 'importFiles' | 'registerExisting'>;
   fetch?: typeof fetch;
   requestTimeoutMs?: number;
+  model3dSource?: () => Promise<'image-threejs' | 'configured-api'>;
+  referenceModels?: Pick<ReferenceModel3dService, 'generate'>;
   audioSource?: () => Promise<'free-library' | 'configured-api'>;
 }
 
@@ -161,6 +163,14 @@ export class MediaGenerationService {
     const prompt = requiredText(input.prompt, 'prompt', MAX_PROMPT_LENGTH);
     const modelOverride = input.model === undefined ? undefined : requiredText(input.model, 'model', MAX_MODEL_LENGTH);
     const options = validateOptions(input.options);
+    if (input.kind === 'model3d' && await this.usesReferenceModels()) {
+      if (!options.referenceImage || !options.sourcePath) return {
+        outcome: 'fallback', fallback: 'image-threejs', reason: 'reference-input-required', prompt,
+      };
+      if (!this.#options.referenceModels) throw new MediaGenerationPublicError('图片建模运行器未就绪；请使用桌面宿主运行。未调用 3D API。');
+      try { return await this.#options.referenceModels.generate({ ...input, name, prompt, options }); }
+      catch (error) { throw new MediaGenerationPublicError(`图片参考建模失败：${error instanceof Error && !('code' in error) ? error.message.replaceAll(input.project.root, '<project>').slice(0, 800) : '请检查参考图、规格文件和建模源码是否存在且可读取'}。未调用 3D API。`); }
+    }
     if (input.kind === 'audio' && await this.usesFreeAudio()) {
       if (options.purpose === 'ambience') {
         return { outcome: 'fallback', fallback: 'procedural-audio', reason: 'purpose-not-supported', prompt };
@@ -202,51 +212,6 @@ export class MediaGenerationService {
       } satisfies MediaGenerationAssetResult;
     });
     if (result) return result;
-    if (input.kind === 'model3d') {
-      const procedural = await createProceduralModel3dGlb({
-        name,
-        prompt,
-        animation: options.animation === true,
-      });
-      const model = procedural.generator;
-      const presetId = 'threejs-procedural';
-      const displayName = 'Three.js Procedural GLB';
-      const asset = await this.#persist(input.project, {
-        bytes: procedural.bytes,
-        extension: '.glb',
-        mimeType: 'model/gltf-binary',
-      }, {
-        name,
-        prompt,
-        provider: `Noobi:${displayName}`,
-        model,
-        presetId,
-        source: 'procedural',
-        metadata: {
-          route: 'threejs-fallback',
-          generator: procedural.generator,
-          preset: procedural.preset,
-          rigged: procedural.rigged,
-          animated: procedural.animated,
-          animations: procedural.animations,
-          vertexCount: procedural.vertexCount,
-          triangleCount: procedural.triangleCount,
-          promptSha256: procedural.promptSha256,
-          selfContained: true,
-        },
-      });
-      return {
-        outcome: 'asset',
-        asset,
-        provider: {
-          id: 'builtin-threejs',
-          presetId,
-          displayName,
-          model,
-          route: 'threejs-fallback',
-        },
-      } satisfies MediaGenerationAssetResult;
-    }
     return {
       outcome: 'fallback',
       fallback: input.kind === 'image'
@@ -257,6 +222,10 @@ export class MediaGenerationService {
       reason: 'provider-not-configured',
       prompt,
     };
+  }
+
+  async usesReferenceModels(): Promise<boolean> {
+    return !this.#options.model3dSource || await this.#options.model3dSource() === 'image-threejs';
   }
 
   async usesFreeAudio(): Promise<boolean> {

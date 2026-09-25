@@ -1121,7 +1121,7 @@ function AssetCard({
   previewUrl: string;
 }) {
   const sourceUrl = assetPreviewUrl(previewUrl, asset.relativePath);
-  const sourceLabel = asset.source === 'generated' ? 'AI 生成' : asset.source === 'procedural' ? '程序生成' : '已导入';
+  const sourceLabel = asset.metadata?.route === 'image-threejs' ? '图片参考建模' : asset.source === 'generated' ? 'AI 生成' : asset.source === 'procedural' ? '程序生成' : '已导入';
   const targetFps = numericMetadata(asset, 'targetFps') ?? numericMetadata(asset, 'targetFrameRate');
   const sourceFps = numericMetadata(asset, 'sourceAnimationFps');
   const frameCount = numericMetadata(asset, 'frameCount');
@@ -1163,6 +1163,7 @@ function AssetCard({
       <div className="asset-card-meta">
         <strong>{atlasSlice?.subject ?? asset.name}</strong>
         <span>{sourceLabel} · {formatBytes(asset.size)}</span>
+        {asset.metadata?.route === 'image-threejs' ? <span>外形需对照参考图验收</span> : null}
         {atlasSlice ? <span>卡面图集 · {atlasSlice.index + 1}/{atlasSlice.total}</span> : null}
         {targetFps !== null || sourceFps !== null || frameCount !== null || durationMs !== null || timingMode || variantId ? (
           <div className="asset-timing-tags" aria-label="动画素材帧率元数据">

@@ -216,6 +216,7 @@ export interface RuntimeStatus {
 }
 
 export interface AppSettings {
+  model3dSource?: 'image-threejs' | 'configured-api';
   audioSource?: 'free-library' | 'configured-api';
   defaultWorkspace: string;
   defaultModel: string | null;
@@ -363,7 +364,7 @@ export type AssetPlanRoute =
   | 'configured-api'
   | 'codex-imagegen'
   | 'procedural-audio'
-  | 'threejs-fallback'
+  | 'image-threejs' | 'threejs-fallback'
   | 'workspace-agent';
 
 export interface AssetPlanError {

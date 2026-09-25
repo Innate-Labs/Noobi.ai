@@ -238,9 +238,9 @@ describe('game harness required ImageGen contract', () => {
       expect(turn.prompt).toContain('`.noobi/playtest.json`');
       expect(turn.prompt).toContain('artifacts/playtest/latest/report.json');
       expect(turn.prompt).toContain('<model3d_generation_contract>');
-      expect(turn.prompt).toContain('configured 3D model API is always attempted first');
-      expect(turn.prompt).toContain('Three.js is build-time GLB authoring only');
-      expect(turn.prompt).toContain('res://public/assets/models/');
+      expect(turn.prompt).toContain('IMAGE → AI-AUTHORED THREE.JS → GLB');
+      expect(turn.prompt).toContain('Godot remains the game runtime');
+      expect(turn.prompt).toContain('public/assets/models');
       expect(turn.prompt).toContain('animation=true');
       expect(turn.prompt).toContain('<animation_needs_assessment generation="generate|reuse|not-needed" presentation="2d|2.5d|3d">');
       expect(turn.prompt).toContain('The Reviewer MUST verify the assessment');
@@ -481,14 +481,14 @@ describe('game harness required ImageGen contract', () => {
     await expect(run).rejects.toBeInstanceOf(GameHarnessStoppedError);
   });
 
-  it('defines one API-first 3D route whose fallback is a Godot-loadable GLB asset', () => {
+  it('requires image-guided authoring and independent visual review for the default 3D route', () => {
     const contract = buildModel3dGenerationContract();
-    expect(contract).toContain('configured 3D model API is always attempted first');
-    expect(contract).toContain('only when no active 3D provider is configured');
-    expect(contract).toContain('Three.js is build-time GLB authoring only');
-    expect(contract).toContain('res://public/assets/models/');
-    expect(contract).toContain('real skinned mesh with idle, walk, and run clips');
-    expect(contract).toContain('must not be silently hidden');
+    expect(contract).toContain('IMAGE → AI-AUTHORED THREE.JS → GLB');
+    expect(contract).toContain('only if the user explicitly selects configured-api');
+    expect(contract).toContain('Godot remains the game runtime');
+    expect(contract).toContain('public/assets/models');
+    expect(contract).toContain('YOUR real skin and clips');
+    expect(contract).toContain('Technical validity alone cannot satisfy image fidelity');
   });
 
   it('refreshes private host provenance before review, repair, and final re-review', async () => {

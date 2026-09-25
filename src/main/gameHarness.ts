@@ -173,7 +173,7 @@ export const CONNECTION_RETRY_TIMEOUT_MS = 90_000;
 const MAX_EVENT_MESSAGE_CHARS = 30_000;
 const MAX_PROMPT_SECTION_CHARS = 32_000;
 export const MAX_GAME_HARNESS_REPAIR_ATTEMPTS = 3;
-export const GAME_HARNESS_TOOLSET_VERSION = 10;
+export const GAME_HARNESS_TOOLSET_VERSION = 11;
 
 export function gameHarnessTurnTimeoutMs(phase: GameHarnessPhase): number {
   return phase === 'implementer' || phase === 'repair'
@@ -245,8 +245,8 @@ Every noobi_audio_generate call must declare purpose=music|speech|vocal-sfx|sfx|
 route music to Music and speech/vocal-sfx to Speech. Generic gunshots, explosions, impacts, footsteps, and ambience
 are not MiniMax capabilities; follow the procedural-audio fallback instead of fabricating a MiniMax result.
 Never place base64 media, API keys, or absolute private paths in source files, chat output, or the asset manifest.
-For every requested 3D model, call noobi_model3d_generate. The host automatically prefers the configured 3D API and
-otherwise authors a self-contained procedural GLB with Three.js. Use the returned registered GLB in the final game;
+For every requested 3D model, call noobi_model3d_generate. The default route requires a real reference image and
+your own image-guided Three.js factory source; missing inputs return authoring instructions, never a canned model. Use the returned registered GLB in the final game;
 Three.js is build-time asset tooling only and must never become a second runtime beside Godot. Keep every asset
 referenced by the running game and asset-pack.json.
 Maintain \`.noobi/playtest.json\` using the fixed playtest schema in the host contract. It is an executable player
@@ -1622,12 +1622,15 @@ The Implementer MUST wire core assets into the running game and report the actua
 
 export function buildModel3dGenerationContract(): string {
   return `<model3d_generation_contract>
-For every requested 3D model, call noobi_model3d_generate instead of choosing a provider or fallback yourself.
-The host owns a fixed route: a configured 3D model API is always attempted first; only when no active 3D provider is configured does the host use Three.js to author and export a bounded, self-contained GLB 2.0 fallback. A configured API error is reported and must not be silently hidden by a fallback that could cause duplicate paid work.
-The tool returns one registered project-relative path under public/assets/models. The final game MUST load that exact GLB. In a Godot project, import or instantiate it through res://public/assets/models/... and use Godot scenes, physics, AnimationPlayer/AnimationTree, and export tooling. Three.js is build-time GLB authoring only; do not install or run Three.js inside the generated Godot game.
-When pose animation is required, call noobi_model3d_generate with animation=true. The built-in fallback then supplies a real skinned mesh with idle, walk, and run clips; select and play the required clip through the engine. Do not claim that whole-object translation/rotation, manifest metadata, reference art, or an unused GLB proves 3D animation.
-The procedural fallback is honest low-poly geometry. It can provide a complete functional prop, structure, environment object, or rigged placeholder, but it must not be described as photorealistic API-generated art or as matching an arbitrary organic topology/texture request. Upgrade it later through the configured API when higher-fidelity geometry is required.
-The Reviewer MUST return repair when a requested model is absent, manifest-only, not instantiated by production code, when Three.js is used as a second Godot runtime, or when animation=true lacks a real skin, clip, and playback path.
+The default route is IMAGE → AI-AUTHORED THREE.JS → GLB. Existing six-preset keyword models are legacy placeholders, not image-matched final art. Do not silently reuse those placeholders for requested finished assets. A configured 3D API is used only if the user explicitly selects configured-api in Settings; do not change that setting yourself.
+If the tool reports configured-api output, use that explicit user-selected route and verify the resulting model in the game; the code-authoring inputs below are specific to image-threejs. API errors must not be hidden by canned fallback models.
+1. Generate/import and REGISTER a clean single-object image under public/assets/images. Use noobi_image_generate and its $imagegen fallback when necessary. VIEW the actual image before modeling. A scene screenshot is style/context input: isolate each object into its own reference first. Let the user edit/replace the image when requested.
+2. Write model-sources/<name>.spec.json before code with {referenceImage, parts:[{name,shape,material}], criticalFeatures:[string], inferredSurfaces:[string]}. Include observable silhouette/proportions, named components and materials, 3–5 identity-defining features, pivots/sockets, dimensions, required animation, and explicitly inferred hidden surfaces. No fabricated visual scores.
+3. Write model-sources/<name>.mjs exporting async function createModel(THREE, {referenceUrl}) returning {root: THREE.Group, animations: THREE.AnimationClip[]}. Three.js is supplied by the host; do not import Node, install packages in the Godot project, fetch external assets, or use fixed keyword templates. referenceUrl can be loaded as a texture. Build silhouette → components → materials → action hierarchy; retain editable code and named parts. Budget: 100000 triangles, 2048 nodes, 2048px textures, 16 MiB GLB, 30 seconds per tool call.
+4. Call noobi_model3d_generate with the SAME planId, name, prompt, referenceImage and sourcePath. Missing inputs return instructions without an asset. The host executes code in an isolated browser, exports GLB, then loads that GLB in a fresh renderer and captures front/side/back views. Nothing from the authoring renderer alone proves exported geometry.
+5. VIEW the returned evidencePath reference and all three captures. Compare silhouette, proportions, identity features, materials and hidden-side coherence. Record honest findings in model-sources/<name>.review.md. Correct the source and call again for at most 3 correction rounds; if still mismatched, stop that asset and report the specific deficit. Never edit host artifacts/model3d evidence. Host hashes bind the reference, source, GLB and captures; changed inputs require rerendering.
+6. Instantiate the exact returned public/assets/models GLB in production. Godot remains the game runtime; Three.js only authors assets. animation=true requires YOUR real skin and clips, not a promised preset. Inspect and play them through AnimationPlayer/AnimationTree. Moving a whole mesh is not skeletal-animation proof.
+The independent Reviewer MUST open the reference and front/side/back captures, compare them against the spec and actual game presentation, and return repair for missing evidence, wrong silhouette/parts/materials, generic templates, stale evidence, missing production usage or unsupported animation claims. visualReview=pending means only technical export passed; it is never proof of visual approval. Technical validity alone cannot satisfy image fidelity. Single-view reconstruction is approximate; disclose hidden-side inference.
 </model3d_generation_contract>`;
 }
 

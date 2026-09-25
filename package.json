@@ -45,7 +45,7 @@
     "smoke:image": "tsx scripts/image-smoke.ts",
     "smoke:icon": "tsx scripts/icon-smoke.ts",
     "smoke:playtest": "npm run build && electron scripts/playtest-smoke-app",
-    "smoke:model3d": "tsx scripts/model3d-smoke.ts",
+    "smoke:model3d": "npm run build:main && electron scripts/model3d-smoke-app",
     "assets:transition-gifs": "node scripts/build-noobi-transition-gifs.mjs",
     "smoke:godot": "tsx scripts/godot-smoke.ts",
     "smoke:ui": "npm run build && cross-env NOOBI_SMOKE_CAPTURE=.noobi-smoke/workbench.png electron .",
