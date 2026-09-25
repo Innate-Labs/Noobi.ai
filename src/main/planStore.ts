@@ -6,6 +6,8 @@ import { lockedPlanChanges, planDifferences, validateEditedOption, validatePlanL
 import { PLAN_EDITABLE_FIELDS } from '../shared/planning.js';
 import type { SaveReferenceSpecInput } from '../shared/planning.js';
 import { validateReferenceSelections, validateReferenceSpec } from './visualReferenceStore.js';
+import { validateVideoSelection, validateVideoSpec } from './videoReferenceStore.js';
+import type { SaveVideoSpecInput, VideoClip } from '../shared/videoReferences.js';
 
 /** Host-owned, serialized atomic snapshots. A persisted run reservation is never replayed automatically. */
 export class PlanStore {
@@ -65,6 +67,9 @@ export class PlanStore {
         status: 'generating', attemptId: randomUUID(), analysisAttempts: [], updatedAt: new Date().toISOString(), error: null, version: null, run: null,
         ...(input.references ? { references: validateReferenceSelections(input.references) } : {}) };
       if (input.referenceSpecOverride) draft.referenceSpecOverride = validateReferenceSpec(input.referenceSpecOverride, draft.references ?? []);
+      if (input.video) draft.video = validateVideoSelection(input.video);
+      // The main process resolves the immutable clip and validates any override.
+      if (input.videoSpecOverride) draft.videoSpecOverride = structuredClone(input.videoSpecOverride);
       draft.analysisAttempts.push({ id: draft.attemptId, startedAt: draft.updatedAt, durationMs: null, usage: null, status: 'generating' });
       this.#drafts.push(draft); return draft;
     });
@@ -104,6 +109,18 @@ export class PlanStore {
         threadId: '', turnId: '', analysisDurationMs: 0, analysisUsage: null };
       draft.locks = locks; draft.updatedAt = draft.version.createdAt; draft.status = 'ready'; draft.error = null;
       return draft;
+    });
+  }
+  saveVideoSpec(input: SaveVideoSpecInput, clip: VideoClip): Promise<PlanDraft> {
+    return this.#mutate(() => {
+      const draft = this.#editable(input?.draftId, input?.versionId);
+      if (draft.video?.clipId !== clip.id) throw new Error('视频片段与方案不一致');
+      const spec = validateVideoSpec(input.spec, clip), previous = draft.version!;
+      draft.history = [...(draft.history ?? []), structuredClone(previous)];
+      draft.videoSpecOverride = spec;
+      draft.version = { ...structuredClone(previous), id: randomUUID(), number: previous.number + 1, createdAt: new Date().toISOString(), videoSpec: spec, videoSpecAuthor: 'user', authoredBy: 'user', requiresReview: true,
+        changes: ['修正视频理解'], model: null, threadId: '', turnId: '', analysisDurationMs: 0, analysisUsage: null };
+      draft.updatedAt = draft.version.createdAt; draft.status = 'ready'; draft.error = null; return draft;
     });
   }
   saveReferenceSpec(input: SaveReferenceSpecInput): Promise<PlanDraft> {
@@ -234,5 +251,7 @@ export class PlanStore {
   }
 }
 export function approvedPlanPrompt(draft: PlanDraft, option: PlanOption): string {
-  return `用户已确认以下制作方案。保留全部原始要求，不得缩减需求；仅实施此选定版本。\n方案版本：${draft.version!.id}\n方案：${option.id} · ${option.title}\n\n原始需求：\n${draft.request}\n\n共同必需要求：\n${draft.version!.requirements.map(r => `${r.id}: ${r.text}`).join('\n')}\n\n选定方案：\n${JSON.stringify(option, null, 2)}\n\n视觉参考规格（观察与推断分开，以用户修正为准）：\n${JSON.stringify(draft.version!.referenceSpec ?? null, null, 2)}\n参考文件：${(draft.version!.visualInputs ?? []).map(r => `references/visual/${r.referenceId}.png · 用途 ${r.purpose} · SHA256 ${r.normalizedHash}`).join("\n")}`;
+  const video = draft.version?.videoInput;
+  const videoContext = video ? `\n视频参考规格（用户改编优先，未知规则不能冒充已还原）：\n${JSON.stringify(draft.version?.videoSpec)}\n视频来源 SHA256：${video.sourceHash}\n时间证据：${video.frames.map(f => `${f.time}秒 · references/visual/${f.referenceId}.png · SHA256 ${f.sha256}`).join('\n')}` : '';
+  return `用户已确认以下制作方案。保留全部原始要求，不得缩减需求；仅实施此选定版本。\n方案版本：${draft.version!.id}\n方案：${option.id} · ${option.title}\n\n原始需求：\n${draft.request}\n\n共同必需要求：\n${draft.version!.requirements.map(r => `${r.id}: ${r.text}`).join('\n')}\n\n选定方案：\n${JSON.stringify(option, null, 2)}\n\n视觉参考规格（观察与推断分开，以用户修正为准）：\n${JSON.stringify(draft.version!.referenceSpec ?? null, null, 2)}\n参考文件：${(draft.version!.visualInputs ?? []).map(r => `references/visual/${r.referenceId}.png · 用途 ${r.purpose} · SHA256 ${r.normalizedHash}`).join("\n")}${videoContext}`;
 }

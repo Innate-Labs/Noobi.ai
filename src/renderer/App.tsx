@@ -293,7 +293,7 @@ export function App() {
     if (!settings || homeLaunching || !ensureRunReady()) return;
     setHomeLaunching(true); setError('');
     try {
-      const draft = await window.noobi.generatePlans({ request: input.idea, model: input.model, effort: input.effort, attachmentCount: input.attachments.length, references: input.references });
+      const draft = await window.noobi.generatePlans({ request: input.idea, model: input.model, effort: input.effort, attachmentCount: input.attachments.length, references: input.references, video: input.video });
       planFiles.current.set(draft.id, input.attachments);
       setPlanDialog({ draft, files: input.attachments });
       await refreshPlans();

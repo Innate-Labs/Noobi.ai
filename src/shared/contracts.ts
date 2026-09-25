@@ -1,5 +1,6 @@
 import type { GeneratePlansInput, PlanDraft, StartPlanInput, ResumeProjectInput, SavePlanEditsInput, RevisePlansInput, SaveReferenceSpecInput } from './planning.js';
 import type { VisualReference } from './visualReferences.js';
+import type { PrepareVideoInput, SaveVideoSpecInput, VideoClip, VideoSource } from './videoReferences.js';
 import type { ProductionProgress } from './productionProgress.js';
 export type PipelineStage =
   | 'brief'
@@ -576,6 +577,11 @@ export interface LoginStartResult {
 }
 
 export interface NoobiApi {
+  importVideoReference(file: unknown, requestId: string): Promise<VideoSource>;
+  prepareVideoReference(input: PrepareVideoInput): Promise<VideoClip>;
+  cancelVideoReference(requestId: string): Promise<void>;
+  getVideoReference(id: string): Promise<VideoClip>;
+  saveVideoSpec(input: SaveVideoSpecInput): Promise<PlanDraft>;
   importVisualReferences(files: readonly unknown[]): Promise<VisualReference[]>;
   getVisualReferences(ids: string[]): Promise<VisualReference[]>;
   saveReferenceSpec(input: SaveReferenceSpecInput): Promise<PlanDraft>;

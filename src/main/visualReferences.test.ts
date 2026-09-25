@@ -53,7 +53,7 @@ describe('independent visual references and real image inputs', () => {
   });
   it('puts images in protocol items, never just filenames in the prompt', () => {
     expect(turnInputs('look at this', ['/tmp/reference.png'], [{ name: 'skill', path: '/tmp/SKILL.md' }])).toEqual([{ type: 'text', text: 'look at this', text_elements: [] }, { type: 'localImage', path: '/tmp/reference.png' }, { type: 'skill', name: 'skill', path: '/tmp/SKILL.md' }]);
-    expect(() => turnInputs('x', ['relative.png'])).toThrow(); expect(() => turnInputs('x', Array(11).fill('/tmp/image.png'))).toThrow();
+    expect(() => turnInputs('x', ['relative.png'])).toThrow(); expect(() => turnInputs('x', Array(21).fill('/tmp/image.png'))).toThrow();
   });
   it('keeps screenshot bytes bound to the report after workspace images change', async () => {
     const { root } = await setup(); const project = join(root, 'game'), directory = join(root, 'private-build');

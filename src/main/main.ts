@@ -3,6 +3,8 @@ import { renderReferenceModel } from './referenceModelRenderer.js';
 import { PlanStore } from './planStore.js';
 import { VisualReferenceStore } from './visualReferenceStore.js';
 import { decodeVisualReference } from './visualReferenceDecoder.js';
+import { VideoReferenceStore, validateVideoSpec } from './videoReferenceStore.js';
+import type { PrepareVideoInput, SaveVideoSpecInput } from '../shared/videoReferences.js';
 import { readVisualEvidence, writeProjectReference } from './visualEvidence.js';
 import type { SaveReferenceSpecInput } from '../shared/planning.js';
 import { PlanService, requirementsFor } from './planService.js';
@@ -160,6 +162,7 @@ const runtime = new CodexAppServer({
 let planStore: PlanStore;
 let planService: PlanService;
 let visualReferences: VisualReferenceStore;
+let videoReferences: VideoReferenceStore;
 let planStarter: PlanStarter;
 let planResumer: PlanResumer;
 let productionRuns: ProductionRunStore;
@@ -254,6 +257,8 @@ async function launch(): Promise<void> {
   });
   planStore = new PlanStore(join(userData, 'production-plans.json'));
   visualReferences = new VisualReferenceStore(join(userData, 'visual-references'), decodeVisualReference);
+  videoReferences = new VideoReferenceStore(join(userData, 'video-references'), visualReferences);
+  await videoReferences.init();
   await planStore.init();
   productionRuns = new ProductionRunStore(join(userData, 'production-runs.json'));
   await productionRuns.init();
@@ -265,7 +270,9 @@ async function launch(): Promise<void> {
     if (!project) await mkdir(cwd, { recursive: true });
     const release = project ? acquireProjectFilesystemAccess(project.id) : undefined;
     try {
+      const clip = draft.video ? await videoReferences.get(draft.video.clipId) : null;
       return { cwd, engine: project?.engine, projectBrief: project?.idea, godotAvailable: godot.canCreateProjects, release,
+        ...(clip ? { video: { clip, paths: await Promise.all(clip.frames.map(f => visualReferences.resolve(f.referenceId))) } } : {}),
         visualReferences: await Promise.all((draft.references ?? []).map(async selection => ({ selection, record: await visualReferences.get(selection.id), path: await visualReferences.resolve(selection.id) }))),
         ...(project ? { sourceHash: await godotBuildStore.fingerprint(project.root),
           requirements: latestProjectPlan(await planStore.list(), project.id)?.version?.requirements ?? requirementsFor(project.idea) } : {}) };
@@ -673,6 +680,11 @@ async function dispatchApprovedProject(input: RunProjectInput, draft: PlanDraft,
       if (record.normalizedHash !== reference.normalizedHash || record.sha256 !== reference.sha256) throw new Error('已选方案的参考图发生变化，请重新规划');
       await writeProjectReference(project.root, record.id, await readFile(await visualReferences.resolve(record.id)));
     }
+    if (draft.version?.videoInput) {
+      const expected = draft.version.videoInput, clip = await videoReferences.get(expected.clipId);
+      if (clip.source.sha256 !== expected.sourceHash || JSON.stringify(clip.frames.map(({ id, referenceId, time, sha256 }) => ({ id, referenceId, time, sha256 }))) !== JSON.stringify(expected.frames)) throw new Error('已选方案的视频证据发生变化');
+      for (const frame of clip.frames) await writeProjectReference(project.root, frame.referenceId, await readFile(await visualReferences.resolve(frame.referenceId)));
+    }
     const targetFrameRate = project.targetFrameRate;
     const imageProvider = activeMediaProvider('image');
     const audioProvider = activeMediaProvider('audio');
@@ -810,13 +822,25 @@ function bindIpc(): void {
     }
     const settings = await projectStore.getSettings();
     const previous = input?.projectId ? latestProjectPlan(await planStore.list(), input.projectId) : null;
-    const draft = await planStore.create({ ...input, references: input.references ?? previous?.references,
+    const video = input.video ?? previous?.video;
+    const videoSpecOverride = input.videoSpecOverride ?? (input.video === undefined && previous?.version?.videoSpecAuthor === 'user' ? previous.version.videoSpec : undefined);
+    if (videoSpecOverride) { if (!video) throw new Error('缺少视频来源'); validateVideoSpec(videoSpecOverride, await videoReferences.get(video.clipId)); }
+    const draft = await planStore.create({ ...input, video, videoSpecOverride, references: input.references ?? previous?.references,
       referenceSpecOverride: input.referenceSpecOverride ?? (input.references === undefined && previous?.version?.referenceSpecAuthor === 'user' ? previous.version.referenceSpec : undefined),
       model: input?.model ?? settings.defaultModel ?? defaultModel(status.models), effort: input?.effort ?? settings.defaultEffort });
     trackBackgroundRun(planService.generate(draft));
     return draft;
   });
   handle('noobi:plans:list', () => planStore.list());
+  handle('noobi:video:import', (_event, path: string, requestId: string) => videoReferences.import(path, requestId));
+  handle('noobi:video:prepare', (_event, input: PrepareVideoInput) => videoReferences.prepare(input));
+  handle('noobi:video:cancel', (_event, id: string) => videoReferences.cancel(id));
+  handle('noobi:video:get', (_event, id: string) => videoReferences.get(id));
+  handle('noobi:plans:video-spec', async (_event, input: SaveVideoSpecInput) => {
+    const draft = await planStore.get(input?.draftId);
+    if (!draft.video || (draft.projectId && isProjectBusyForMutation(draft.projectId))) throw new Error('当前不能修改视频理解');
+    return planStore.saveVideoSpec(input, await videoReferences.get(draft.video.clipId));
+  });
   handle('noobi:references:import', (_event, images) => visualReferences.import(images));
   handle('noobi:references:get', async (_event, ids: string[]) => {
     if (!Array.isArray(ids) || ids.length > 5 || ids.some(id => typeof id !== 'string')) throw new Error('参考 ID 列表无效');
@@ -1753,6 +1777,12 @@ async function executeHarness(
           return visualReferences.resolve(reference.referenceId);
         }));
         let context = references.length ? `前 ${references.length} 张图片是用户参考，顺序为 ${references.map(r => `${r.referenceId}（${r.purpose}）`).join('、')}。参考图片不是已生成资产或游戏画面的证明。` : '';
+        if (draft.version?.videoInput) {
+          const expected = draft.version.videoInput, clip = await videoReferences.get(expected.clipId);
+          if (clip.source.sha256 !== expected.sourceHash || JSON.stringify(clip.frames.map(({ id, referenceId, time, sha256 }) => ({ id, referenceId, time, sha256 }))) !== JSON.stringify(expected.frames)) throw new Error('视频参考与已选版本不一致');
+          paths.push(...await Promise.all(clip.frames.map(frame => visualReferences.resolve(frame.referenceId))));
+          context += `\n接下来的 ${clip.frames.length} 张是用户视频关键帧，依次为 ${clip.frames.map(f => `${f.id} @ ${f.time}秒`).join('、')}。这些是参考，不是新游戏的试玩证明。`;
+        }
         if (phase === 'reviewer' && project.engine === 'godot') {
           const build = await godotBuildStore.latest(project.id);
           if (build) {
@@ -3549,6 +3579,7 @@ async function readSmokeAssistantState(window: BrowserWindow): Promise<{
 }
 
 async function shutdown(): Promise<void> {
+  videoReferences?.stop();
   planService?.stop();
   godotToolBroker?.close();
   approvalBroker?.closeAll();

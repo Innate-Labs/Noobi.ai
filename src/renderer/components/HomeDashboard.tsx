@@ -36,6 +36,8 @@ import { ProjectIconImage } from './ProjectIcon';
 import { RotatingIdeaInput } from './RotatingIdeaInput';
 import { VisualReferencePicker } from './VisualReferences';
 import type { ReferenceSelection } from '../../shared/visualReferences';
+import { VideoReferencePicker } from './VideoReferences';
+import type { VideoSelection } from '../../shared/videoReferences';
 
 const IDEA_STARTERS = [
   {
@@ -70,6 +72,7 @@ const SUPPORTED_ATTACHMENT = /\.(?:png|jpe?g|webp|pdf|md|txt|json|csv|wav|mp3|og
 const MAX_HOME_ATTACHMENTS = 20;
 
 export interface HomeLaunchInput {
+  video?: VideoSelection;
   references: ReferenceSelection[];
   idea: string;
   model: string | null;
@@ -110,6 +113,8 @@ export function HomeDashboard({
   const [attachments, setAttachments] = useState<File[]>([]);
   const [references, setReferences] = useState<ReferenceSelection[]>([]);
   const [referenceBusy, setReferenceBusy] = useState(false);
+  const [video, setVideo] = useState<VideoSelection | null>(null);
+  const [videoBusy, setVideoBusy] = useState(false);
   const [attachmentNotice, setAttachmentNotice] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const ideaInputRef = useRef<HTMLTextAreaElement>(null);
@@ -126,7 +131,7 @@ export function HomeDashboard({
   );
   const accountName = accountDisplayName(runtime);
   const runtimeReady = runtime.state === 'ready' && Boolean(runtime.account);
-  const launchReady = runtimeReady && idea.trim().length > 0 && !busy && !referenceBusy;
+  const launchReady = runtimeReady && idea.trim().length > 0 && !busy && !referenceBusy && !videoBusy;
 
   useEffect(() => {
     if (models.length === 0) {
@@ -163,6 +168,7 @@ export function HomeDashboard({
       effort: effort || null,
       attachments,
       references,
+      ...(video ? { video } : {}),
     });
   }
 
@@ -329,6 +335,7 @@ export function HomeDashboard({
               ) : null}
               {attachmentNotice ? <div className="home-attachment-notice" role="status">{attachmentNotice}</div> : null}
               <VisualReferencePicker value={references} disabled={busy} onChange={setReferences} onBusy={setReferenceBusy} />
+              <VideoReferencePicker disabled={busy} onChange={setVideo} onBusy={setVideoBusy} />
               <div className="home-prompt-controls">
                 <div className="home-attachment-actions">
                   <button type="button" disabled={busy} onClick={() => imageInputRef.current?.click()}>

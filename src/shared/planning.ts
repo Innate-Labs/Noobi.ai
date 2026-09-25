@@ -1,5 +1,6 @@
 import type { GameEngine } from './contracts.js';
 import type { ReferenceSelection, ReferenceSpec, VisualInputEvidence } from './visualReferences.js';
+import type { VideoSelection, VideoSpec } from './videoReferences.js';
 
 export interface PlanRequirement { id: string; text: string; source?: 'request' | 'revision' | 'import' }
 export interface PlanDesign { camera: string; regions: string; characters: string; style: string; budget: string }
@@ -23,6 +24,11 @@ export interface PlanOption {
   design?: PlanDesign;
 }
 export interface PlanVersion {
+  analysisInputHash?: string;
+  reusedAnalysis?: { draftId: string; versionId: string };
+  videoSpec?: VideoSpec;
+  videoSpecAuthor?: 'model' | 'user';
+  videoInput?: { clipId: string; sourceHash: string; frames: Array<{ id: string; referenceId: string; time: number; sha256: string }> };
   referenceSpec?: ReferenceSpec;
   referenceSpecAuthor?: 'model' | 'user';
   visualInputs?: VisualInputEvidence[];
@@ -82,6 +88,8 @@ export interface PlanAnalysisAttempt {
   status: 'generating' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 }
 export interface PlanDraft {
+  video?: VideoSelection;
+  videoSpecOverride?: VideoSpec;
   references?: ReferenceSelection[];
   referenceSpecOverride?: ReferenceSpec;
   id: string;
@@ -104,6 +112,8 @@ export interface PlanDraft {
   mergeOptionId?: string;
 }
 export interface GeneratePlansInput {
+  video?: VideoSelection;
+  videoSpecOverride?: VideoSpec;
   references?: ReferenceSelection[];
   referenceSpecOverride?: ReferenceSpec;
   request: string;

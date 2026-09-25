@@ -43,6 +43,17 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: NoobiApi = {
+  importVideoReference: (candidate: unknown, requestId: string) => {
+    const file = candidate as File;
+    if (!(file instanceof File) || file.size > 200 * 1024 ** 2 || !/\.(mp4|mov)$/iu.test(file.name)) throw new Error('请上传不超过 200 MiB 的 MP4/MOV');
+    const path = webUtils.getPathForFile(file);
+    if (!path) throw new Error('请选择本机视频文件');
+    return ipcRenderer.invoke('noobi:video:import', path, requestId);
+  },
+  prepareVideoReference: input => ipcRenderer.invoke('noobi:video:prepare', input),
+  cancelVideoReference: id => ipcRenderer.invoke('noobi:video:cancel', id),
+  getVideoReference: id => ipcRenderer.invoke('noobi:video:get', id),
+  saveVideoSpec: input => ipcRenderer.invoke('noobi:plans:video-spec', input),
   importVisualReferences: async (files: readonly unknown[]) => {
     if (!Array.isArray(files) || files.length < 1 || files.length > 5) throw new Error('请上传 1–5 张视觉参考');
     let total = 0;
