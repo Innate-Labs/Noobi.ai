@@ -46,7 +46,7 @@ Noobi.ai gives Codex a bounded game-production loop instead of asking one agent 
 ### Requirements
 
 - macOS (the current tested and packaged target)
-- Node.js 22 LTS and npm
+- Node.js 22.20.0 (see `.nvmrc`) and npm 10.9.3
 - a ChatGPT/Codex account
 - an available image route: a configured image provider or Codex ImageGen
 - Godot 4 with exactly matching Web export templates, only when the Agent selects Godot

@@ -46,7 +46,7 @@ Noobi.ai 不让单个 Agent 在一次回合里即兴完成所有工作，而是�
 ### 环境要求
 
 - macOS（当前已测试、已配置打包的目标平台）
-- Node.js 22 LTS 与 npm
+- Node.js 22.20.0（见 `.nvmrc`）与 npm 10.9.3
 - 可用的 ChatGPT/Codex 账户
 - 可用的图片生成路线：已配置图片 Provider 或 Codex ImageGen
 - 只有 Agent 判断需要 Godot 时，才要求 Godot 4 与版本精确匹配的 Web Export Templates
