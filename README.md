@@ -263,3 +263,5 @@ See [the runnable reference example](examples/image-threejs/README.md) and [deli
 New Godot projects include the OFL-1.1 Fusion Pixel Chinese font and component licenses for offline game UI. Font bytes are pinned; no developer system font is required. See `resources/game-fonts/README.md`.
 
 Generated Godot games can use the versioned native UI kit for title/HUD/inventory/quests/region list/pause/settings/failure/ending, wired to real game state. Version history can export a hash-verified static Web package (HTTP hosting required; no native launcher yet). See docs/development-plan/reports/12-delivery.md and 10-delivery.md.
+
+Reference comparison now pairs frozen reference inputs with host-verified game captures and preserves five separate evidence notes. Long-run checks require actor bounds and active-state assertions; rendering while falling outside the level is a failure. Full gameplay and human acceptance remain separate.

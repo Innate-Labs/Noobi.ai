@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 import {cpus,totalmem,platform,release,arch} from 'node:os';
 import {GodotBuildStore} from '../dist/main/production/godotBuildStore.js';
 import {PreviewServer} from '../dist/main/previewServer.js';
-import {parseLongRunPolicy,frameDistribution} from '../dist/main/quality/longRun.js';
+import {parseLongRunPolicy,frameDistribution,checkLongRunState} from '../dist/main/quality/longRun.js';
 import {READ_RUNTIME_EVIDENCE,parseRuntimeEvidence} from '../dist/main/runtime/runtimeEvidence.js';
 const arg=n=>process.argv[process.argv.indexOf(n)+1];
 let policyBytes, policy;
@@ -49,10 +49,11 @@ const bounded=async promise=>{let timer;try{return await Promise.race([promise,n
   const elapsed=performance.now()-start;if(elapsed<nextSample)continue;nextSample=elapsed+5000;
   const p=await packet();if(p.engineFrame<=previousFrame)throw Error('Engine frame counter stopped advancing');previousFrame=p.engineFrame;previousSequence=p.sequence;
   if(p.paused || p.state.state==='paused')throw Error('Game paused during continuous active run');
+  let actorPosition;try{actorPosition=checkLongRunState(p,policy);}catch(error){await writeFile(join(out,'failed-runtime.json'),JSON.stringify(p,null,2));await writeFile(join(out,'failed-state.png'),(await bounded(win.webContents.capturePage())).toPNG());throw error;}
   const timing=await win.webContents.executeJavaScript('({frames:window.__noobiLongFrames.splice(0),focused:document.hasFocus(),visibility:document.visibilityState,width:innerWidth,height:innerHeight})');intervals.push(...timing.frames);
   const previous=report.samples.at(-1);const engineFps=previous?(p.engineFrame-previous.engineFrame)*1000/(elapsed-previous.elapsedMs):null;
   const m=app.getAppMetrics().find(m=>m.pid===win.webContents.getOSProcessId());if(!m?.memory)metricsMissing=true;
-  const sample={elapsedMs:elapsed,engineFps,sequence:p.sequence,engineFrame:p.engineFrame,state:p.state,findings:p.findings,rendererWorkingSetMiB:m?.memory?.workingSetSize/1024||null,focused:timing.focused,visibility:timing.visibility,viewport:[timing.width,timing.height]};
+  const sample={elapsedMs:elapsed,engineFps,actorPosition,sequence:p.sequence,engineFrame:p.engineFrame,state:p.state,findings:p.findings,rendererWorkingSetMiB:m?.memory?.workingSetSize/1024||null,focused:timing.focused,visibility:timing.visibility,viewport:[timing.width,timing.height]};
   if(p.findings.some(f=>f.severity==='error'))throw Error('Host runtime diagnostic failed');
   report.samples.push(sample);await appendFile(join(out,'samples.jsonl'),JSON.stringify(sample)+'\n');
   if(elapsed>=nextCapture){nextCapture=elapsed+60000;await writeFile(join(out,`frame-${Math.round(elapsed/1000)}.png`),(await bounded(win.webContents.capturePage())).toPNG());console.log('LONG_RUN_PROGRESS',Math.round(elapsed/1000),'/',policy.durationSeconds);}

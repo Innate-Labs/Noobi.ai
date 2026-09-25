@@ -1,6 +1,7 @@
 import { ModelAssetPreview } from './ModelAssetPreview';
 import { SceneQualityPanel } from './SceneQualityPanel';
 import { GameVersionsPanel } from './GameVersionsPanel';
+import { ReferenceComparison } from './ReferenceComparison';
 import {
   AlertTriangle,
   Box,
@@ -343,6 +344,7 @@ export function Inspector({
         </div>
       ) : null}
       <GameVersionsPanel key={project.id} project={project} refreshSignal={refreshSignal} onRestored={onProjectRestored} />
+      <ReferenceComparison key={`comparison-${project.id}`} projectId={project.id} refreshSignal={refreshSignal} />
       <div className="inspector-tabs" role="tablist" aria-label="项目检查器">
         <button
           type="button"

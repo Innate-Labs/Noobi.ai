@@ -42,14 +42,16 @@ export async function retainVisualEvidence(directory: string, projectRoot: strin
   }
   const path = join(target, 'inputs.json'); await writeFile(`${path}.tmp`, JSON.stringify(receipt), { mode: 0o600 }); await rename(`${path}.tmp`, path);
 }
-export async function readVisualEvidence(directory: string, report: GameplayExperienceReport): Promise<{ paths: string[]; context: string }> {
+export async function readVisualEvidence(directory: string, report: GameplayExperienceReport): Promise<{ paths: string[]; images: Array<{ path: string; sha256: string; name: string }>; context: string }> {
   const root = join(directory, 'visual-evidence');
   const receipt = JSON.parse(await readFile(join(root, 'inputs.json'), 'utf8')) as VisualReceipt;
   if (JSON.stringify(receipt.build) !== JSON.stringify(report.build) || receipt.checkedAt !== report.checkedAt || !Array.isArray(receipt.images) || !receipt.images.length || receipt.images.length > 5) throw new Error('图像证据与当前构建报告不匹配');
   const paths: string[] = [];
+  const images: Array<{ path: string; sha256: string; name: string }> = [];
   for (const item of receipt.images) {
     if (!/^[a-f0-9]{64}\.png$/u.test(item.file) || digest(await safeVisualRead(root, item.file)) !== item.sha256) throw new Error('试玩图像证据已变化');
     paths.push(join(root, item.file));
+    images.push({ path: join(root, item.file), sha256: item.sha256, name: item.sourcePath.split('/').at(-1) ?? item.file });
   }
-  return { paths, context: `以下 ${paths.length} 张为宿主保留的真实试玩截图。构建 ${receipt.build.buildId}，源码 ${receipt.build.sourceHash}，产物 ${receipt.build.artifactHash}。图片按此顺序对应 ${receipt.images.map(i => i.sourcePath).join('、')}。仅覆盖这些采样，未采样状态不视为已验证。` };
+  return { paths, images, context: `以下 ${paths.length} 张为宿主保留的真实试玩截图。构建 ${receipt.build.buildId}，源码 ${receipt.build.sourceHash}，产物 ${receipt.build.artifactHash}。图片按此顺序对应 ${receipt.images.map(i => i.sourcePath).join('、')}。仅覆盖这些采样，未采样状态不视为已验证。` };
 }

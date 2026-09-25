@@ -15,6 +15,9 @@ import { ProductionRunStore } from './production/productionRunStore.js';
 import { FreeModelLibrary } from './freeModelLibrary.js';
 import { GameVersionStore } from './production/gameVersionStore.js';
 import { exportGameWeb } from './production/gameWebExport.js';
+import { ReferenceComparisonStore } from './quality/referenceComparison.js';
+import type { ReferenceComparisonPayload, SaveReferenceComparisonInput } from '../shared/referenceComparison.js';
+import { safeVisualRead } from './visualEvidence.js';
 import { GameVersionRestorer } from './production/gameVersionRestorer.js';
 import type { GameVersion, RestoreGameVersionInput } from '../shared/gameVersions.js';
 import type { ProductionProgress, ProductionSession, ProductionTaskUpdate } from '../shared/productionProgress.js';
@@ -170,6 +173,7 @@ let planStarter: PlanStarter;
 let planResumer: PlanResumer;
 let productionRuns: ProductionRunStore;
 let gameVersions: GameVersionStore;
+let referenceComparisons: ReferenceComparisonStore;
 let gameVersionRestorer: GameVersionRestorer;
 const versionPreviews = new PreviewServer();
 const harness = new GameHarness(runtime);
@@ -431,6 +435,7 @@ async function launch(): Promise<void> {
   ]);
   await recoverInterruptedProjects();
   gameVersions = new GameVersionStore(join(userData, 'game-versions'));
+  referenceComparisons = new ReferenceComparisonStore(join(userData, 'reference-comparisons'));
   gameVersionRestorer = new GameVersionRestorer(gameVersions, projectStore, planStore, assetPlanStore, imageGenerationAttestations);
   void backfillProjectIcons();
 
@@ -776,7 +781,46 @@ async function dispatchApprovedProject(input: RunProjectInput, draft: PlanDraft,
   }
 }
 
+async function referenceComparisonPayload(projectId: string): Promise<ReferenceComparisonPayload | null> {
+  const project = await projectStore.get(validateProjectId(projectId));
+  if (project.engine !== 'godot') return null;
+  const draft = latestProjectPlan(await planStore.list(), project.id);
+  if (!draft?.version || (!draft.references?.length && !draft.version.videoInput?.frames.length)) return null;
+  const build = await godotBuildStore.latest(project.id);
+  if (!build) return null;
+  await godotBuildStore.verifyInputs(build); await godotBuildStore.verifyArtifacts(build);
+  const report = await godotBuildStore.report(build);
+  if (!report?.build) return null;
+  const evidence = await readVisualEvidence(dirname(build.root), report);
+  let currentSource = true;
+  try { await godotBuildStore.assertCurrent(build); } catch { currentSource = false; }
+  const selections = [...(draft.references ?? []), ...(draft.version.videoInput?.frames.map(frame => ({ id: frame.referenceId, purpose: `视频关键帧 · ${frame.time.toFixed(2)}秒` })) ?? [])];
+  const uniqueSelections = [...new Map(selections.map(s => [s.id, s])).values()];
+  const references = await Promise.all(uniqueSelections.map(async selection => {
+    const ref = await visualReferences.get(selection.id);
+    const frozen = await safeVisualRead(build.root, `references/visual/${ref.id}.png`);
+    if (createHash('sha256').update(frozen).digest('hex') !== ref.normalizedHash) throw new Error('参考图与此构建的冻结输入不一致');
+    return { id: ref.id, name: ref.name, sha256: ref.sha256, thumbnail: ref.thumbnail, purpose: selection.purpose };
+  }));
+  const captures = await Promise.all(evidence.images.map(async item => {
+    const bytes = await safeVisualRead(dirname(item.path), basename(item.path));
+    if (createHash('sha256').update(bytes).digest('hex') !== item.sha256) throw new Error('试玩截图在读取时发生变化');
+    return { sha256: item.sha256, name: item.name, thumbnail: nativeImage.createFromBuffer(bytes).resize({ width: 720 }).toDataURL() };
+  }));
+  const option = draft.version.options.find(o => o.id === draft.run?.optionId);
+  return { build: report.build, currentSource, checkedAt: report.checkedAt, shortRunVerdict: report.verdict,
+    references, captures, referenceSpec: draft.version.referenceSpec ?? null,
+    requirements: option ? [...option.coreLoop, ...option.features] : draft.version.requirements.map(r => r.text),
+    records: await referenceComparisons.list(project.id, build.record.buildId) };
+}
+
 function bindIpc(): void {
+  handle('noobi:comparison:get', (_event, projectId: string) => referenceComparisonPayload(projectId));
+  handle('noobi:comparison:save', async (_event, input: SaveReferenceComparisonInput) => {
+    const payload = await referenceComparisonPayload(input?.projectId);
+    if (!payload) throw new Error('缺少可比较的当前构建和参考证据');
+    return referenceComparisons.save(input, payload);
+  });
   handle('noobi:plans:copy-failed', (_event, draftId: string) => planStore.copyFailedUnbound(draftId));
   handle('noobi:versions:export-web', async (_event, projectId: string, versionId: string) => {
     const project = await projectStore.get(validateProjectId(projectId));
