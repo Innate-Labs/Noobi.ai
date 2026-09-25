@@ -1,4 +1,5 @@
 import { ADVENTURE_ENEMY } from './adventureEnemy.js';
+import { ADVENTURE_VISIBILITY } from './adventureVisibility.js';
 /** Opt-in Godot 4 components. These contain no level, theme, final art or win trigger. */
 export const ADVENTURE_KIT_VERSION = 1;
 export const ADVENTURE_CONTROLLER = `extends CharacterBody3D
@@ -142,6 +143,7 @@ func reset_at(point: Vector3) -> void:
 
 export const ADVENTURE_CAMERA = `extends Node3D
 class_name NoobiAdventureCamera
+const Visibility = preload("res://runtime/noobi/adventure_visibility_v1.gd")
 
 signal focus_lost
 @export var target: CharacterBody3D
@@ -152,6 +154,7 @@ signal focus_lost
 var enabled := true
 var arm: SpringArm3D
 var camera: Camera3D
+var visibility: Node
 var _pitch := -0.22
 var _dragging := false
 var _last_pointer := Vector2.ZERO
@@ -176,6 +179,11 @@ func _ready() -> void:
     camera.current = true
     camera.near = 0.06
     arm.add_child(camera)
+    visibility = Visibility.new()
+    visibility.camera = camera
+    visibility.target = target
+    visibility.collision_mask = collision_mask
+    add_child(visibility)
     if OS.has_feature("web"):
         _web_window = JavaScriptBridge.get_interface("window")
         _web_document = JavaScriptBridge.get_interface("document")
@@ -356,6 +364,7 @@ The workspace starts neutral. Only use the mechanics selected in the user's plan
 
 - adventure_controller_v1.gd: CharacterBody3D, origin at feet, CollisionShape3D capsule centered above feet. Physics ticks drive movement, floor snap, bounded step climbing, coyote/buffered jump, unlocked dash, health and motion signals. Keep imported model/AnimationTree under a separate visual child and assign it to visual. Assign the actual Camera3D for camera-relative controls. Bind motion_changed to real animation clips; named states alone are not animation evidence.
 - adventure_camera_v1.gd: Node3D at shoulder height, preferably a child of the non-rotating physics body. Assign target BEFORE adding to the tree; its camera and sphere SpringArm are created in _ready. Collision mask must contain actual level solids and exclude the player. Left click requests pointer capture; right-button drag remains usable when the browser denies capture. Set capture_on_left_click=false for a drag-only control scheme and show the actual scheme in the HUD. Never describe failed capture as success. On focus_lost the game must pause and show a resume control. resume_controls releases stale inputs and waits for a new user click.
+- adventure_visibility_v1.gd: created by the camera rig as visibility. Mark ONLY foreground StaticBody3D nodes that may visually fade with noobi_camera_occluder; their child MeshInstance3D materials are duplicated per instance and restored when unobstructed or the camera exits. Collision is unchanged. It samples feet/body/head and footprint edges for the player plus up to seven nearby visible noobi_camera_focus nodes. Enemy components register automatically; register attack-zone Node3D markers separately with noobi_focus_height=0 and noobi_focus_radius matching the actual danger radius. Keep markers visible/registered only while their feedback is active. Configure rig.visibility.focus_distance/collision_mask to match the scene. Standard/ORM materials are supported, but custom ShaderMaterial, next_pass and overlays report NOOBI_CAMERA_OCCLUDER_UNSUPPORTED and remain unchanged; provide a scene-specific shader adapter or change the camera/layout and verify screenshots. Unmarked walls remain opaque. This bounded sampling is not proof of all-angle visibility; test the closest wall, enemy feet, windup edges, layered foreground, restoration and collision in the actual game.
 - interactable_v1.gd: Area3D with authored stable interaction_id, shape and visible object. Set max_distance, one_shot and can_activate predicate. Put the origin at the interactable's reachable use point, outside its solid collision. Recheck distance/occlusion/condition at activation. One-shot consumption commits before the reward signal to prevent duplicate rewards.
 - interactor_v1.gd: Node, assign actor. Wire prompt_changed and interaction_failed into visible UI. Disable during menus/death. Predicates and saved consumed IDs belong to the game's state model.
 - melee_v1.gd: optional Node3D. Assign actor, register actual enemy bodies in noobi_damageable. It distinguishes a miss from a nearby target inside the facing cone and checks wall occlusion, cooldown and the target's take_damage result. Generated enemy AI supplies telegraph/response/recovery; this is not a complete enemy.
@@ -369,6 +378,7 @@ Keep saves and gameplay rules in separate components, validate before applying s
 export const ADVENTURE_KIT_FILES: Record<string, string> = {
   'runtime/noobi/adventure_controller_v1.gd': ADVENTURE_CONTROLLER,
   'runtime/noobi/adventure_camera_v1.gd': ADVENTURE_CAMERA,
+  'runtime/noobi/adventure_visibility_v1.gd': ADVENTURE_VISIBILITY,
   'runtime/noobi/interactable_v1.gd': ADVENTURE_INTERACTABLE,
   'runtime/noobi/interactor_v1.gd': ADVENTURE_INTERACTOR,
   'runtime/noobi/melee_v1.gd': ADVENTURE_COMBAT,

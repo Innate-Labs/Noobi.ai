@@ -62,6 +62,8 @@ The offline [CC0 model library](resources/free-models/LICENSES.md) includes 14 K
 
 New Godot projects include optional versioned third-person control, collision camera, interaction, melee/enemy and checkpoint components in `runtime/noobi/ADVENTURE_V1.md` and `CHECKPOINT_V1.md`. Use only mechanics selected in the plan and supply game-specific visuals, collision shapes and save validation. Real Godot physics and browser drag-camera/checkpoint fixtures have been exercised; these fixtures are not generated games or finished artwork. Native pointer capture remains unverified in the tested Electron environment. The [stage 06 report](docs/development-plan/reports/06-delivery.md) tracks remaining autonomous-generation acceptance.
 
+The camera kit can also fade explicitly marked foreground walls that obscure the player, nearby enemies or authored danger-zone markers. It samples body and footprint points, restores per-instance materials when visibility changes, and preserves collision. Standard/ORM materials are supported; custom shaders and overlays require scene-specific integration and are reported rather than silently changed. This is a bounded visibility aid, not certification of every camera angle.
+
 Multi-region games can use `PROGRESSION_V1.md` for atomic quest rewards, inventory, abilities, one-time gate costs and checkpoint-compatible state. The build checks optional `data/progression.json` for cyclic prerequisites, unreachable content and key-consumption softlocks; bounded exploration never reports unverified states as passed. Physical objectives and real playthroughs remain separate checks.
 
 ### Free game audio by default

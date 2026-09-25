@@ -23,6 +23,7 @@ func _ready() -> void:
     health = max_health
     floor_snap_length = 0.3
     add_to_group("noobi_damageable")
+    add_to_group("noobi_camera_focus")
 
 func _physics_process(delta: float) -> void:
     _timer = maxf(0.0, _timer - delta)

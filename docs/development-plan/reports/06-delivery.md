@@ -97,3 +97,29 @@ B 在 22:21:50 再次失败，累计 11 回合 / 5 修复 / 0 重连。固定构
 A 在 22:23:55 UTC 独立视觉评审失败，最终 13 回合 / 6 修复 / 2 重连，停止且不恢复。固定构建 `515fba8b-c1f2-456b-93e8-24d9d471aa52`，源 `72d89c4a34f7b05538ffe05c72cf8518f3ea33dfb0613279b0f114dd30e554c8`，产物 `0d0ddf56b61c7e87ee8e9881116404ee8e2769f63ab5ff2da9fef5d2c869906c`。技术试玩报告 pass、无运行错误，不代表视觉交付通过。
 
 已独立查看 `sample-gate-contact.png` 和 `sample-backwall.png`：前景墙冠确实挡住部分敌人脚部、预警环及地面，影响距离判断。评审还指出未解锁冲刺反馈被后续 E 提示覆盖、音频试听与完整存档退出继续证据不足。最终状态存于 `.noobi-private/stage-06/final-a.json`。后续可改进通用相机对敌人/危险区的可读性，但不得借平台修复扩额恢复 A，或人工改成品冒充自主生成成功。
+
+## 通用前景遮挡可读性组件（2026-09-26）
+
+新增 `adventure_visibility_v1.gd`，由通用相机安装，检查玩家及最多七个附近的已注册敌人/危险区域。每个目标采样脚部、身体、头部和区域边缘，最多四层遮挡；仅淡化明确加入 `noobi_camera_occluder` 的静态前景物件。相同碰撞体每帧只遍历一次网格，射线最多 224 条，网格最多 128 个。这里的上限不等于复杂场景性能已经验收。
+
+材质按实例复制，遮挡解除、目标隐藏、停用、换镜头和组件退出时恢复，不修改共享源材质或碰撞。标准/ORM 材质可用；自定义 ShaderMaterial、next_pass、overlay 保持原样并报告不支持，仍需场景适配。未标记的实体墙不会被淡化。生成阶段指南已写明危险范围标记和实际镜头验收要求；A/B 工程均未被修改。
+
+验证：
+
+- `npm run verify`：84 个文件 / 672 测试通过，`.noobi-private/stage-06/visibility-final-verify.log`。
+- `node scripts/adventure-visibility-smoke.mjs`：真实 Godot Compatibility 原生场景 19 项检查通过，最新证据 `visibility/2026-09-25T22-36-24.354Z/report.json`，包含敌人单独受遮挡、危险圈、多层前景、共享材质保护、实际运动碰撞、隐藏恢复、镜头切换、删除节点、外部材质修改和不支持的着色器。
+- 已查看遮挡前、淡化后、恢复后三张实际渲染图。最初不透明遮挡负例的墙高度不足，头部射线从墙上方穿过，该失败保留在 `22-34-05.385Z/failure.log`；修正测试遮挡体覆盖全部射线后通过，没有放松生产逻辑。
+- 原有 `adventure-kit-smoke.mjs` 在 30/60/120 Hz 各 27 项物理检查通过，记录 `visibility-adventure-regression.log`。
+
+以下为手写工程验证，不是自主生成游戏或成品美术：
+
+![敌人和危险圈被前景墙遮挡](../evidence/camera-visibility/01-opaque.png)
+![前景淡化后敌人和危险圈可见](../evidence/camera-visibility/02-readable.png)
+
+尚需：成品注册与自定义着色器适配、浏览器下的新组件验证、密集场景性能和不同镜头角度。R18 仍保留“补齐”，鼠标锁定问题也未借此标记解决。
+
+## B 原预算最终停止
+
+B 于 22:38:22 UTC 停止，13 回合 / 6 修复 / 0 重连，不再自动恢复。错误是远程上下文压缩时向认证服务发送请求失败（`error sending request ... auth.openai.com/oauth/token`），不足以判断是网络还是登录失效；界面旧分类为 quality，但不能把本次终止描述为新的美术拒绝。
+
+最后技术报告 22:35:05 为 pass，构建 `a64c0f63-65e9-4cde-9e5d-0d49f7c5596b`，源 `d00018e38e6e9c5ee32f017a7fef9b7054518dc9af196b5c37d7cc82b18f65fd`，产物 `4e92cc99dfcd8dfb6d24366002268b0c45b19b6d4bb968fd09f6566a4f969cc9`。已查看守卫战后取得印记与终点胜利截图，证明此次采样路线有进展；最终独立视觉评审、完整 UI/存档/音频体验仍没有通过结论。证据 `.noobi-private/stage-06/b/final-b.json`，保留之前死亡路线失败及所有原始记录。
