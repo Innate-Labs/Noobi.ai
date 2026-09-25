@@ -80,6 +80,7 @@ import {
   archiveLatestGameplayExperienceReport,
   GameplayExperienceEvaluator,
   readLatestGameplayExperienceReport,
+  readGameplayPlaytestManifest,
   writeGameplayExperienceFailureReport,
   type GameplayExperienceReport,
 } from './gameplayExperienceEvaluator.js';
@@ -1788,6 +1789,9 @@ async function performProjectExperienceEvaluation(
   try {
     await playtestPreviews.stop(project.id).catch(() => undefined);
     throwIfExperienceEvaluationAborted(signal);
+    // Reject malformed routes before spending time on a build. The evaluator
+    // still performs full path/engine validation against the frozen snapshot.
+    await readGameplayPlaytestManifest(project.root, false);
     if (preflight === 'required') {
       await verifyProductionBuildForExperience(project, signal);
     }
@@ -2055,11 +2059,15 @@ async function verifyGodotProject(
     method: 'godot/verify/started',
   });
   if (exportWeb) {
+    let reused = false;
     const build = await buildGodotCandidate({ projectId: project.id, projectRoot: project.root,
-      store: godotBuildStore, environment: godotEnvironmentService, signal, qualitySpec: gameQualitySpec(project) });
+      store: godotBuildStore, environment: godotEnvironmentService, signal, qualitySpec: gameQualitySpec(project),
+      onReused: () => { reused = true; } });
     emitAgentEvent({ id: randomUUID(), projectId: project.id, kind: 'lifecycle',
       title: 'Godot · 构建验证通过',
-      message: `独立构建 ${build.record.buildId.slice(0, 8)} 已通过主场景运行和 Web 导出，继续检查实际玩法。`,
+      message: reused
+        ? `复用已验证构建 ${build.record.buildId.slice(0, 8)}：源码、引擎配置与产物一致；继续检查实际玩法。`
+        : `独立构建 ${build.record.buildId.slice(0, 8)} 已通过主场景运行和 Web 导出，继续检查实际玩法。`,
       stage: 'verify', timestamp: new Date().toISOString(), method: 'godot/verify/completed' });
     return;
   }

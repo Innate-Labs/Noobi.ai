@@ -381,7 +381,7 @@ export function parseLoopbackPreviewUrl(value: string): URL {
   return parsed;
 }
 
-export async function readGameplayPlaytestManifest(projectRoot: string): Promise<GameplayPlaytestManifest> {
+export async function readGameplayPlaytestManifest(projectRoot: string, validateWorkspace = true): Promise<GameplayPlaytestManifest> {
   const root = await resolveSafeProjectRoot(projectRoot);
   const path = join(root, '.noobi', 'playtest.json');
   const text = await readBoundedNoFollowFile(path, 256 * 1024, root).catch((error: NodeJS.ErrnoException) => {
@@ -396,7 +396,7 @@ export async function readGameplayPlaytestManifest(projectRoot: string): Promise
     throw new Error('.noobi/playtest.json 不是有效 UTF-8 JSON');
   }
   const manifest = parseGameplayPlaytestManifest(value);
-  await validateManifestAgainstWorkspace(root, manifest);
+  if (validateWorkspace) await validateManifestAgainstWorkspace(root, manifest);
   return manifest;
 }
 

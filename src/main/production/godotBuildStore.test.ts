@@ -18,6 +18,33 @@ async function artifacts(build: GodotBuild, text = 'fresh') {
   for (const ext of ['html', 'js', 'wasm', 'pck']) await writeFile(join(build.root, `build/web/index.${ext}`), text);
 }
 describe('frozen Godot builds', () => {
+  it('reuses only an identical verified build and never reuses a different recipe or source', async () => {
+    const { project, store } = await fixture();
+    const build = await store.create('game', project, '4.7.1', '4.7.1.stable');
+    build.record.reuseKey = 'engine-template-probe-quality-v1';
+    await artifacts(build); await store.publish(build);
+    expect((await store.reusable('game', project, build.record.reuseKey))?.record.buildId).toBe(build.record.buildId);
+    expect(await store.reusable('game', project, 'changed-engine-or-policy')).toBeNull();
+    await writeFile(join(project, 'main.gd'), 'extends Node2D\n');
+    expect(await store.reusable('game', project, build.record.reuseKey)).toBeNull();
+  });
+  it.each(['main.gd', 'build/web/index.js'])('rebuilds a tampered snapshot: %s', async (path) => {
+    const { project, store } = await fixture();
+    const build = await store.create('game', project, '4.7.1', '4.7.1.stable');
+    build.record.reuseKey = 'recipe'; await artifacts(build); await store.publish(build);
+    await writeFile(join(build.root, path), 'changed');
+    expect(await store.reusable('game', project, 'recipe')).toBeNull();
+  });
+  it('does not reuse legacy receipts, another project directory, or a cancelled request', async () => {
+    const { project, store } = await fixture();
+    const build = await store.create('game', project, '4.7.1', '4.7.1.stable');
+    await artifacts(build); await store.publish(build);
+    expect(await store.reusable('game', project, 'recipe')).toBeNull();
+    build.record.reuseKey = 'recipe'; await store.publish(build);
+    expect(await store.reusable('game', store.storageRoot, 'recipe')).toBeNull();
+    const controller = new AbortController(); controller.abort();
+    await expect(store.reusable('game', project, 'recipe', controller.signal)).rejects.toThrow();
+  });
   it('retains the host report independently of workspace reports and rejects a mismatched binding', async () => {
     const { project, store } = await fixture();
     const build = await store.create('game', project, '4.7.1', '4.7.1.stable'); await artifacts(build); await store.publish(build);

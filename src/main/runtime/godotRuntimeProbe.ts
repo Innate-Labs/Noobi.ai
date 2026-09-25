@@ -21,7 +21,7 @@ export async function installGodotRuntimeProbe(root: string, buildId: string): P
   return ['project.godot', path];
 }
 
-function probeSource(buildId: string): string {
+export function probeSource(buildId: string): string {
   return `extends Node
 const BUILD_ID := "${buildId}"
 var ticks := 0

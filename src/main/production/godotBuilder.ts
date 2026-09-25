@@ -1,8 +1,9 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import type { GodotEnvironmentService, GodotHeadlessResult } from '../godotEnvironmentService.js';
 import type { GodotBuild, GodotBuildStore } from './godotBuildStore.js';
-import { installGodotRuntimeProbe } from '../runtime/godotRuntimeProbe.js';
+import { installGodotRuntimeProbe, probeSource } from '../runtime/godotRuntimeProbe.js';
 import type { GameQualitySpec } from './gameQualitySpec.js';
 import { PRESENTATION_KIT } from '../runtime/presentationKit.js';
 
@@ -10,14 +11,24 @@ export async function buildGodotCandidate(input: {
   projectId: string; projectRoot: string; store: GodotBuildStore;
   environment: GodotEnvironmentService; signal?: AbortSignal;
   qualitySpec?: GameQualitySpec;
+  onReused?: (build: GodotBuild) => void;
 }): Promise<GodotBuild> {
   const { store, environment, signal } = input;
   signal?.throwIfAborted();
   const status = await environment.getStatus();
   if (!status.canExportProjects) throw new Error('Godot 与匹配的 Web 导出模板未就绪');
+  const reuseKey = createHash('sha256').update(JSON.stringify({
+    recipe: 'godot-import-validate-runtime-export-v1', suite: 'godot-delivery-v4',
+    engine: status.tool.version, templates: status.exportTemplates.expectedVersion,
+    quality: input.qualitySpec ?? null,
+    probe: probeSource('recipe'), presentation: PRESENTATION_KIT,
+  })).digest('hex');
+  const reusable = await store.reusable(input.projectId, input.projectRoot, reuseKey, signal);
+  if (reusable) { input.onReused?.(reusable); return reusable; }
   const build = await store.create(input.projectId, input.projectRoot,
     status.tool.version ?? 'unknown', status.exportTemplates.expectedVersion ?? 'unknown', signal);
   try {
+    build.record.reuseKey = reuseKey;
     if (input.qualitySpec) build.record.qualitySpec = structuredClone(input.qualitySpec);
     const derived = await installGodotRuntimeProbe(build.root, build.record.buildId);
     await mkdir(join(build.root, 'runtime/noobi'), { recursive: true });

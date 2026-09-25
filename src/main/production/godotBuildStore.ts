@@ -21,6 +21,7 @@ export interface GodotBuildRecord extends GameplayBuildBinding {
   engineVersion: string;
   templateVersion: string;
   qualitySpec?: GameQualitySpec;
+  reuseKey?: string;
   error?: string;
 }
 export interface GodotBuild {
@@ -67,6 +68,18 @@ export class GodotBuildStore {
 
   async publish(build: GodotBuild, signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted();
+    await this.verifyInputs(build);
+    build.record.artifactHash = await artifactHash(build.root);
+    await this.assertCurrent(build, signal);
+    build.record.status = 'built';
+    await this.save(build.record);
+    signal?.throwIfAborted();
+    await atomicJson(join(this.projectDirectory(build.record.projectId), 'latest.json'), {
+      version: 1, buildId: build.record.buildId,
+    });
+  }
+
+  async verifyInputs(build: GodotBuild): Promise<void> {
     // Editor-generated import caches may be added, but captured inputs must
     // remain byte-identical throughout import, runtime validation and export.
     const expected = new Map(build.record.files.map((file) => [file.path, file]));
@@ -76,14 +89,24 @@ export class GodotBuildStore {
         throw new Error(`构建期间输入文件发生变化：${file.path}`);
       }
     }
-    build.record.artifactHash = await artifactHash(build.root);
-    await this.assertCurrent(build, signal);
-    build.record.status = 'built';
-    await this.save(build.record);
+  }
+
+  async reusable(projectId: string, projectRoot: string, reuseKey: string,
+    signal?: AbortSignal): Promise<GodotBuild | null> {
     signal?.throwIfAborted();
-    await atomicJson(join(this.projectDirectory(build.record.projectId), 'latest.json'), {
-      version: 1, buildId: build.record.buildId,
-    });
+    try {
+      const build = await this.latest(projectId);
+      if (!build || build.record.reuseKey !== reuseKey
+        || build.record.projectRoot !== await realpath(projectRoot)) return null;
+      await this.verifyInputs(build);
+      await this.verifyArtifacts(build);
+      await this.assertCurrent(build, signal);
+      signal?.throwIfAborted();
+      return build;
+    } catch {
+      signal?.throwIfAborted();
+      return null; // Invalid or stale caches must be rebuilt, never relabelled.
+    }
   }
 
   async recordInstrumentation(build: GodotBuild, paths: string[]): Promise<void> {
