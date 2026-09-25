@@ -1,4 +1,5 @@
 import {
+  ArrowUp,
   ArrowRight,
   Bot,
   FileText,
@@ -9,6 +10,7 @@ import {
   Paperclip,
   Settings,
   Sparkles,
+  Square,
   Sun,
   X,
 } from 'lucide-react';
@@ -117,6 +119,7 @@ export function HomeDashboard({
     () => models.find((item) => item.model === model) ?? models[0] ?? null,
     [model, models],
   );
+  const accountName = accountDisplayName(runtime);
   const runtimeReady = runtime.state === 'ready' && Boolean(runtime.account);
   const launchReady = runtimeReady && imageGenerationAvailable && idea.trim().length > 0 && !busy;
 
@@ -256,7 +259,10 @@ export function HomeDashboard({
       >
         <section className="home-hero" aria-labelledby="home-title">
           <div className="home-hero-content">
-            <h1 id="home-title">今天想做什么游戏？</h1>
+            <span className={`home-loop-status ${runtimeReady ? 'is-ready' : 'is-attention'}`}>
+              <i /> {runtimeReady ? 'LOOP MODE 已就绪' : '完成运行时设置后开始'} <ArrowRight size={13} />
+            </span>
+            <h1 id="home-title">今天想做什么游戏，{accountName}？</h1>
             <p>描述玩法、美术和你最在意的体验。Noobi 会持续制作、试玩、评测和修复，直到得到可交付成品。</p>
 
             <div
@@ -342,6 +348,7 @@ export function HomeDashboard({
                 <button
                   className="home-create-button"
                   type="button"
+                  aria-label={busy ? '正在创建游戏' : '发送游戏创意'}
                   disabled={!launchReady}
                   title={!runtimeReady
                     ? '请先让 Codex 运行时就绪并完成登录'
@@ -350,7 +357,9 @@ export function HomeDashboard({
                       : idea.trim() ? '创建项目并启动 Agent' : '先描述游戏创意'}
                   onClick={() => void submit()}
                 >
-                  <Sparkles size={16} /> {busy ? 'Agent 判断中…' : '开始制作'}
+                  {busy
+                    ? <Square size={12} fill="currentColor" />
+                    : <ArrowUp size={20} strokeWidth={2.2} />}
                 </button>
               </div>
               {dragActive ? (
@@ -448,4 +457,11 @@ function formatFileSize(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function accountDisplayName(runtime: RuntimeStatus): string {
+  const email = runtime.account?.email?.trim();
+  if (!email) return '创作者';
+  const local = email.split('@')[0]?.trim();
+  return local || '创作者';
 }

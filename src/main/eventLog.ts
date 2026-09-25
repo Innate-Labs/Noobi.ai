@@ -71,6 +71,15 @@ export class EventLog {
     await Promise.allSettled([...this.#queues.values()]);
   }
 
+  async remove(projectId: string): Promise<void> {
+    validateProjectId(projectId);
+    await this.#queues.get(projectId)?.catch(() => undefined);
+    await Promise.all([
+      rm(this.#path(projectId), { force: true }),
+      rm(`${this.#path(projectId)}.previous`, { force: true }),
+    ]);
+  }
+
   #path(projectId: string): string {
     return join(this.#directory, `${projectId}.jsonl`);
   }

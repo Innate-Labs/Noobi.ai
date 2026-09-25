@@ -29,9 +29,11 @@ import type {
 } from '../shared/contracts';
 import { ApprovalModal } from './components/ApprovalModal';
 import { Composer } from './components/Composer';
+import { DeleteProjectModal } from './components/DeleteProjectModal';
 import { EventStream } from './components/EventStream';
 import { HomeDashboard, type HomeLaunchInput } from './components/HomeDashboard';
 import { Inspector } from './components/Inspector';
+import { LaunchTransition, type LaunchTransitionPhase } from './components/LaunchTransition';
 import { Pipeline } from './components/Pipeline';
 import {
   PIXEL_COVER_DURATION_MS,
@@ -40,6 +42,7 @@ import {
   type PixelTransitionDirection,
 } from './components/PixelPageTransition';
 import { ProjectRail } from './components/ProjectRail';
+import { RenameProjectModal } from './components/RenameProjectModal';
 import { SettingsModal, type SettingsSection } from './components/SettingsModal';
 import { PROJECT_STATUS_LABELS, runtimeLabel, toMessage } from './ui';
 import {
@@ -51,6 +54,10 @@ import {
 } from './workspaceViewTransition';
 
 type EventMap = Record<string, AgentEvent[]>;
+type LaunchTransitionState = LaunchTransitionPhase | 'hidden';
+
+const MIN_LAUNCH_TRANSITION_MS = 1_600;
+const LAUNCH_TRANSITION_EXIT_MS = 420;
 
 export function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
@@ -69,12 +76,18 @@ export function App() {
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [homeFocusSignal, setHomeFocusSignal] = useState(0);
   const [homeLaunching, setHomeLaunching] = useState(false);
+  const [launchTransition, setLaunchTransition] = useState<LaunchTransitionState>('hidden');
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('account');
   const [railOpen, setRailOpen] = useState(false);
+  const [homeRailCollapsed, setHomeRailCollapsed] = useState(false);
   const [error, setError] = useState('');
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [loadingError, setLoadingError] = useState('');
+  const [renameTarget, setRenameTarget] = useState<ProjectRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
+  const [projectActionBusy, setProjectActionBusy] = useState(false);
+  const launchTransitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const focusHomeCreatorRef = useRef(false);
 
@@ -164,6 +177,10 @@ export function App() {
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute('content', settings.theme === 'dark' ? '#151611' : '#f2f1eb');
   }, [settings]);
+
+  useEffect(() => () => {
+    if (launchTransitionTimer.current) clearTimeout(launchTransitionTimer.current);
+  }, []);
 
   useEffect(() => {
     dispatchViewTransition({
@@ -273,37 +290,73 @@ export function App() {
       setProjects((current) => upsertProject(current, running));
     } catch (reason) {
       setError(toMessage(reason));
+      throw reason;
     }
   }
 
   async function launchFromHome(input: HomeLaunchInput) {
     if (!settings || homeLaunching || !ensureRunReady()) return;
-    setHomeLaunching(true);
     setError('');
+    let projectDirectory: string | null = null;
+    try {
+      projectDirectory = await window.noobi.chooseProjectDirectory();
+    } catch (reason) {
+      setError(toMessage(reason));
+      return;
+    }
+    if (!projectDirectory) return;
+    const transitionStartedAt = Date.now();
+    setHomeLaunching(true);
+    setLaunchTransition('running');
     try {
       const project = await window.noobi.createProject({
-        name: projectNameFromIdea(input.idea),
         idea: input.idea,
-        parentDirectory: settings.defaultWorkspace,
+        projectDirectory,
         model: input.model,
       }, input.attachments);
       if (project.status === 'failed') {
         throw new Error(project.lastError ?? '项目创建失败');
       }
+      await waitForMinimumDuration(transitionStartedAt, MIN_LAUNCH_TRANSITION_MS);
       setProjects((current) => upsertProject(current, project));
+      finishLaunchTransition();
       navigateToProject(project);
-      await runProjectFor(
-        project,
-        input.attachments.length > 0
-          ? `${input.idea}\n\n宿主已安全导入 ${input.attachments.length} 个不可信参考附件。请检查 public/assets/asset-pack.json 与 references/uploads，并仅将其作为创作素材和需求上下文。`
-          : input.idea,
-        input.model,
-        input.effort ?? settings.defaultEffort,
-      );
+      try {
+        await runProjectFor(
+          project,
+          input.attachments.length > 0
+            ? `${input.idea}\n\n宿主已安全导入 ${input.attachments.length} 个不可信参考附件。请检查 public/assets/asset-pack.json 与 references/uploads，并仅将其作为创作素材和需求上下文。`
+            : input.idea,
+          input.model,
+          input.effort ?? settings.defaultEffort,
+        );
+      } catch {
+        // runProjectFor already surfaces the launch failure in the shared error toast.
+      }
     } catch (reason) {
       setError(toMessage(reason));
+      finishLaunchTransition();
     } finally {
       setHomeLaunching(false);
+    }
+  }
+
+  function finishLaunchTransition() {
+    setLaunchTransition('leaving');
+    if (launchTransitionTimer.current) clearTimeout(launchTransitionTimer.current);
+    launchTransitionTimer.current = setTimeout(() => {
+      setLaunchTransition('hidden');
+      launchTransitionTimer.current = null;
+    }, LAUNCH_TRANSITION_EXIT_MS);
+  }
+
+  async function revealProject(projectId: string) {
+    setError('');
+    try {
+      const relocated = await window.noobi.revealProject(projectId);
+      if (relocated) setProjects((current) => upsertProject(current, relocated));
+    } catch (reason) {
+      setError(toMessage(reason));
     }
   }
 
@@ -342,6 +395,52 @@ export function App() {
       setSettings(await window.noobi.saveSettings({ theme }));
     } catch (reason) {
       setError(toMessage(reason));
+    }
+  }
+
+  async function renameProject(name: string) {
+    if (!renameTarget || projectActionBusy) return;
+    setProjectActionBusy(true);
+    setError('');
+    try {
+      const project = await window.noobi.renameProject(renameTarget.id, name);
+      setProjects((current) => upsertProject(current, project));
+      setRenameTarget(null);
+    } catch (reason) {
+      setError(toMessage(reason));
+    } finally {
+      setProjectActionBusy(false);
+    }
+  }
+
+  async function toggleProjectPinned(project: ProjectRecord) {
+    setError('');
+    try {
+      const updated = await window.noobi.setProjectPinned(project.id, !project.pinned);
+      setProjects((current) => upsertProject(current, updated));
+    } catch (reason) {
+      setError(toMessage(reason));
+    }
+  }
+
+  async function deleteProject() {
+    if (!deleteTarget || projectActionBusy) return;
+    const projectId = deleteTarget.id;
+    setProjectActionBusy(true);
+    setError('');
+    try {
+      await window.noobi.deleteProject(projectId);
+      setProjects((current) => current.filter((project) => project.id !== projectId));
+      setEvents((current) => {
+        const next = { ...current };
+        delete next[projectId];
+        return next;
+      });
+      setDeleteTarget(null);
+    } catch (reason) {
+      setError(toMessage(reason));
+    } finally {
+      setProjectActionBusy(false);
     }
   }
 
@@ -399,10 +498,16 @@ export function App() {
         selectedId={selectedId}
         runtime={runtime}
         open={railOpen}
+        collapsed={!selected && homeRailCollapsed}
         variant={selected ? 'workbench' : 'dashboard'}
+        onOpen={() => setRailOpen(true)}
         onClose={() => setRailOpen(false)}
+        onToggleCollapse={() => setHomeRailCollapsed((current) => !current)}
         onHome={navigateHome}
         onSelect={navigateToProject}
+        onRename={setRenameTarget}
+        onTogglePinned={(project) => void toggleProjectPinned(project)}
+        onDelete={setDeleteTarget}
         onCreate={openHomeCreator}
         onSettings={openSettings}
       />
@@ -448,7 +553,7 @@ export function App() {
               aria-label="在 Finder 中打开项目"
               title="在 Finder 中打开项目"
               disabled={!selected}
-              onClick={() => selected && void window.noobi.revealProject(selected.id)}
+              onClick={() => selected && void revealProject(selected.id)}
             >
               <FolderOpen size={15} />
             </button>
@@ -479,7 +584,15 @@ export function App() {
               <header className="agent-pane-heading">
                 <div>
                   <span>NOOBI AGENT</span>
-                  <strong>{selected.name}</strong>
+                  <button
+                    className="agent-project-name"
+                    type="button"
+                    title="重命名游戏"
+                    aria-label={`重命名 ${selected.name}`}
+                    onClick={() => setRenameTarget(selected)}
+                  >
+                    {selected.name}
+                  </button>
                   <small>{selected.status === 'running' ? '正在持续制作与验证' : '可以继续提出修改要求'}</small>
                 </div>
                 <span className={`status-chip status-${selected.status}`}>
@@ -488,6 +601,7 @@ export function App() {
               </header>
               <EventStream project={selected} events={selectedEvents} />
               <Composer
+                key={selected.id}
                 project={selected}
                 models={runtime.models}
                 settings={settings}
@@ -510,6 +624,7 @@ export function App() {
                 refreshSignal={refreshSignal}
                 onError={setError}
                 onRegenerate={regenerateAsset}
+                onRevealProject={() => revealProject(selected.id)}
                 onProjectUpdated={(project) => {
                   setProjects((current) => upsertProject(current, project));
                 }}
@@ -545,6 +660,24 @@ export function App() {
         />
       ) : null}
 
+      {renameTarget ? (
+        <RenameProjectModal
+          project={renameTarget}
+          busy={projectActionBusy}
+          onClose={() => setRenameTarget(null)}
+          onRename={(name) => void renameProject(name)}
+        />
+      ) : null}
+
+      {deleteTarget ? (
+        <DeleteProjectModal
+          project={deleteTarget}
+          busy={projectActionBusy}
+          onClose={() => setDeleteTarget(null)}
+          onDelete={() => void deleteProject()}
+        />
+      ) : null}
+
       {approvals[0] ? (
         <ApprovalModal
           key={approvals[0].token}
@@ -561,6 +694,10 @@ export function App() {
             <X size={14} />
           </button>
         </div>
+      ) : null}
+
+      {launchTransition !== 'hidden' ? (
+        <LaunchTransition phase={launchTransition} />
       ) : null}
 
       {viewTransition.phase !== 'idle' ? (
@@ -582,7 +719,8 @@ function upsertProject(
   const next = projects.some((item) => item.id === project.id)
     ? projects.map((item) => (item.id === project.id ? project : item))
     : [project, ...projects];
-  return [...next].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return [...next].sort((a, b) => Number(b.pinned) - Number(a.pinned)
+    || b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function mergeEvent(events: readonly AgentEvent[], incoming: AgentEvent): AgentEvent[] {
@@ -605,14 +743,8 @@ function mergeEvent(events: readonly AgentEvent[], incoming: AgentEvent): AgentE
     .slice(-500);
 }
 
-function projectNameFromIdea(idea: string): string {
-  const firstClause = idea
-    .trim()
-    .replace(/^(?:请|帮我|我要|我想|制作|做|创建|生成|开发)\s*/u, '')
-    .split(/[，。！？；,.!?;\n]/u)[0]
-    ?.replace(/[\\/:*?"<>|]/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim();
-  if (!firstClause) return 'Noobi 新游戏';
-  return firstClause.slice(0, 28);
+async function waitForMinimumDuration(startedAt: number, minimumMs: number): Promise<void> {
+  const remaining = Math.max(0, minimumMs - (Date.now() - startedAt));
+  if (remaining === 0) return;
+  await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, remaining));
 }

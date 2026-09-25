@@ -81,6 +81,14 @@ export class GameEngineAdvisor {
 
   async decide(input: GameEngineAdvisorInput): Promise<GameEngineDecision> {
     validateAdvisorInput(input);
+    if (!input.godot.canCreateProjects) {
+      return {
+        engine: 'web',
+        confidence: 'high',
+        reasonCode: 'other',
+        rationale: '当前未检测到可创建项目的 Godot 4 环境，因此使用 Web 运行时。',
+      };
+    }
     const threadId = await this.#runtime.startThread({
       cwd: input.cwd,
       model: input.model,

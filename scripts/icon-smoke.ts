@@ -36,6 +36,7 @@ try {
   const project: ProjectRecord = {
     id: 'icon-smoke',
     name: '像素钓鱼佬',
+    pinned: false,
     idea: '在湖边钓鱼、升级鱼竿、收集鱼类图鉴的休闲像素游戏',
     root: workspace,
     createdAt: timestamp,

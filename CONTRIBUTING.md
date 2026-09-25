@@ -15,7 +15,7 @@ For larger features or behavior changes, open a proposal issue before investing 
 
 ## Local setup
 
-You need macOS, Node.js 22 LTS, npm, and a ChatGPT/Codex account for real Agent smoke tests.
+You need macOS, Node.js 22.20.0 (see `.nvmrc`), npm, and a ChatGPT/Codex account for real Agent smoke tests.
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/Noobi.ai.git
@@ -53,7 +53,7 @@ Run the full local gate before opening a pull request:
 npm run verify
 ```
 
-This runs both TypeScript configurations, 124 tests, and the production build. Run the isolated UI capture when changing the workbench:
+This runs both TypeScript configurations, the full test suite, and the production build. Record the actual test count from the current run. Run the isolated UI capture when changing the workbench:
 
 ```bash
 npm run smoke:ui

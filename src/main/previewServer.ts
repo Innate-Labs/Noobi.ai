@@ -57,7 +57,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 export interface PreviewStartOptions {
   /** Relative build directory. Defaults to dist, then the safe source fallback. */
   directory?: string;
-  /** Allow index.html + src/public/assets when dist does not exist. Defaults true. */
+  /** Allow index.html + src/public/assets if the build is absent. Explicit directories require true. */
   sourceFallback?: boolean;
   /** Hide Godot's default boot logo in current and legacy Web exports. */
   hideGodotSplash?: boolean;
@@ -381,29 +381,13 @@ async function selectContentRoot(
   const projectInfo = await stat(canonicalProjectRoot);
   if (!projectInfo.isDirectory()) throw new Error('Preview project root must be a directory');
 
-  if (options.directory !== undefined) {
-    const directory = normalizedDirectory(options.directory);
-    const lexical = resolve(canonicalProjectRoot, ...directory.split('/'));
-    assertContained(canonicalProjectRoot, lexical);
-    const lexicalInfo = await lstat(lexical);
-    if (lexicalInfo.isSymbolicLink()) throw new Error('Preview directory cannot be a symbolic link');
-    const contentRoot = await realpath(lexical);
-    assertContained(canonicalProjectRoot, contentRoot);
-    await requireIndexFile(contentRoot);
-    return {
-      projectRoot: canonicalProjectRoot,
-      contentRoot,
-      sourceFallback: false,
-      hideGodotSplash: options.hideGodotSplash === true,
-      sourceAssetOverlay: options.sourceAssetOverlay !== false,
-    };
-  }
-
-  const dist = join(canonicalProjectRoot, 'dist');
+  const directory = options.directory === undefined ? 'dist' : normalizedDirectory(options.directory);
+  const buildRoot = resolve(canonicalProjectRoot, ...directory.split('/'));
+  assertContained(canonicalProjectRoot, buildRoot);
   try {
-    const distInfo = await lstat(dist);
-    if (distInfo.isSymbolicLink()) throw new Error('Preview dist directory cannot be a symbolic link');
-    const contentRoot = await realpath(dist);
+    const buildInfo = await lstat(buildRoot);
+    if (buildInfo.isSymbolicLink()) throw new Error('Preview directory cannot be a symbolic link');
+    const contentRoot = await realpath(buildRoot);
     assertContained(canonicalProjectRoot, contentRoot);
     await requireIndexFile(contentRoot);
     return {
@@ -415,6 +399,9 @@ async function selectContentRoot(
     };
   } catch (error) {
     if (!isMissingPath(error)) throw error;
+    // The Inspector explicitly selects dist before a first build exists.
+    // Keep explicit production previews strict unless fallback was requested.
+    if (options.directory !== undefined && options.sourceFallback !== true) throw error;
   }
 
   if (options.sourceFallback === false) {

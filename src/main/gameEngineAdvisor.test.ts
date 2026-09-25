@@ -45,6 +45,28 @@ const godotDecision = {
 } as const;
 
 describe('GameEngineAdvisor', () => {
+  it('selects Web without starting Codex when Godot project creation is unavailable', async () => {
+    const runtime = new AdvisorRuntime([]);
+    const advisor = new GameEngineAdvisor(runtime);
+
+    await expect(advisor.decide({
+      cwd: '/tmp/noobi-games',
+      idea: '制作一个摄像头手势施法的3D游戏。',
+      model: 'gpt-test',
+      effort: 'medium',
+      attachments: [],
+      godot: { canCreateProjects: false, canExportWeb: false, version: null },
+    })).resolves.toEqual({
+      engine: 'web',
+      confidence: 'high',
+      reasonCode: 'other',
+      rationale: '当前未检测到可创建项目的 Godot 4 环境，因此使用 Web 运行时。',
+    });
+    expect(runtime.threads).toHaveLength(0);
+    expect(runtime.turns).toHaveLength(0);
+    expect(runtime.unsubscribed).toHaveLength(0);
+  });
+
   it('parses strict and fenced JSON decisions', () => {
     expect(parseGameEngineDecision(JSON.stringify(godotDecision), true)).toEqual(godotDecision);
     expect(parseGameEngineDecision(`\`\`\`json\n${JSON.stringify(godotDecision)}\n\`\`\``, true)).toEqual(godotDecision);

@@ -7,11 +7,11 @@ import {
 
 import { noobiTransitionSceneForRun } from './noobiTransitionScenes';
 
-export const PIXEL_TRANSITION_COLUMNS = 14;
-export const PIXEL_TRANSITION_ROWS = 9;
-export const PIXEL_TRANSITION_MAX_CELL_DELAY_MS = 480;
-export const PIXEL_COVER_DURATION_MS = 600;
-export const PIXEL_REVEAL_DURATION_MS = 600;
+export const PIXEL_TRANSITION_COLUMNS = 10;
+export const PIXEL_TRANSITION_ROWS = 7;
+export const PIXEL_TRANSITION_MAX_CELL_DELAY_MS = 300;
+export const PIXEL_COVER_DURATION_MS = 420;
+export const PIXEL_REVEAL_DURATION_MS = 420;
 
 export type PixelTransitionDirection = 'forward' | 'backward';
 export type PixelTransitionPhase = 'covering' | 'revealing';
