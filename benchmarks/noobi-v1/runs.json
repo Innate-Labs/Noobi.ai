@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "noobi-v1",
+  "frozen": null,
+  "runs": [
+    {
+      "caseId": "forest-relic",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "forest-relic",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "forest-relic",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "harbor-beacon",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "harbor-beacon",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "harbor-beacon",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "ruins-signal",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "ruins-signal",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "ruins-signal",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "orchard-guardian",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "orchard-guardian",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "orchard-guardian",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "pastel-island",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "pastel-island",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "pastel-island",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "knight-route",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "knight-route",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "knight-route",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "garden-composition",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "garden-composition",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "garden-composition",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "dodge-timing",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "dodge-timing",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "dodge-timing",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "switch-sequence",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "switch-sequence",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "switch-sequence",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "edited-expedition",
+      "repetition": 1,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "edited-expedition",
+      "repetition": 2,
+      "status": "not-run",
+      "record": null
+    },
+    {
+      "caseId": "edited-expedition",
+      "repetition": 3,
+      "status": "not-run",
+      "record": null
+    }
+  ]
+}

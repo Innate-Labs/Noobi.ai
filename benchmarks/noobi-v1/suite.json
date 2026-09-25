@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "id": "noobi-v1",
+  "repetitions": 3,
+  "denominator": 30,
+  "requiredSuccesses": 24,
+  "cases": [
+    {
+      "id": "forest-relic",
+      "split": "development",
+      "modality": "text",
+      "title": "森林遗迹护送",
+      "brief": "第三人称探索与轻战斗，森林、遗迹、营地三个区域。取回遗物、击败守卫、解锁回路返回营地；任务、背包、能力和存档跨区域一致。正常完成目标30–45分钟；禁止靠等待或重复刷怪填时长。",
+      "referenceFixture": null,
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "harbor-beacon",
+      "split": "development",
+      "modality": "text",
+      "title": "海港灯塔",
+      "brief": "第三人称修复灯塔，码头、潮池、灯塔三个区域，资源收集、条件机关、轻战斗和结局。目标30–45分钟，安全检查点与能力解锁。",
+      "referenceFixture": null,
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "ruins-signal",
+      "split": "holdout",
+      "modality": "text",
+      "title": "废墟讯号",
+      "brief": "第三人称废墟探索：电站、旧城、通信塔三地区，取回电池、恢复线路、躲避巡逻并发送讯号。目标30–45分钟；任务条件明确，无时间填充。",
+      "referenceFixture": null,
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "orchard-guardian",
+      "split": "holdout",
+      "modality": "text",
+      "title": "果园守卫",
+      "brief": "第三人称果园冒险，村口、果园、温室三地区，近战击退害兽、解锁灌溉机关、收获并返回。目标30–45分钟，失败与继续保持完成状态。",
+      "referenceFixture": null,
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "pastel-island",
+      "split": "development",
+      "modality": "image",
+      "title": "粉彩浮岛参考",
+      "brief": "使用指定插画的粉彩、圆润角色、浮岛与木桥构图；新设计三地区探索、商店交换、机关解锁和轻战斗。图片未展示的规则明确标成新增设计。目标30–45分钟。",
+      "referenceFixture": "pastel-island-reference",
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "knight-route",
+      "split": "development",
+      "modality": "image",
+      "title": "骑士造型参考",
+      "brief": "使用指定骑士参考的比例、轮廓和甲胄配色；另设计三个区域、敌人攻防节奏和一次性任务奖励。明确参考只影响角色造型。目标30–45分钟。",
+      "referenceFixture": "knight-route-reference",
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "garden-composition",
+      "split": "holdout",
+      "modality": "image",
+      "title": "花园构图参考",
+      "brief": "使用留出场景参考的配色、植物形态和相机高度；新增探索、采集、机关和轻战斗，三个区域，目标30–45分钟。不得把参考中的装饰误当规则。",
+      "referenceFixture": "garden-composition-reference",
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "dodge-timing",
+      "split": "development",
+      "modality": "video",
+      "title": "闪避节奏参考",
+      "brief": "使用指定真实游戏片段中的镜头、移动和敌人预警节奏；用户另外定义三个区域、背包任务及结局，目标30–45分钟。可见现象与推测机制分别列明。",
+      "referenceFixture": "dodge-timing-reference",
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "switch-sequence",
+      "split": "holdout",
+      "modality": "video",
+      "title": "机关顺序参考",
+      "brief": "使用留出真实游戏片段中的交互反馈和镜头距离；生成三个区域的机关解锁与轻战斗游戏，目标30–45分钟。片段外规则以新增文字需求为准。",
+      "referenceFixture": "switch-sequence-reference",
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    },
+    {
+      "id": "edited-expedition",
+      "split": "holdout",
+      "modality": "plan-edit",
+      "title": "可修改远征",
+      "brief": "先按第三人称三地区远征生成两套同范围方案，再由操作员锁定镜头与存档要求，将收集主线改为救援主线、修改终点区域并验证冲突后生成。目标30–45分钟。",
+      "referenceFixture": null,
+      "requiredChecks": [
+        "autonomous-no-hand-edit",
+        "selected-plan-complete",
+        "all-scene-assets",
+        "real-input-full-route",
+        "save-reload-consistency",
+        "thirty-minute-stability",
+        "reference-match-or-approved-adaptation",
+        "delivery-package",
+        "no-blocking-errors"
+      ]
+    }
+  ],
+  "executionStatus": "not-started",
+  "freezeRequired": [
+    "componentCommit",
+    "model",
+    "reasoningEffort",
+    "engineVersion",
+    "environment",
+    "referenceHashes",
+    "perRunBudget",
+    "successCriteriaHash"
+  ],
+  "notes": [
+    "These are fixed candidate briefs. Execution is blocked until real fixtures and budget/environment freeze are recorded.",
+    "Existing development samples A/B are not retroactively counted among these 30 runs.",
+    "Missing, stopped and failed runs remain in the denominator. No human playtest feedback has been invented."
+  ]
+}
