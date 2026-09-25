@@ -4,6 +4,8 @@ import { dirname } from 'node:path';
 import { latestProjectPlan, type GeneratePlansInput, type PlanDraft, type PlanOption, type PlanVersion, type StartPlanInput, type ResumeProjectInput, type SavePlanEditsInput, type RevisePlansInput } from '../shared/planning.js';
 import { lockedPlanChanges, planDifferences, validateEditedOption, validatePlanLocks } from './planEditing.js';
 import { PLAN_EDITABLE_FIELDS } from '../shared/planning.js';
+import type { SaveReferenceSpecInput } from '../shared/planning.js';
+import { validateReferenceSelections, validateReferenceSpec } from './visualReferenceStore.js';
 
 /** Host-owned, serialized atomic snapshots. A persisted run reservation is never replayed automatically. */
 export class PlanStore {
@@ -60,7 +62,9 @@ export class PlanStore {
     return this.#mutate(() => {
       const draft: PlanDraft = { id: randomUUID(), projectId: input.projectId ?? null,
         request: input.request.trim(), attachmentCount: input.attachmentCount ?? 0, model: input.model ?? null, effort: input.effort ?? null,
-        status: 'generating', attemptId: randomUUID(), analysisAttempts: [], updatedAt: new Date().toISOString(), error: null, version: null, run: null };
+        status: 'generating', attemptId: randomUUID(), analysisAttempts: [], updatedAt: new Date().toISOString(), error: null, version: null, run: null,
+        ...(input.references ? { references: validateReferenceSelections(input.references) } : {}) };
+      if (input.referenceSpecOverride) draft.referenceSpecOverride = validateReferenceSpec(input.referenceSpecOverride, draft.references ?? []);
       draft.analysisAttempts.push({ id: draft.attemptId, startedAt: draft.updatedAt, durationMs: null, usage: null, status: 'generating' });
       this.#drafts.push(draft); return draft;
     });
@@ -100,6 +104,19 @@ export class PlanStore {
         threadId: '', turnId: '', analysisDurationMs: 0, analysisUsage: null };
       draft.locks = locks; draft.updatedAt = draft.version.createdAt; draft.status = 'ready'; draft.error = null;
       return draft;
+    });
+  }
+  saveReferenceSpec(input: SaveReferenceSpecInput): Promise<PlanDraft> {
+    return this.#mutate(() => {
+      const draft = this.#editable(input?.draftId, input?.versionId);
+      if (!draft.references?.length) throw new Error('当前方案没有视觉参考');
+      const spec = validateReferenceSpec(input.spec, draft.references);
+      const previous = draft.version!;
+      draft.history = [...(draft.history ?? []), structuredClone(previous)];
+      draft.referenceSpecOverride = spec;
+      draft.version = { ...structuredClone(previous), id: randomUUID(), number: previous.number + 1, createdAt: new Date().toISOString(), referenceSpec: spec, referenceSpecAuthor: 'user', authoredBy: 'user', requiresReview: true,
+        changes: ['修正视觉理解'], model: null, threadId: '', turnId: '', analysisDurationMs: 0, analysisUsage: null };
+      draft.updatedAt = draft.version.createdAt; draft.status = 'ready'; draft.error = null; return draft;
     });
   }
   revise(input: RevisePlansInput): Promise<PlanDraft> {
@@ -217,5 +234,5 @@ export class PlanStore {
   }
 }
 export function approvedPlanPrompt(draft: PlanDraft, option: PlanOption): string {
-  return `用户已确认以下制作方案。保留全部原始要求，不得缩减需求；仅实施此选定版本。\n方案版本：${draft.version!.id}\n方案：${option.id} · ${option.title}\n\n原始需求：\n${draft.request}\n\n共同必需要求：\n${draft.version!.requirements.map(r => `${r.id}: ${r.text}`).join('\n')}\n\n选定方案：\n${JSON.stringify(option, null, 2)}`;
+  return `用户已确认以下制作方案。保留全部原始要求，不得缩减需求；仅实施此选定版本。\n方案版本：${draft.version!.id}\n方案：${option.id} · ${option.title}\n\n原始需求：\n${draft.request}\n\n共同必需要求：\n${draft.version!.requirements.map(r => `${r.id}: ${r.text}`).join('\n')}\n\n选定方案：\n${JSON.stringify(option, null, 2)}\n\n视觉参考规格（观察与推断分开，以用户修正为准）：\n${JSON.stringify(draft.version!.referenceSpec ?? null, null, 2)}\n参考文件：${(draft.version!.visualInputs ?? []).map(r => `references/visual/${r.referenceId}.png · 用途 ${r.purpose} · SHA256 ${r.normalizedHash}`).join("\n")}`;
 }

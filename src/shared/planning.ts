@@ -1,4 +1,5 @@
 import type { GameEngine } from './contracts.js';
+import type { ReferenceSelection, ReferenceSpec, VisualInputEvidence } from './visualReferences.js';
 
 export interface PlanRequirement { id: string; text: string; source?: 'request' | 'revision' | 'import' }
 export interface PlanDesign { camera: string; regions: string; characters: string; style: string; budget: string }
@@ -22,6 +23,9 @@ export interface PlanOption {
   design?: PlanDesign;
 }
 export interface PlanVersion {
+  referenceSpec?: ReferenceSpec;
+  referenceSpecAuthor?: 'model' | 'user';
+  visualInputs?: VisualInputEvidence[];
   id: string;
   number: number;
   createdAt: string;
@@ -78,6 +82,8 @@ export interface PlanAnalysisAttempt {
   status: 'generating' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 }
 export interface PlanDraft {
+  references?: ReferenceSelection[];
+  referenceSpecOverride?: ReferenceSpec;
   id: string;
   projectId: string | null;
   request: string;
@@ -98,6 +104,8 @@ export interface PlanDraft {
   mergeOptionId?: string;
 }
 export interface GeneratePlansInput {
+  references?: ReferenceSelection[];
+  referenceSpecOverride?: ReferenceSpec;
   request: string;
   attachmentCount?: number;
   projectId?: string | null;
@@ -123,3 +131,4 @@ export interface RevisePlansInput {
   importedPlan?: string;
   mergeOptionId?: string;
 }
+export interface SaveReferenceSpecInput { draftId: string; versionId: string; spec: ReferenceSpec }

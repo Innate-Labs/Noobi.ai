@@ -46,6 +46,7 @@ export type HostAudioGenerationRequirement =
   | { state: 'trusted-and-referenced'; relativePath: string };
 
 export interface GameHarnessRunOptions {
+  visualInputs?: (phase: GameHarnessPhase) => Promise<{ paths: string[]; context: string }>;
   projectId: string;
   cwd: string;
   prompt: string;
@@ -150,6 +151,7 @@ export interface GameHarnessThreadEvent {
 }
 
 interface ActiveRun {
+  visualInputs?: GameHarnessRunOptions['visualInputs'];
   reserveBudget?: (kind: ProductionBudgetKind) => Promise<void>;
   projectId: string;
   phase: GameHarnessPhase;
@@ -336,6 +338,7 @@ export class GameHarness extends EventEmitter {
 
     const active = createActiveRun(options.projectId);
     active.reserveBudget = options.reserveBudget;
+    active.visualInputs = options.visualInputs;
     const prepareRepair = async (stage: string, findings: readonly string[]) => {
       const blockers = await options.externalBlockers?.() ?? [];
       this.#throwIfStopped(active);
@@ -1028,6 +1031,10 @@ export class GameHarness extends EventEmitter {
   }
 
   async #executeTurn(active: ActiveRun, options: StartTurnOptions): Promise<TurnResult> {
+    if (active.visualInputs) {
+      const visual = await active.visualInputs(active.phase);
+      options = { ...options, imagePaths: visual.paths, prompt: `${options.prompt}\n\n${visual.context}` };
+    }
     let attempts = 0;
     let totalRetries = 0;
     let nextOptions = options;

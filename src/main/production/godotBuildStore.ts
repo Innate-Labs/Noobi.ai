@@ -4,6 +4,7 @@ import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, writeFile 
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { BuildPreviewStatus, GameplayBuildBinding, GameplayExperienceReport } from '../../shared/contracts.js';
 import type { GameQualitySpec } from './gameQualitySpec.js';
+import { retainVisualEvidence } from '../visualEvidence.js';
 
 const SKIP = new Set(['.git', '.godot', 'node_modules', 'build', 'dist', 'artifacts', '.DS_Store']);
 const MAX_FILES = 20_000;
@@ -171,6 +172,7 @@ export class GodotBuildStore {
   async recordReport(build: GodotBuild, report: GameplayExperienceReport): Promise<void> {
     if (report.build?.buildId !== build.record.buildId || report.build.sourceHash !== build.record.sourceHash
       || report.build.artifactHash !== build.record.artifactHash) throw new Error('评测报告与构建版本不一致');
+    await retainVisualEvidence(this.directory(build.record.projectId, build.record.buildId), build.record.projectRoot, report);
     await atomicJson(join(this.directory(build.record.projectId, build.record.buildId), 'quality-report.json'), report);
   }
 

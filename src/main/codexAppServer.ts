@@ -1,3 +1,4 @@
+import { turnInputs } from './turnInputs.js';
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
@@ -147,6 +148,7 @@ export interface StartThreadOptions {
 }
 
 export interface StartTurnOptions {
+  imagePaths?: string[];
   threadId: string;
   prompt: string;
   cwd?: string;
@@ -393,14 +395,7 @@ export class CodexAppServer extends EventEmitter {
     await this.start();
     const result = await this.#request<TurnStartResponse>('turn/start', {
       threadId: options.threadId,
-      input: [
-        { type: 'text', text: options.prompt, text_elements: [] },
-        ...(options.skills ?? []).map((skill) => ({
-          type: 'skill' as const,
-          name: skill.name,
-          path: skill.path,
-        })),
-      ],
+      input: turnInputs(options.prompt, options.imagePaths, options.skills),
       ...(options.cwd ? { cwd: options.cwd } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.effort ? { effort: options.effort } : {}),

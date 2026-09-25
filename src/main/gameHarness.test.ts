@@ -89,6 +89,16 @@ class CapturingRuntime extends EventEmitter {
 }
 
 describe('game harness required ImageGen contract', () => {
+  it('refreshes direct reference and build images for the reviewer after each repair', async () => {
+    const runtime = new CapturingRuntime(['Plan', 'Implementation', JSON.stringify({ verdict: 'repair', summary: 'Occluded', findings: ['Fix camera'] }), 'Repaired', JSON.stringify({ verdict: 'pass', summary: 'Inspected new build', findings: [] })]);
+    let review = 0;
+    await new GameHarness(runtime as unknown as CodexAppServer).run({ projectId: 'visual-inputs', cwd: '/tmp/visual-inputs', prompt: 'Build a game', imageGenerationRoute: 'configured-api',
+      visualInputs: async phase => phase === 'reviewer' ? { paths: ['/tmp/reference.png', `/tmp/build-${++review}.png`], context: `Build image ${review}` } : { paths: ['/tmp/reference.png'], context: 'User reference' } });
+    expect(runtime.turns[0]!.imagePaths).toEqual(['/tmp/reference.png']);
+    expect(runtime.turns[2]!.imagePaths).toEqual(['/tmp/reference.png', '/tmp/build-1.png']);
+    expect(runtime.turns[4]!.imagePaths).toEqual(['/tmp/reference.png', '/tmp/build-2.png']);
+    expect(runtime.turns[4]!.prompt).toContain('Build image 2');
+  });
   it('checks and reviews the visual sample before allowing full content production', async () => {
     const pass = JSON.stringify({ verdict: 'pass', summary: 'Inspected gameplay screenshot', findings: [] });
     const runtime = new CapturingRuntime(['Plan', 'Sample repaired', pass, 'Full implementation', pass]);

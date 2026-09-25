@@ -43,6 +43,22 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
 }
 
 const api: NoobiApi = {
+  importVisualReferences: async (files: readonly unknown[]) => {
+    if (!Array.isArray(files) || files.length < 1 || files.length > 5) throw new Error('请上传 1–5 张视觉参考');
+    let total = 0;
+    const images = [];
+    for (const candidate of files) {
+      const file = candidate as File;
+      if (!(file instanceof File) || !file.size || file.size > 12 * 1024 ** 2) throw new Error('每张视觉参考需为不超过 12 MiB 的图片文件');
+      total += file.size; if (total > 32 * 1024 ** 2) throw new Error('视觉参考总量最多 32 MiB');
+      const bytes = new Uint8Array(await file.arrayBuffer()); let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      images.push({ name: file.name, dataBase64: btoa(binary) });
+    }
+    return ipcRenderer.invoke('noobi:references:import', images);
+  },
+  getVisualReferences: ids => ipcRenderer.invoke('noobi:references:get', ids),
+  saveReferenceSpec: input => ipcRenderer.invoke('noobi:plans:reference-spec', input),
   bootstrap: () => ipcRenderer.invoke('noobi:bootstrap') as Promise<BootstrapPayload>,
   refreshRuntime: () => ipcRenderer.invoke('noobi:runtime:refresh') as Promise<RuntimeStatus>,
   startLogin: () => ipcRenderer.invoke('noobi:runtime:login') as Promise<LoginStartResult>,

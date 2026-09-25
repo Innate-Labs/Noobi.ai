@@ -34,6 +34,8 @@ import { formatRelative, PROJECT_STATUS_LABELS } from '../ui';
 import { ModelPicker } from './ModelPicker';
 import { ProjectIconImage } from './ProjectIcon';
 import { RotatingIdeaInput } from './RotatingIdeaInput';
+import { VisualReferencePicker } from './VisualReferences';
+import type { ReferenceSelection } from '../../shared/visualReferences';
 
 const IDEA_STARTERS = [
   {
@@ -68,6 +70,7 @@ const SUPPORTED_ATTACHMENT = /\.(?:png|jpe?g|webp|pdf|md|txt|json|csv|wav|mp3|og
 const MAX_HOME_ATTACHMENTS = 20;
 
 export interface HomeLaunchInput {
+  references: ReferenceSelection[];
   idea: string;
   model: string | null;
   effort: string | null;
@@ -105,6 +108,8 @@ export function HomeDashboard({
 }: HomeDashboardProps) {
   const [idea, setIdea] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [references, setReferences] = useState<ReferenceSelection[]>([]);
+  const [referenceBusy, setReferenceBusy] = useState(false);
   const [attachmentNotice, setAttachmentNotice] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const ideaInputRef = useRef<HTMLTextAreaElement>(null);
@@ -121,7 +126,7 @@ export function HomeDashboard({
   );
   const accountName = accountDisplayName(runtime);
   const runtimeReady = runtime.state === 'ready' && Boolean(runtime.account);
-  const launchReady = runtimeReady && idea.trim().length > 0 && !busy;
+  const launchReady = runtimeReady && idea.trim().length > 0 && !busy && !referenceBusy;
 
   useEffect(() => {
     if (models.length === 0) {
@@ -157,6 +162,7 @@ export function HomeDashboard({
       model: activeModel?.model ?? null,
       effort: effort || null,
       attachments,
+      references,
     });
   }
 
@@ -322,10 +328,11 @@ export function HomeDashboard({
                 </div>
               ) : null}
               {attachmentNotice ? <div className="home-attachment-notice" role="status">{attachmentNotice}</div> : null}
+              <VisualReferencePicker value={references} disabled={busy} onChange={setReferences} onBusy={setReferenceBusy} />
               <div className="home-prompt-controls">
                 <div className="home-attachment-actions">
                   <button type="button" disabled={busy} onClick={() => imageInputRef.current?.click()}>
-                    <ImagePlus size={15} /> 图片
+                    <ImagePlus size={15} /> 素材图片
                   </button>
                   <button type="button" disabled={busy} onClick={() => fileInputRef.current?.click()}>
                     <Paperclip size={15} /> 文件

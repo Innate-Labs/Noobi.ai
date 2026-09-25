@@ -1,4 +1,5 @@
-import type { GeneratePlansInput, PlanDraft, StartPlanInput, ResumeProjectInput, SavePlanEditsInput, RevisePlansInput } from './planning.js';
+import type { GeneratePlansInput, PlanDraft, StartPlanInput, ResumeProjectInput, SavePlanEditsInput, RevisePlansInput, SaveReferenceSpecInput } from './planning.js';
+import type { VisualReference } from './visualReferences.js';
 import type { ProductionProgress } from './productionProgress.js';
 export type PipelineStage =
   | 'brief'
@@ -426,6 +427,7 @@ export interface GameplayExperienceCheck {
 
 /** A compact, persisted summary of the latest automated play session. */
 export interface GameplayExperienceReport {
+  screenshots?: { before: string | null; idle: string | null; after: string | null; action: string[] };
   sceneQuality?: import('./sceneQuality.js').SceneQualitySummary;
   version: 1;
   verdict: GameplayExperienceVerdict;
@@ -574,6 +576,9 @@ export interface LoginStartResult {
 }
 
 export interface NoobiApi {
+  importVisualReferences(files: readonly unknown[]): Promise<VisualReference[]>;
+  getVisualReferences(ids: string[]): Promise<VisualReference[]>;
+  saveReferenceSpec(input: SaveReferenceSpecInput): Promise<PlanDraft>;
   generatePlans(input: GeneratePlansInput): Promise<PlanDraft>;
   savePlanEdits(input: SavePlanEditsInput): Promise<PlanDraft>;
   revisePlans(input: RevisePlansInput): Promise<PlanDraft>;
