@@ -265,3 +265,5 @@ New Godot projects include the OFL-1.1 Fusion Pixel Chinese font and component l
 Generated Godot games can use the versioned native UI kit for title/HUD/inventory/quests/region list/pause/settings/failure/ending, wired to real game state. Version history can export a hash-verified static Web package (HTTP hosting required; no native launcher yet). See docs/development-plan/reports/12-delivery.md and 10-delivery.md.
 
 Reference comparison now pairs frozen reference inputs with host-verified game captures and preserves five separate evidence notes. Long-run checks require actor bounds and active-state assertions; rendering while falling outside the level is a failure. Full gameplay and human acceptance remain separate.
+
+Resource exhaustion now pauses new code-repair attempts and preserves the remaining budget. Diagnose host memory/disk and game allocations before resuming; the error alone does not identify the cause.

@@ -28,7 +28,7 @@
 | [06](06-3d-playable-slice.md) | 第三人称 3D 基础与可玩样板 | 开发中（通用组件自验，生成验收中） | `3a2e4b6` | [开发记录](reports/06-delivery.md) | 整阶段未验收 |
 | [07](07-3d-assets.md) | 统一风格与游戏可用 3D 资产 | 开发中（资产规格与独立测量） | `f0f8d8d` | [开发记录](reports/07-delivery.md) | 整阶段未验收 |
 | [08](08-complete-game.md) | 多区域、任务成长与完整游戏 | 开发中（任务/背包/区域逻辑组件） | `e854e1c` | [开发记录](reports/08-delivery.md) | 整阶段未验收 |
-| [09](09-quality-and-reference-match.md) | 参考对照、长流程与体验质量 | 开发中（参考对照与长测负例拦截） | 本地工作树 | [开发记录](reports/09-delivery.md) | 整阶段未验收 |
+| [09](09-quality-and-reference-match.md) | 参考对照、长流程与体验质量 | 开发中（参考对照与长测负例拦截） | `965fbc8` | [开发记录](reports/09-delivery.md) | 整阶段未验收 |
 | [10](10-delivery-and-release.md) | 一键游玩、导出与浏览器试玩 | 开发中（固定版本 Web 包） | `f53dd0f` | [开发记录](reports/10-delivery.md) | 未验收 |
 | [11](11-benchmark-and-beta.md) | 多作品验证与首版验收 | 开发中（登记与候选需求，0/30） | `a7ff46b` | [开发记录](reports/11-delivery.md) | 未验收 |
 | [12](12-game-ui.md) | 完整游戏 UI 与状态绑定 | 开发中（组件自验完成） | `fb10099` | [开发记录](reports/12-delivery.md) | 成品接入未验收 |

@@ -40,3 +40,9 @@ describe('core-loop production barrier', () => {
     expect(s.implement).not.toHaveBeenCalled();
   });
 });
+
+it('does not spend a code-repair attempt on resource exhaustion', async () => {
+ const s = setup(vi.fn(async () => ({ ok: false, findings: ['Failed to allocate memory'] })));
+ await expect(runCoreLoopMilestone(s)).rejects.toThrow('运行资源故障');
+ expect(s.implement).not.toHaveBeenCalled();
+});

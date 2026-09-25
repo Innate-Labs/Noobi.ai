@@ -14,3 +14,13 @@ export class ExternalDeliveryBlockedError extends Error {
     this.name = 'ExternalDeliveryBlockedError';
   }
 }
+
+/** Resource exhaustion needs diagnosis before any more code-repair budget is spent.
+ * The message alone cannot distinguish host pressure from a game's allocation bug. */
+export function isResourceFailure(message: string): boolean {
+  return /failed to allocate memory|out of memory|heap out of memory|\bENOMEM\b|\bENOSPC\b|no space left on device|无法分配内存|内存分配失败/iu.test(message);
+}
+export function assertRepairResources(findings: readonly string[]): void {
+  const failure = findings.find(isResourceFailure);
+  if (failure) throw new Error(`运行资源故障：${failure}。已暂停代码修复；先检查内存、磁盘和游戏资源分配，保留原预算后再继续。`);
+}

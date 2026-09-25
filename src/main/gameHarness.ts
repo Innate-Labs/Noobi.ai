@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { JsonRpcRequestError } from './jsonRpcPeer.js';
 import { connectionRetryDelay, isPermanentModelFailure, modelConnectionFailure } from './modelConnection.js';
-import { ExternalDeliveryBlockedError } from './production/deliveryFailure.js';
+import { ExternalDeliveryBlockedError, assertRepairResources } from './production/deliveryFailure.js';
 import { runCoreLoopMilestone } from './production/coreLoopMilestone.js';
 import { runVisualSampleMilestone, type VisualSampleValidation } from './production/visualSampleMilestone.js';
 import { SCENE_QUALITY_GUIDE, SCENE_QUALITY_PATH } from './quality/sceneQuality.js';
@@ -340,6 +340,7 @@ export class GameHarness extends EventEmitter {
     active.reserveBudget = options.reserveBudget;
     active.visualInputs = options.visualInputs;
     const prepareRepair = async (stage: string, findings: readonly string[]) => {
+      assertRepairResources(findings);
       const blockers = await options.externalBlockers?.() ?? [];
       this.#throwIfStopped(active);
       if (blockers.length) throw new ExternalDeliveryBlockedError(blockers);

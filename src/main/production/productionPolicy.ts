@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ProductionFailure, ProductionFailureCategory } from '../../shared/productionPolicy.js';
-import { classifyDeliveryFailure } from './deliveryFailure.js';
+import { classifyDeliveryFailure, isResourceFailure } from './deliveryFailure.js';
 import { modelConnectionFailure } from '../modelConnection.js';
 
 export class ProductionBudgetError extends Error { constructor(message: string) { super(message); this.name = 'ProductionBudgetError'; } }
@@ -12,6 +12,7 @@ export function productionFailure(message: string, stage?: string): ProductionFa
   if (/执行预算用尽/u.test(message)) category = 'budget';
   else if (/没有进展|重复失败且无进展/u.test(message)) category = 'no-progress';
   else if (/应用退出中断|was stopped|用户停止/u.test(message)) category = 'interrupted';
+  else if (isResourceFailure(message)) category = 'resource';
   else if (classifyDeliveryFailure(message) === 'external-blocked' || /unauthorized|forbidden|authentication|usage.?limit|billing|model.{0,60}not supported/iu.test(message)) category = 'account';
   else if (modelConnectionFailure(message)) category = 'network';
   else if (/HTTP\s*429|rate.?limit|too many requests|外部服务阻塞|素材服务|provider|供应商/iu.test(message)) category = 'provider';
@@ -19,6 +20,7 @@ export function productionFailure(message: string, stage?: string): ProductionFa
   else if (/parse error|compile|compilation|编译|构建失败|导出失败|SCRIPT ERROR/iu.test(message)) category = 'build';
   else if (['reviewer', 'repair', 'core-loop', 'visual-sample'].includes(stage ?? '') || /未通过|Repair limit reached/u.test(message)) category = 'quality';
   const action: Record<ProductionFailureCategory, string> = {
+    resource: '先检查内存、磁盘与游戏资源分配；保留工程和原预算，处理原因后继续。',
     network: '检查网络或代理后继续；自动重连次数受累计预算限制。',
     account: '检查登录、额度、模型权限或服务配置后继续。',
     provider: '检查素材服务状态与限流信息后继续，保留已有素材记录。',

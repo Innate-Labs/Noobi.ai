@@ -48,3 +48,10 @@ describe('visual sample scheduling barrier', () => {
     await expect(runVisualSampleMilestone(s)).rejects.toThrow('停止内容扩展'); expect(s.implement).toHaveBeenCalledTimes(2);
   });
 });
+
+it('preserves repair budget when the host cannot allocate runtime memory', async () => {
+ const s = setup();
+ s.validate.mockResolvedValue({ ...good, ok: false, findings: ['Failed to allocate memory'] } as typeof good);
+ await expect(runVisualSampleMilestone(s)).rejects.toThrow('运行资源故障');
+ expect(s.implement).not.toHaveBeenCalled(); expect(s.review).not.toHaveBeenCalled(); expect(s.accept).not.toHaveBeenCalled();
+});
