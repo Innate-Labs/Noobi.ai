@@ -3,7 +3,7 @@
 ## 当前状态
 
 - 阶段：00，统一代码基线与回归环境。
-- 状态：**待用户验收**；开发者自验完成，尚未收到用户验收结论。
+- 状态：**已验收**；2026-09-25 用户回复“下一步”，同意进入阶段 01。
 - 交付日期：2026-09-25。
 - 分支：`codex/stage-00-baseline-20260925`。
 - 代码/构建版本：`765b52a`。后续文档提交不改变该应用构建。
@@ -39,8 +39,8 @@
 | 00-A01 | Node 22.20.0 / npm 10.9.3 执行 `npm ci` | 退出码 0；依赖告警已登记 | [安装日志](../../../.noobi-private/stage-00/npm-ci-node22.log) |
 | 00-A01 | `npm run verify` | 退出码 0；60 个测试文件、454 项测试通过，双 TypeScript 检查与构建通过 | [验证日志](../../../.noobi-private/stage-00/verify.log) |
 | 00-A01 | `git diff --cached --check` | 退出码 0；冲突标记已清除 | 合并提交 765b52a |
-| 00-A02 | `npm run smoke:ui` | 退出码 0；启动/截图/关闭通过，人工查看首页截图通过 | [UI 日志](../../../.noobi-private/stage-00/smoke-ui.log)、[首页截图](../../../.noobi-smoke/workbench.png) |
-| 00-A02 | `NOOBI_SMOKE_VIEW=workbench NOOBI_SMOKE_STATUS=completed NOOBI_SMOKE_EXPERIENCE_REPORT=expand` 启动隔离截图模式 | 退出码 0；抽屉 560×585，预览高度保持 601；人工查看通过 | [日志](../../../.noobi-private/stage-00/smoke-report.log)、[抽屉截图](../../../.noobi-smoke/report-expanded.png) |
+| 00-A02 | `npm run smoke:ui` | 退出码 0；启动/截图/关闭通过，人工查看首页截图通过 | [UI 日志](../../../.noobi-private/stage-00/smoke-ui.log)、[首页截图](../../../.noobi-private/stage-00/workbench.png) |
+| 00-A02 | `NOOBI_SMOKE_VIEW=workbench NOOBI_SMOKE_STATUS=completed NOOBI_SMOKE_EXPERIENCE_REPORT=expand` 启动隔离截图模式 | 退出码 0；抽屉 560×585，预览高度保持 601；人工查看通过 | [日志](../../../.noobi-private/stage-00/smoke-report.log)、[抽屉截图](../../../.noobi-private/stage-00/report-expanded.png) |
 | 00-A03 | 全量测试覆盖 David 三项回归及本地 production/quality/runtime/connection 测试 | 全部通过；David 修复相关实现与 origin/main 无差异 | verify 日志、环境与回归清单 |
 | 补充 | `npm run smoke:godot` | 退出码 0；真实导入、检查、Web 导出与预览通过 | [Godot 日志](../../../.noobi-private/stage-00/smoke-godot.log) |
 | 补充 | 启动整合版，读取实际项目，打开文件，再返回首页 | 12 个项目可见；选定项目 27 个文件节点、README 可读，无告警和 JS 异常 | [操作结果](../../../.noobi-private/stage-00/live-app-check.json) |
@@ -73,7 +73,7 @@
 
 ## 用户验收记录
 
-- 用户结论：待用户实际反馈。
+- 用户结论：通过；用户在验收交付后明确回复“下一步”。
 - 反馈、验收日期及返工记录：尚无。
 
 ## 下一阶段
