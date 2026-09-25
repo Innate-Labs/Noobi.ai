@@ -873,6 +873,9 @@ function validatedToolsetVersion(value: unknown, projectId: string): number {
 
 function validateSettings(value: unknown): AppSettings {
   if (!isRecord(value)) throw new Error('Project settings are invalid');
+  if (value.audioSource !== undefined && !['free-library', 'configured-api'].includes(String(value.audioSource))) {
+    throw new Error('Audio source setting is invalid');
+  }
   if (!isNonEmptyString(value.defaultWorkspace) || !isAbsolute(value.defaultWorkspace)) {
     throw new Error('Default workspace setting must be an absolute path');
   }
@@ -910,6 +913,7 @@ function validateSettings(value: unknown): AppSettings {
     defaultWorkspace: resolve(value.defaultWorkspace),
     defaultModel: value.defaultModel === null ? null : value.defaultModel.trim(),
     defaultEffort: value.defaultEffort.trim(),
+    audioSource: value.audioSource === 'configured-api' ? 'configured-api' : 'free-library',
     defaultNoobiStageMode,
     defaultNoobiSoloSceneId,
     defaultNoobiSceneId,
@@ -924,6 +928,7 @@ function defaultSettings(defaultWorkspace: string): AppSettings {
     defaultWorkspace,
     defaultModel: null,
     defaultEffort: 'medium',
+    audioSource: 'free-library',
     defaultNoobiStageMode: DEFAULT_NOOBI_STAGE_MODE,
     defaultNoobiSoloSceneId: DEFAULT_NOOBI_SOLO_SCENE_ID,
     defaultNoobiSceneId: DEFAULT_NOOBI_SCENE_ID,

@@ -12,6 +12,7 @@ import {
   type ResolvedMediaProvider,
 } from './mediaProviderStore.js';
 import { createProceduralModel3dGlb } from './proceduralModel3d.js';
+import { FreeAudioLibrary } from './freeAudioLibrary.js';
 import type { GameAssetRecord, GameAssetSource } from '../shared/contracts.js';
 
 export interface MediaGenerationProject {
@@ -36,7 +37,7 @@ export interface MediaGenerationAssetResult {
     presetId: string;
     displayName: string;
     model: string;
-    route: 'configured-api' | 'threejs-fallback';
+    route: 'configured-api' | 'threejs-fallback' | 'free-library';
   };
 }
 
@@ -77,6 +78,7 @@ export interface MediaGenerationServiceOptions {
   assetStore: Pick<AssetStore, 'list' | 'importFiles' | 'registerExisting'>;
   fetch?: typeof fetch;
   requestTimeoutMs?: number;
+  audioSource?: () => Promise<'free-library' | 'configured-api'>;
 }
 
 const BYTE_LIMITS: Readonly<Record<MediaProviderKind, number>> = {
@@ -159,6 +161,22 @@ export class MediaGenerationService {
     const prompt = requiredText(input.prompt, 'prompt', MAX_PROMPT_LENGTH);
     const modelOverride = input.model === undefined ? undefined : requiredText(input.model, 'model', MAX_MODEL_LENGTH);
     const options = validateOptions(input.options);
+    if (input.kind === 'audio' && await this.usesFreeAudio()) {
+      if (options.purpose === 'ambience') {
+        return { outcome: 'fallback', fallback: 'procedural-audio', reason: 'purpose-not-supported', prompt };
+      }
+      if (!['music', 'sfx'].includes(String(options.purpose))) {
+        throw new MediaGenerationPublicError('免费素材库暂不包含语音或人声音效；请导入已有授权的录音。未调用付费接口。');
+      }
+      if (options.lyrics || options.instrumental === false) {
+        throw new MediaGenerationPublicError('免费音乐库仅提供现成纯音乐，不支持歌词生成。未调用付费接口。');
+      }
+      try {
+        return await new FreeAudioLibrary(this.#options.assetStore).import({ ...input, name, prompt, options });
+      } catch {
+        throw new MediaGenerationPublicError('免费音频素材导入失败：请检查素材 ID、用途或重新安装素材库。未调用付费接口。');
+      }
+    }
     const result = await this.#options.providerStore.withActiveProvider(input.kind, async (provider) => {
       const unsupportedFallback = providerFallback(provider, input.kind, prompt, options);
       if (unsupportedFallback) return unsupportedFallback;
@@ -239,6 +257,10 @@ export class MediaGenerationService {
       reason: 'provider-not-configured',
       prompt,
     };
+  }
+
+  async usesFreeAudio(): Promise<boolean> {
+    return this.#options.audioSource ? await this.#options.audioSource() === 'free-library' : false;
   }
 
   /**

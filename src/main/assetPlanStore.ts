@@ -20,6 +20,7 @@ const PROJECT_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 const PLAN_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const ROUTES = new Set<AssetPlanRoute>([
+  'free-library',
   'configured-api',
   'codex-imagegen',
   'procedural-audio',

@@ -444,7 +444,7 @@ export function useExtensionSettings(onMessage: (message: string) => void) {
 
 export type ExtensionSettingsController = ReturnType<typeof useExtensionSettings>;
 
-export function MediaApiSettings({ controller }: { controller: ExtensionSettingsController }) {
+export function MediaApiSettings({ controller, freeAudio = false }: { controller: ExtensionSettingsController; freeAudio?: boolean }) {
   return (
     <section>
       <SettingsPanelHeading
@@ -459,7 +459,7 @@ export function MediaApiSettings({ controller }: { controller: ExtensionSettings
             key={capability}
             index={index + 1}
             value={controller.snapshot.mediaProviders.find((item) => item.capability === capability) ?? EMPTY_MEDIA[index]!}
-            disabled={!controller.supported}
+            disabled={!controller.supported || (capability === 'audio' && freeAudio)}
             onSave={controller.saveMedia}
             onTest={controller.testMedia}
           />

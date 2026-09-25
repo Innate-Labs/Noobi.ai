@@ -195,3 +195,7 @@ npm run package:mac
 - [路线图](ROADMAP.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
+
+### 免费游戏音频
+
+默认使用内置 CC0 素材库：2 首背景音乐、16 个音效，离线选取并导入，不调用音频 API。素材保留作者、来源和授权信息。这是现成素材选取，暂不提供定制配乐或语音；需要云端生成时，可在“设置 → 媒体 API”手动切换音频来源并保存。参见[素材来源与授权](resources/free-audio/LICENSES.md)。

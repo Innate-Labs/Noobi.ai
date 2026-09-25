@@ -36,6 +36,10 @@ Submitting a new idea or a change request now generates comparable plans before 
 
 Plans are saved locally and can be reopened from the saved-plans menu. Retry/cancel planning without starting a game. The host binds a start to one immutable plan version and prevents duplicate production runs. After restarting the app, reattach any reference files before starting; this stage plans from text only. Free-form editing and visual-reference understanding are later stages.
 
+### Free game audio by default
+
+Noobi bundles 2 music tracks and 16 sound effects under CC0. Music and SFX requests select and import these local files without audio API calls; they retain author, source and license metadata. This is a small existing library, not custom composition. Voice recordings are not included. To use a configured audio service, explicitly choose it in Settings → Media API and save. See [audio sources and licenses](resources/free-audio/LICENSES.md).
+
 ## Why Noobi.ai
 
 | | What you get |

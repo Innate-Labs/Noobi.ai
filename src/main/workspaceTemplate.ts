@@ -23,7 +23,7 @@ export type WorkspaceProject = Pick<
 
 export const NOOBI_HOST_RUNTIME_POLICY_START = '<!-- NOOBI:HOST-RUNTIME-POLICY:START -->';
 export const NOOBI_HOST_RUNTIME_POLICY_END = '<!-- NOOBI:HOST-RUNTIME-POLICY:END -->';
-export const NOOBI_HOST_RUNTIME_POLICY_VERSION = 6;
+export const NOOBI_HOST_RUNTIME_POLICY_VERSION = 7;
 
 const HOST_POLICY_FILES = {
   metadata: '.noobi/project.json',
@@ -1122,6 +1122,7 @@ function managedRuntimePolicy(targetFrameRate: ProjectRecord['targetFrameRate'])
 
 ### Required music contract
 
+- When the current host audio contract selects free-library, use bundled CC0 music and sound effects through noobi_audio_generate; this overrides all MiniMax requirements below and any previous run. Preserve source=imported and license/author/source metadata. A successfully replaced API music plan is no longer externally blocked. Paid audio APIs must not be called in free-library mode. Still verify actual playback, loop boundaries, mute and volume.
 - The current run's host media-routing notice is authoritative. When it reports an enabled MiniMax Music service, a complete game must ship with at least one MiniMax-generated music track by default. Do not infer that the routed service is unavailable merely because a planning role cannot call its tool; the implementing role must attempt the required generation.
 - Satisfy that requirement by actually calling \`noobi_audio_generate\` with \`purpose=music\`. The accepted audio file must exist under \`public/assets/audio/\`, be registered in \`public/assets/asset-pack.json\` through the asset tools when available or with verified metadata otherwise, and be loaded and played by production game code during normal gameplay (after any platform-required user gesture). A tool call without accepted output, provider text, a manifest-only entry, or an unused file does not count.
 - If required music generation, ingestion, loading, or playback fails, repair/retry it or report the game as blocked. Never silently substitute procedural or synthesized audio and present that substitute as the required MiniMax music or as successful completion.

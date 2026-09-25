@@ -326,6 +326,30 @@ describe('media tool broker', () => {
     expect(registerExisting).not.toHaveBeenCalled();
   });
 
+  it('replaces a blocked MiniMax music plan through the selected free library, preserving the plan ID', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-free-replacement-'));
+    roots.push(root);
+    const assetStore = new AssetStore();
+    const assetPlanStore = await makePlanStore();
+    await assetPlanStore.upsert({ id: 'audio-island-journey', projectId: 'project-free', name: 'island-journey',
+      kind: 'audio', prompt: 'Exploration music', options: { purpose: 'music' } });
+    await assetPlanStore.fail('project-free', 'audio-island-journey', { code: 'provider-blocked',
+      message: 'MiniMax status_code: 2153', retryable: false });
+    const withActiveProvider = vi.fn(async () => { throw new Error('Must stay offline'); });
+    const service = new MediaGenerationService({ assetStore, providerStore: { withActiveProvider }, audioSource: async () => 'free-library' });
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const broker = brokerWith({ responses, assetStore, assetPlanStore, generationService: service,
+      resolveProject: async () => ({ id: 'project-free', root }) });
+    broker.handle(toolRequest(64, 'noobi_audio_generate', { planId: 'audio-island-journey', name: 'island-journey',
+      purpose: 'music', prompt: 'Exploration music', libraryId: 'exploration' }));
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    expect(readToolResponse(responses[0]!.result)).toMatchObject({ success: true,
+      payload: { asset: { source: 'imported' }, provider: { route: 'free-library' } } });
+    expect(await assetPlanStore.get('project-free', 'audio-island-journey')).toMatchObject({ status: 'generated', route: 'free-library' });
+    expect((await assetPlanStore.get('project-free', 'audio-island-journey')).error).toBeUndefined();
+    expect(withActiveProvider).not.toHaveBeenCalled();
+  });
+
   it('returns an explicit Codex ImageGen fallback without placing binary data in JSON-RPC', async () => {
     const responses: Array<{ id: string | number; result: unknown }> = [];
     const assetPlanStore = await makePlanStore();

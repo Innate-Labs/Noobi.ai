@@ -12,6 +12,20 @@ afterEach(async () => {
 });
 
 describe('ProjectStore renaming', () => {
+  it('defaults to free audio and persists an explicit source change', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-audio-settings-'));
+    roots.push(root);
+    const file = join(root, 'projects.json');
+    const store = new ProjectStore(file, join(root, 'games'));
+    expect((await store.getSettings()).audioSource).toBe('free-library');
+    await store.saveSettings({ audioSource: 'configured-api' });
+    expect((await new ProjectStore(file, join(root, 'games')).getSettings()).audioSource).toBe('configured-api');
+    const old = JSON.parse(await readFile(file, 'utf8'));
+    delete old.settings.audioSource;
+    await writeFile(file, JSON.stringify(old));
+    expect((await new ProjectStore(file, join(root, 'games')).getSettings()).audioSource).toBe('free-library');
+    await expect(store.saveSettings({ audioSource: 'invalid' as never })).rejects.toThrow('Audio source');
+  });
   it('persists a sidebar display name without moving the workspace directory', async () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-project-rename-'));
     roots.push(root);

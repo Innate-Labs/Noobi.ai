@@ -90,6 +90,7 @@
     ],
     "files": [
       "dist/**/*",
+      "resources/free-audio/**/*",
       "package.json",
       "node_modules/three/**/*",
       "node_modules/three-stdlib/**/*",

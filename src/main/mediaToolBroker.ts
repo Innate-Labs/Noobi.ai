@@ -46,7 +46,7 @@ export interface MediaToolBrokerOptions {
     AssetPlanStore,
     'list' | 'get' | 'upsert' | 'begin' | 'waitForAgent' | 'generated' | 'fail'
   >;
-  generationService?: Pick<MediaGenerationService, 'generate'>;
+  generationService?: Pick<MediaGenerationService, 'generate'> & Partial<Pick<MediaGenerationService, 'usesFreeAudio'>>;
   resolveProject(threadId: string): Promise<MediaToolProject | null>;
   onAssetsChanged?(projectId: string, assets: GameAssetRecord[]): void | Promise<void>;
   onAssetPlansChanged?(projectId: string, assetPlans: AssetPlanRecord[]): void | Promise<void>;
@@ -70,7 +70,7 @@ const ASSET_PLAN_ARGUMENT_KEYS = [
   'planId', 'name', 'kind', 'prompt', 'required', 'model',
   'width', 'height', 'quality', 'background',
   'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format',
-  'animation', 'textureResolution',
+  'animation', 'textureResolution', 'libraryId',
 ] as const;
 
 export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
@@ -105,6 +105,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
         quality: { type: 'string', enum: ['low', 'medium', 'high', 'auto'] },
         background: { type: 'string', enum: ['transparent', 'opaque', 'auto'] },
         purpose: { type: 'string', enum: [...AUDIO_PURPOSES] },
+        libraryId: { type: 'string', maxLength: 80 },
         instrumental: { type: 'boolean' },
         lyrics: { type: 'string', minLength: 1, maxLength: 3500 },
         durationSeconds: { type: 'number', minimum: 0.05, maximum: 600 },
@@ -177,7 +178,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
   {
     type: 'function',
     name: 'noobi_audio_generate',
-    description: 'Generate and register audio through the configured provider. Always set purpose. MiniMax Music handles music; MiniMax Speech handles speech and vocal-sfx. For nonverbal vocal-sfx, write actual Speech 2.8 interjection tags such as (groans), (gasps), or (hissing), not descriptive prose. MiniMax accepts mp3/wav and does not honor durationSeconds. Generic sfx and ambience are not claimed as MiniMax capabilities and return a procedural-audio fallback for noobi_audio_synthesize or deterministic Web Audio.',
+    description: 'Get and register audio using the host-selected source. In free-library mode this imports existing CC0 music or SFX offline, never calls paid APIs, and reports source=imported. Set purpose=music or sfx and optionally libraryId; omit libraryId for tag matching. Follow the host audio contract for available IDs. Always set purpose. Only configured-api mode uses MiniMax Music for music and MiniMax Speech for speech/vocal-sfx; unsupported generic sfx and ambience return a procedural-audio fallback. For MiniMax nonverbal vocal-sfx use actual tags such as (groans), not descriptive prose. MiniMax accepts mp3/wav and does not honor durationSeconds.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -191,6 +192,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
           description: 'API model ID such as music-3.0 or speech-2.8-hd. Omit this field to use the model selected in Settings; do not pass a UI display label.',
         },
         purpose: { type: 'string', enum: [...AUDIO_PURPOSES] },
+        libraryId: { type: 'string', maxLength: 80 },
         instrumental: { type: 'boolean' },
         lyrics: { type: 'string', minLength: 1, maxLength: 3500 },
         durationSeconds: { type: 'number', minimum: 0.05, maximum: 600 },
@@ -477,7 +479,8 @@ export class MediaToolBroker {
     let began = false;
     try {
       if (plan) {
-        plan = await this.#beginPlan(project, plan.id);
+        const freeAudio = kind === 'audio' && await this.#options.generationService?.usesFreeAudio?.();
+        plan = await this.#beginPlan(project, plan.id, freeAudio ? 'free-library' : undefined);
         began = true;
       }
       if (!this.#options.generationService) throw new ToolInputError('Media API generation is not configured');
@@ -497,6 +500,7 @@ export class MediaToolBroker {
         if (plan) {
           const route: AssetPlanRoute = result.provider.route === 'threejs-fallback'
             ? 'threejs-fallback'
+            : result.provider.route === 'free-library' ? 'free-library'
             : 'configured-api';
           plan = await this.#recordGeneratedPlan(project, plan.id, result.asset, route);
         }
@@ -548,7 +552,8 @@ export class MediaToolBroker {
     route?: AssetPlanRoute,
   ): Promise<AssetPlanRecord> {
     const current = await this.#requireAssetPlanStore().get(project.id, planId);
-    if (current.status === 'failed' && current.error?.code === 'provider-blocked') {
+    if (current.status === 'failed' && current.error?.code === 'provider-blocked'
+      && !(current.kind === 'audio' && route === 'free-library')) {
       throw new ToolInputError(`外部素材服务仍被阻塞：${current.error.message}。更新服务配置后在素材面板重新排队；不要反复调用生成。`);
     }
     const plan = await this.#requireAssetPlanStore().begin(project.id, planId, route);
@@ -668,7 +673,7 @@ function assertOnlyKeys(record: Record<string, JsonValue>, allowed: readonly str
 function generationArgumentKeys(kind: GameAssetKind): readonly string[] {
   if (kind === 'image') return ['name', 'prompt', 'model', 'width', 'height', 'quality', 'background'];
   if (kind === 'audio') {
-    return ['name', 'prompt', 'model', 'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format'];
+    return ['name', 'prompt', 'model', 'purpose', 'instrumental', 'lyrics', 'durationSeconds', 'voice', 'format', 'libraryId'];
   }
   return ['name', 'prompt', 'model', 'animation', 'textureResolution'];
 }
@@ -695,6 +700,8 @@ function generationOptions(
   }
   if (kind === 'audio') {
     const purpose = optionalEnum(args.purpose, 'purpose', AUDIO_PURPOSES);
+    const libraryId = optionalString(args.libraryId, 'libraryId', 80);
+    if (libraryId) options.libraryId = libraryId;
     if (requireAudioPurpose && !purpose) throw new ToolInputError('purpose is required for audio generation');
     const instrumental = optionalBoolean(args.instrumental, 'instrumental');
     const lyrics = optionalMultilineString(args.lyrics, 'lyrics', 3_500);

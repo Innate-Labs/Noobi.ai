@@ -216,6 +216,7 @@ export interface RuntimeStatus {
 }
 
 export interface AppSettings {
+  audioSource?: 'free-library' | 'configured-api';
   defaultWorkspace: string;
   defaultModel: string | null;
   defaultEffort: string;
@@ -358,6 +359,7 @@ export type AssetPlanStatus =
   | 'failed';
 
 export type AssetPlanRoute =
+  | 'free-library'
   | 'configured-api'
   | 'codex-imagegen'
   | 'procedural-audio'

@@ -283,6 +283,7 @@ async function launch(): Promise<void> {
   mediaGenerationService = new MediaGenerationService({
     providerStore: mediaProviderStore,
     assetStore,
+    audioSource: async () => (await projectStore.getSettings()).audioSource ?? 'free-library',
   });
   promptTemplateStore = new PromptTemplateStore(join(userData, 'prompt-templates.json'));
   mcpConfigManager = new McpConfigManager(runtime);
@@ -618,14 +619,15 @@ async function dispatchApprovedProject(input: RunProjectInput, draft: PlanDraft)
     const imageProvider = activeMediaProvider('image');
     const audioProvider = activeMediaProvider('audio');
     const miniMaxMusicRequired = Boolean(
-      audioProvider && isMiniMaxAudioPreset(audioProvider.presetId),
+      settings.audioSource === 'configured-api' && audioProvider && isMiniMaxAudioPreset(audioProvider.presetId),
     );
     const imageGenerationSkill = await resolveImageGenerationSkill();
     if (!imageProvider && (!status.capabilities.imageGeneration || !imageGenerationSkill)) {
       throw new Error('没有可用的图像 API，当前 Codex 运行时也没有 ImageGen 能力；请先在设置中配置图像 API 或修复 Codex ImageGen');
     }
     const imageGenerationRequirement = await resolveHostImageGenerationRequirement(project);
-    const audioGenerationRequirement = await resolveHostAudioGenerationRequirement(
+    const audioGenerationRequirement: HostAudioGenerationRequirement = settings.audioSource !== 'configured-api'
+      ? { state: 'free-library' } : await resolveHostAudioGenerationRequirement(
       project,
       miniMaxMusicRequired,
     );
@@ -1123,6 +1125,9 @@ function bindIpc(): void {
   });
   handle('noobi:media-provider:test', async (_event, capability: MediaCapability) => {
     const kind = validateMediaCapability(capability);
+    if (kind === 'audio' && (await projectStore.getSettings()).audioSource !== 'configured-api') {
+      return { capability: kind, ok: true, message: '当前使用内置 CC0 免费音频库，未调用外部 API。', latencyMs: 0, testedAt: new Date().toISOString() };
+    }
     const started = Date.now();
     const provider = activeMediaProvider(kind);
     let ok = Boolean(provider);
@@ -1610,6 +1615,7 @@ async function executeHarness(
       },
       refreshAudioGenerationRequirement: async () => {
         await waitForAssetIngestions(project.id);
+        if (audioGenerationRequirement.state === 'free-library') return audioGenerationRequirement;
         return resolveHostAudioGenerationRequirement(
           project,
           audioGenerationRequirement.state !== 'not-required',
@@ -1617,7 +1623,7 @@ async function executeHarness(
       },
       validateHostDelivery: (signal) => validateProjectDelivery(
         project,
-        audioGenerationRequirement.state !== 'not-required',
+        audioGenerationRequirement.state !== 'not-required' && audioGenerationRequirement.state !== 'free-library',
         signal,
       ),
     });
@@ -3351,6 +3357,7 @@ function validateSettingsPatch(value: Partial<AppSettings>): Partial<AppSettings
     'defaultWorkspace',
     'defaultModel',
     'defaultEffort',
+    'audioSource',
     'defaultNoobiStageMode',
     'defaultNoobiSoloSceneId',
     'defaultNoobiSceneId',

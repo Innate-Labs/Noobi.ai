@@ -185,7 +185,7 @@ export function SettingsModal({
       footer={
         <>
           <span className="settings-feedback" role="status">{message}</span>
-          {section === 'defaults' || section === 'noobi' || section === 'appearance' ? (
+          {section === 'defaults' || section === 'noobi' || section === 'appearance' || section === 'media' ? (
             <button className="primary-button" type="button" disabled={busy} onClick={() => void save()}>
               <Save size={15} /> {busy ? '保存中…' : '保存设置'}
             </button>
@@ -230,7 +230,18 @@ export function SettingsModal({
 
           {section === 'environment' ? <EnvironmentSettings onMessage={setMessage} /> : null}
 
-          {section === 'media' ? <MediaApiSettings controller={extensions} /> : null}
+          {section === 'media' ? <>
+            <div className="settings-form"><label>
+              <span>游戏音乐与音效来源</span>
+              <select value={draft.audioSource ?? 'free-library'} disabled={busy}
+                onChange={event => setDraft(current => ({ ...current, audioSource: event.target.value as 'free-library' | 'configured-api' }))}>
+                <option value="free-library">免费素材库（CC0，无接口费用）</option>
+                <option value="configured-api">已配置的音频 API（可能收费）</option>
+              </select>
+            </label></div>
+            <p className="module-message">免费库包含 2 首音乐和 16 个音效，可离线使用，来源与授权会随素材记录保存。选择后点击“保存设置”。</p>
+            <MediaApiSettings controller={extensions} freeAudio={value.audioSource !== 'configured-api'} />
+          </> : null}
 
           {section === 'defaults' ? (
             <section>

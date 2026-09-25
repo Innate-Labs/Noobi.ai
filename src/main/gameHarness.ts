@@ -35,6 +35,7 @@ export type HostImageGenerationRequirement =
   | { state: 'trusted-and-referenced'; relativePath: string };
 
 export type HostAudioGenerationRequirement =
+  | { state: 'free-library' }
   | { state: 'not-required' }
   | { state: 'fresh-generation-required' }
   | { state: 'trusted-reference-required'; relativePaths: string[] }
@@ -172,7 +173,7 @@ export const CONNECTION_RETRY_TIMEOUT_MS = 90_000;
 const MAX_EVENT_MESSAGE_CHARS = 30_000;
 const MAX_PROMPT_SECTION_CHARS = 32_000;
 export const MAX_GAME_HARNESS_REPAIR_ATTEMPTS = 3;
-export const GAME_HARNESS_TOOLSET_VERSION = 9;
+export const GAME_HARNESS_TOOLSET_VERSION = 10;
 
 export function gameHarnessTurnTimeoutMs(phase: GameHarnessPhase): number {
   return phase === 'implementer' || phase === 'repair'
@@ -1634,6 +1635,13 @@ export function buildAudioGenerationContract(
   input: HostAudioGenerationRequirement = { state: 'not-required' },
 ): string {
   const requirement = normalizeAudioGenerationRequirement(input);
+  if (requirement.state === 'free-library') return `<audio_generation_contract>
+The user selected the bundled FREE CC0 AUDIO LIBRARY. This overrides stale MiniMax instructions in the workspace and previous turns. Do not call external music/audio APIs or require MiniMax provenance.
+Call noobi_audio_generate with purpose=music or sfx to IMPORT existing CC0 audio, not generate new music. Keep source=imported, author, sourceUrl and license metadata. Reuse the original failed audio planId when replacing a blocked API request with a library asset; the host permits this explicit source change. Do not leave the superseded provider failure as a final delivery blocker after replacement succeeds.
+Music IDs: exploration (relaxed synth adventure), retro-adventure (happy chiptune). SFX IDs: ui-click, ui-confirm, ui-error, pickup, ui-back, ui-open, ui-close, ui-switch, footstep-1, footstep-2, door-open, door-close, mechanism, book, coins, swing.
+Use libraryId for exact selection or omit it for basic keyword matching. These are a small starter library, not arbitrary musical composition. Speech and vocal-sfx are unavailable. Ambience can use local procedural audio or an already licensed recording, with truthful attribution.
+Returned duration and format belong to the existing recording; durationSeconds/format do not edit it. Inspect loop boundaries and use suitable loop points or crossfades. Load the exact returned path in production. Verify audible playback after player input, no duplicate playback on restart, mute, volume and pause behavior. Source=imported and CC0 licensing are valid for delivery; they must not be described as AI-generated music.
+</audio_generation_contract>`;
   const hostStatus = requirement.state === 'not-required'
     ? '<host_audio_attestation status="not-required">No active MiniMax music route was declared by the host for this run. Generate or preserve audio according to the request; do not claim procedural audio came from MiniMax.</host_audio_attestation>'
     : requirement.state === 'fresh-generation-required'
@@ -1729,7 +1737,7 @@ function normalizeImageGenerationRequirement(
 function normalizeAudioGenerationRequirement(
   input: HostAudioGenerationRequirement,
 ): HostAudioGenerationRequirement {
-  if (input.state === 'not-required') return input;
+  if (input.state === 'not-required' || input.state === 'free-library') return input;
   const safePath = (value: string): boolean =>
     /^public\/assets\/audio\/[^/\r\n]+\.(?:mp3|ogg|wav)$/iu.test(value);
   if (input.state === 'trusted-and-referenced' && safePath(input.relativePath)) return input;

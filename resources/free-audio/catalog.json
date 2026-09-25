@@ -1,0 +1,330 @@
+[
+  {
+    "id": "exploration",
+    "file": "exploration.ogg",
+    "purpose": "music",
+    "tags": [
+      "exploration",
+      "adventure",
+      "relaxed",
+      "mystery",
+      "forest",
+      "island",
+      "探索",
+      "冒险",
+      "森林",
+      "浮岛",
+      "平静"
+    ],
+    "title": "A Path Which leads to somewhere",
+    "author": "Centurion_of_war",
+    "sourceUrl": "https://opengameart.org/content/a-path-which-leads-to-somewhere",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "b09fb7403cb8b9a3ad4e3c9eb5c5852b808072c7aada8a88827ec2a32246532d"
+  },
+  {
+    "id": "retro-adventure",
+    "file": "happy-adventure.mp3",
+    "purpose": "music",
+    "tags": [
+      "retro",
+      "8bit",
+      "chiptune",
+      "happy",
+      "arcade",
+      "复古",
+      "像素",
+      "街机",
+      "欢快"
+    ],
+    "title": "Happy Adventure (Loop)",
+    "author": "TinyWorlds",
+    "sourceUrl": "https://opengameart.org/content/happy-adventure-loop",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "50aa6a32625fe8565403a0c8ceb772d7fb500b9267d0019eacfe0fc742b6c73d"
+  },
+  {
+    "id": "ui-click",
+    "file": "ui-click.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "click",
+      "button",
+      "menu",
+      "点击",
+      "按钮",
+      "菜单"
+    ],
+    "title": "click_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "ccfb7fa0cccdd9faec0eb16033c732b1e308d139d80f799161495d58f7adcdb9"
+  },
+  {
+    "id": "ui-confirm",
+    "file": "ui-confirm.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "confirm",
+      "repair",
+      "success",
+      "确认",
+      "修复",
+      "成功"
+    ],
+    "title": "confirmation_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "063564703b6094d70718a3e787a55cc9141611e4ecd6b6637f8828f79b4a8c3a"
+  },
+  {
+    "id": "ui-error",
+    "file": "ui-error.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "error",
+      "invalid",
+      "damage",
+      "hit",
+      "错误",
+      "无效",
+      "受伤",
+      "受击"
+    ],
+    "title": "error_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "46e67425d16339772e8d328fb36a49426c9467418686e11beeb71ff84b0f6433"
+  },
+  {
+    "id": "pickup",
+    "file": "pickup.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "pickup",
+      "collect",
+      "crystal",
+      "coin",
+      "收集",
+      "拾取",
+      "晶体",
+      "金币"
+    ],
+    "title": "pluck_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "be97ec4893a02d6eccfb678daa76c83e34cb2583b834ec2593d2641def739fa4"
+  },
+  {
+    "id": "ui-back",
+    "file": "ui-back.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "back",
+      "cancel",
+      "返回",
+      "取消"
+    ],
+    "title": "back_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "07db973f79f6ae0f2edc34561e7592e24d0577455919fb602cb8ecc0da991dcf"
+  },
+  {
+    "id": "ui-open",
+    "file": "ui-open.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "open",
+      "inventory",
+      "打开",
+      "背包"
+    ],
+    "title": "open_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "a27c6bb0df7da1e6af5dd5937593c98bc58b6e513f42fe6a3254cd6a6949c648"
+  },
+  {
+    "id": "ui-close",
+    "file": "ui-close.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "close",
+      "关闭"
+    ],
+    "title": "close_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "44af8249b933e0fd35ec957a638bb1a0b01f85b53fbe9674bf77bd3ca3168ef4"
+  },
+  {
+    "id": "ui-switch",
+    "file": "ui-switch.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "switch",
+      "toggle",
+      "切换",
+      "开关"
+    ],
+    "title": "switch_001",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/interface-sounds",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "3b74efad87f1e69dbd1d05c5ad952ab90859b5a3d11da6ec5bd79b4f03b42afa"
+  },
+  {
+    "id": "footstep-1",
+    "file": "footstep-1.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "footstep",
+      "walk",
+      "脚步",
+      "行走"
+    ],
+    "title": "footstep00",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "6fe61ef1fc3bcf0e253bf2eb64759db6cb69e2fe452f4d88cc597ecf78a3d601"
+  },
+  {
+    "id": "footstep-2",
+    "file": "footstep-2.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "footstep",
+      "run",
+      "跑步"
+    ],
+    "title": "footstep01",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "313472dba31fd0c855376069fa368bb5a198c27251cc8398ef464578b7047a4c"
+  },
+  {
+    "id": "door-open",
+    "file": "door-open.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "door",
+      "gate",
+      "门"
+    ],
+    "title": "doorOpen_1",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "4ab93bab96522d8eb109ff96dc57cb6765deb02448fe14c10472084be5bb2a0b"
+  },
+  {
+    "id": "door-close",
+    "file": "door-close.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "door close",
+      "关门"
+    ],
+    "title": "doorClose_1",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "834d29c60a8a8bfb50b158cdb6b7dfa8f02812a408a1ee9703d038dfab0b1aeb"
+  },
+  {
+    "id": "mechanism",
+    "file": "mechanism.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "metal",
+      "mechanism",
+      "gear",
+      "金属",
+      "机关",
+      "齿轮"
+    ],
+    "title": "metalLatch",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "ba9ba60b172b3ebc131a940f25793cd2e207aca7af73dc80d637277f060f1708"
+  },
+  {
+    "id": "book",
+    "file": "book.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "book",
+      "journal",
+      "书",
+      "记录"
+    ],
+    "title": "bookOpen",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "953390534377222bee89ac8cd9e60a58fdc037c71a4d7c18c43cd647c7f34ba8"
+  },
+  {
+    "id": "coins",
+    "file": "coins.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "coins",
+      "treasure",
+      "金币",
+      "宝箱"
+    ],
+    "title": "handleCoins",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "8a91f969e932df709df80ee124d86a51389eed9b67f22e5e716bc2bbf60d8dab"
+  },
+  {
+    "id": "swing",
+    "file": "swing.ogg",
+    "purpose": "sfx",
+    "tags": [
+      "swing",
+      "sword",
+      "attack",
+      "挥动",
+      "刀",
+      "攻击"
+    ],
+    "title": "knifeSlice",
+    "author": "Kenney",
+    "sourceUrl": "https://kenney.nl/assets/rpg-audio",
+    "license": "CC0-1.0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "sha256": "4cd96dc630bed9840c15f1dd2306da2cc56a4da26a5d3f1a03c5a7265ac5e54f"
+  }
+]
