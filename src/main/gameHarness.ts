@@ -677,7 +677,7 @@ export class GameHarness extends EventEmitter {
       this.#assertTurnCompleted(active, reviewerTurn, 'Reviewer');
       let reviewer = summarizeTurn(reviewerThreadId, reviewerTurn);
       let review = parseReview(reviewer.text);
-      await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', detail: formatReviewMessage(review) });
+      await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', turn: reviewer, detail: formatReviewMessage(review) });
       this.#emitAgentEvent(active, {
         kind: review.verdict === 'pass' ? 'assistant' : 'error',
         title: review.verdict === 'pass' ? 'Reviewer · passed' : 'Reviewer · repair requested',
@@ -738,7 +738,7 @@ export class GameHarness extends EventEmitter {
             this.#assertTurnCompleted(active, evidenceReviewTurn, 'Reviewer host-evidence verification');
             reviewer = summarizeTurn(reviewerThreadId, evidenceReviewTurn);
             review = parseReview(reviewer.text);
-            await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', detail: formatReviewMessage(review) });
+            await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', turn: reviewer, detail: formatReviewMessage(review) });
             this.#emitAgentEvent(active, {
               kind: review.verdict === 'pass' ? 'assistant' : 'error',
               title: review.verdict === 'pass'
@@ -916,7 +916,7 @@ export class GameHarness extends EventEmitter {
         this.#assertTurnCompleted(active, finalReviewTurn, 'Reviewer verification');
         reviewer = summarizeTurn(reviewerThreadId, finalReviewTurn);
         review = parseReview(reviewer.text);
-        await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', detail: formatReviewMessage(review) });
+        await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', turn: reviewer, detail: formatReviewMessage(review) });
         findingAuthority = 'reviewer';
         this.#emitAgentEvent(active, {
           kind: review.verdict === 'pass' ? 'assistant' : 'error',

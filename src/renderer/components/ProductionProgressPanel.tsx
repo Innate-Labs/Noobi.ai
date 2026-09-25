@@ -1,11 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BUDGET_LABELS, FAILURE_LABELS, type ProductionBudgetKind } from '../../shared/productionPolicy';
-import type { ProductionProgress, ProductionTaskStatus } from '../../shared/productionProgress';
+import { PRODUCTION_TASK_TITLES, type ProductionProgress, type ProductionTaskStatus } from '../../shared/productionProgress';
+import type { ProductionExecution } from '../../shared/productionGraph';
 import './productionProgress.css';
 
 const labels: Record<ProductionTaskStatus, string> = { pending: '待执行', running: '进行中', completed: '已完成',
   'needs-repair': '需修复', failed: '失败', interrupted: '已中断', 'not-needed': '本次无需' };
 const runLabels = { running: '制作中', completed: '交付检查通过', failed: '需处理', interrupted: '待继续' };
+
+function ExecutionHistory({ executions }: { executions?: ProductionExecution[] }) {
+  return <details className="production-executions"><summary>查看执行与版本依据{executions ? `（${executions.length} 条）` : ''}</summary>
+    {!executions?.length ? <p>此轮尚无步骤证据；旧版记录不会补造输入或输出版本。</p> : <ol>{executions.map((execution, index) => <li key={execution.id}>
+      <details><summary>{index + 1}. {PRODUCTION_TASK_TITLES[execution.taskId]} · {execution.reused ? '已复用' : labels[execution.status]}</summary>
+        <p>依赖：{execution.dependencies.map(id => { const at = executions.findIndex(item => item.id === id); return at < 0 ? '未知记录' : `第 ${at + 1} 步`; }).join('、') || '起点'}</p>
+        <p>{execution.detail || (execution.status === 'running' ? '等待步骤完成' : '步骤结果已保存，整体品质仍需验收')}</p>
+        <p>输入版本：<code>{execution.input?.sourceHash || (execution.reused ? '使用已匹配的完成回合' : '未记录')}</code></p>
+        <p>输出版本：<code>{execution.output?.sourceHash || '未记录，不能据此确认产物'}</code></p>
+        {execution.output?.build && <p>构建：<code>{execution.output.build.id}</code><br />报告摘要：<code>{execution.output.build.reportHash || '此步骤未绑定报告'}</code></p>}
+        {execution.output?.buildUnavailable && <p>{execution.output.buildUnavailable}</p>}
+        {execution.output?.assetsHash && <p>素材账本摘要：<code>{execution.output.assetsHash}</code></p>}
+        <p>{new Date(execution.startedAt).toLocaleString('zh-CN')} → {execution.finishedAt ? new Date(execution.finishedAt).toLocaleString('zh-CN') : '进行中'}</p>
+      </details>
+    </li>)}</ol>}
+    <p>版本依据用于核对执行过程，不代替玩法或美术验收。</p>
+  </details>;
+}
 
 export function ProductionProgressView({ progress, error, onExtend, extending = false }: { progress: ProductionProgress | null; error?: string; onExtend?: () => void; extending?: boolean }) {
   if (!progress) return <details className="production-progress"><summary>制作进度</summary>
@@ -38,7 +57,13 @@ export function ProductionProgressView({ progress, error, onExtend, extending = 
       <ol className="production-task-list">{progress.tasks.map(task => <li key={task.id} data-status={task.status}>
         <span>{task.title}</span><strong>{task.reused ? '已复用' : labels[task.status]}</strong>
         {task.detail && <small>{task.detail}</small>}
+        {task.contract && <details className="production-task-contract"><summary>任务要求{task.status === 'pending' && task.contract.dependencies.length ? ` · 等待${task.contract.dependencies.map(id => PRODUCTION_TASK_TITLES[id]).join('、')}` : ''}</summary>
+          <p>{task.contract.scope}</p><p>完成标准：{task.contract.gate}</p>
+          <p>对应需求：{task.contract.requirementIds.join('、') || '旧方案未记录需求编号'} · 方案版本：<code>{progress.planVersionId}</code></p>
+          <p>本步骤使用上方累计执行预算；恢复不会清零。</p>
+        </details>}
       </li>)}</ol>
+      <ExecutionHistory executions={last?.executions} />
       <p>{progress.recoveryNote}</p>
       {progress.status !== 'completed' && <p>实现回合完成不代表游戏已通过验收。</p>}
       {progress.attempts.length > 1 && <details className="production-attempt-history"><summary>查看前 {progress.attempts.length - 1} 次执行记录</summary>
@@ -48,6 +73,7 @@ export function ProductionProgressView({ progress, error, onExtend, extending = 
           {attempt.failure && <p>{FAILURE_LABELS[attempt.failure.category]} · {attempt.failure.action}</p>}
           {attempt.budgetUsed && <p>截至此轮累计：{attempt.budgetUsed.turns} 回合 / {attempt.budgetUsed.repairs} 修复 / {attempt.budgetUsed.reconnects} 重连</p>}
           <ul>{attempt.tasks.map(task => <li key={task.id}>{task.title}：{labels[task.status]}{task.detail ? ` · ${task.detail}` : ''}</li>)}</ul>
+          <ExecutionHistory executions={attempt.executions} />
         </details>)}
       </details>}
     </div>

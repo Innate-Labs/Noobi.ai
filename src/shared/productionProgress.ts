@@ -1,3 +1,4 @@
+import type { ProductionEvidence, ProductionExecution, ProductionTaskContract } from './productionGraph.js';
 import type { ProductionBudget, ProductionCounters, ProductionFailure } from './productionPolicy.js';
 export type ProductionTaskId = 'planner' | 'core-loop' | 'visual-sample' | 'implementer' | 'reviewer' | 'repair' | 'delivery';
 export type ProductionTaskStatus = 'pending' | 'running' | 'completed' | 'needs-repair' | 'failed' | 'interrupted' | 'not-needed';
@@ -9,6 +10,7 @@ export interface ProductionTask {
   reused: boolean;
   detail: string;
   updatedAt: string;
+  contract?: ProductionTaskContract;
 }
 export interface ProductionAttempt {
   failure?: ProductionFailure | null;
@@ -19,6 +21,7 @@ export interface ProductionAttempt {
   status: 'running' | 'completed' | 'failed' | 'interrupted';
   error: string | null;
   tasks: ProductionTask[];
+  executions?: ProductionExecution[];
 }
 export interface ProductionProgress {
   budget?: ProductionBudget;
@@ -48,6 +51,7 @@ export interface ProductionTaskUpdate {
   reused?: boolean;
   turn?: SavedProductionTurn;
   sourceHash?: string;
+  evidence?: ProductionEvidence;
 }
 export const PRODUCTION_TASK_TITLES: Record<ProductionTaskId, string> = {
   planner: '检查工程与制定执行计划', 'core-loop': '验证核心玩法', 'visual-sample': '验证画面样板',

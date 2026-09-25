@@ -18,12 +18,13 @@ async function run() {
     const evidence = resolve('.noobi-private/platform-progress'); await mkdir(evidence, { recursive: true });
     const file = join(root, 'progress.json'); let store = new ProductionRunStore(file); await store.init();
     const input = { projectId: 'fixture', planRunId: 'selected', planVersionId: 'version', planTitle: '探索玩法 · 完成实现后检查碰撞和存档',
-      contractKey: 'fixed', continuation: false, coreLoop: false, visualSample: false };
+      contractKey: 'fixed', continuation: false, coreLoop: false, visualSample: false, requirementIds: ['R01', 'R02'] };
+    const evidenceReceipt = { sourceHash: 'a'.repeat(64), assetsHash: 'b'.repeat(64), assets: [] };
     const first = await store.begin(input);
     const turn = { threadId: 'thread', turnId: 'turn', status: 'completed', text: 'Fixture output' };
-    await store.update(first.session, { id: 'planner', status: 'completed', turn, sourceHash: 'hash' });
-    await store.update(first.session, { id: 'implementer', status: 'completed', turn, sourceHash: 'hash' });
-    await store.update(first.session, { id: 'reviewer', status: 'running' });
+    await store.update(first.session, { id: 'planner', status: 'completed', turn, sourceHash: evidenceReceipt.sourceHash, evidence: evidenceReceipt });
+    await store.update(first.session, { id: 'implementer', status: 'completed', turn, sourceHash: evidenceReceipt.sourceHash, evidence: evidenceReceipt });
+    await store.update(first.session, { id: 'reviewer', evidence: evidenceReceipt, status: 'running' });
     store = new ProductionRunStore(file); await store.init();
     const interrupted = await store.read('fixture');
     ipcMain.handle('noobi:project:progress', (_event, projectId) => store.read(projectId));
@@ -43,19 +44,23 @@ async function run() {
     assert.match(await text(), /已中断/); assert.match(await text(), /应用退出中断/);
     await writeFile(join(evidence, 'interrupted-progress.png'), (await window.webContents.capturePage()).toPNG());
     const resumed = await store.begin({ ...input, continuation: true });
-    await store.update(resumed.session, { id: 'planner', status: 'completed', reused: true, turn, sourceHash: 'hash' });
-    await store.update(resumed.session, { id: 'implementer', status: 'completed', reused: true, turn, sourceHash: 'hash' });
-    const progress = await store.update(resumed.session, { id: 'reviewer', status: 'running', detail: '重新检查当前版本的碰撞与存档' });
+    await store.update(resumed.session, { id: 'planner', status: 'completed', reused: true, turn, sourceHash: evidenceReceipt.sourceHash, evidence: evidenceReceipt });
+    await store.update(resumed.session, { id: 'implementer', status: 'completed', reused: true, turn, sourceHash: evidenceReceipt.sourceHash, evidence: evidenceReceipt });
+    const progress = await store.update(resumed.session, { id: 'reviewer', evidence: evidenceReceipt, status: 'running', detail: '重新检查当前版本的碰撞与存档' });
     window.webContents.send('noobi:event:production-progress', progress); await pause(100);
     assert.match(await text(), /第 2 次执行/); assert.match(await text(), /已复用/); assert.match(await text(), /当前：独立评审/);
     // Late snapshots and events belonging to another project must not replace current progress.
     window.webContents.send('noobi:event:production-progress', interrupted);
     window.webContents.send('noobi:event:production-progress', { ...progress, projectId: 'unrelated', planTitle: 'WRONG PROJECT', revision: 9999 });
     await pause(100); assert.match(await text(), /第 2 次执行/); assert.doesNotMatch(await text(), /WRONG PROJECT/);
+    await window.webContents.executeJavaScript(`document.querySelector('.production-executions').open=true;document.querySelector('.production-executions li details').open=true;(()=>{const body=document.querySelector('.production-progress-body');body.scrollTop+=document.querySelector('.production-executions').getBoundingClientRect().top-body.getBoundingClientRect().top;window.scrollTo(0,0)})()`);
+    await pause(200);
+    assert.match(await text(), /输出版本/); assert.match(await window.webContents.executeJavaScript('document.body.textContent'), /对应需求：R01、R02/);
     await writeFile(join(evidence, 'resumed-progress.png'), (await window.webContents.capturePage()).toPNG());
     await window.webContents.executeJavaScript(`document.querySelector('.production-attempt-history').open=true;document.querySelector('.production-attempt-history details').open=true`);
     assert.match(await text(), /应用退出中断/);
     window.setSize(390, 650); await pause(200);
+    await window.webContents.executeJavaScript('window.scrollTo(0,0)'); await pause(100);
     assert.equal(await window.webContents.executeJavaScript('document.documentElement.scrollWidth <= innerWidth'), true);
     await writeFile(join(evidence, 'progress-narrow.png'), (await window.webContents.capturePage()).toPNG());
     // Reload the renderer and prove it reads the current persisted record via IPC.

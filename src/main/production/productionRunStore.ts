@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { productionContracts, type ProductionExecution } from '../../shared/productionGraph.js';
 import { BUDGET_LABELS, DEFAULT_PRODUCTION_LIMITS, PRODUCTION_BUDGET_EXTENSION, type ProductionBudget, type ProductionBudgetKind } from '../../shared/productionPolicy.js';
 import { ProductionBudgetError, ProductionNoProgressError, productionFailure, repairInputKey } from './productionPolicy.js';
 import { PRODUCTION_TASK_TITLES, type ProductionProgress, type ProductionSession, type ProductionTaskId,
@@ -20,6 +21,67 @@ const validTurn = (value: any) => value && value.status === 'completed'
 const validTasks = (tasks: any) => Array.isArray(tasks) && tasks.every(task => task && Object.hasOwn(PRODUCTION_TASK_TITLES, task.id)
   && ['pending', 'running', 'completed', 'needs-repair', 'failed', 'interrupted', 'not-needed'].includes(task.status)
   && typeof task.detail === 'string' && Number.isInteger(task.attempts));
+const validExecutions = (values: ProductionExecution[] | undefined): boolean => {
+  if (values === undefined) return true; // Legacy records have no invented receipts.
+  if (!Array.isArray(values)) return false;
+  const seen = new Set<string>();
+  return values.every(value => {
+    if (!value || !validId(value.id) || seen.has(value.id) || !Object.hasOwn(PRODUCTION_TASK_TITLES, value.taskId)
+      || !Array.isArray(value.dependencies) || value.dependencies.some(id => !seen.has(id))
+      || !['running', 'completed', 'needs-repair', 'failed', 'interrupted'].includes(value.status)
+      || typeof value.detail !== 'string' || typeof value.startedAt !== 'string') return false;
+    seen.add(value.id); return true;
+  });
+};
+function recordExecution(run: StoredRun, update: ProductionTaskUpdate): void {
+  if (update.status === 'pending' || update.status === 'not-needed') return;
+  const task = run.tasks.find(task => task.id === update.id)!;
+  for (const dependency of task.contract?.dependencies ?? []) {
+    if (run.tasks.find(value => value.id === dependency)?.status !== 'completed')
+      throw new Error(`制作任务依赖未完成：${task.title}需要先完成${PRODUCTION_TASK_TITLES[dependency]}`);
+  }
+  const executions = (run.attempts.at(-1)!.executions ??= []);
+  if (update.id === 'delivery' && !run.tasks.some(value => (value.id === 'reviewer' || value.id === 'repair') && value.status === 'completed'))
+    throw new Error('交付检查需要先完成独立评审或修复回合');
+  let current = executions.find(value => value.status === 'running');
+  if (current && (current.taskId !== update.id || update.status === 'running')) throw new Error('已有执行中的制作步骤，不能重复或并发派发');
+  if (update.reused && (update.id !== 'planner' && update.id !== 'implementer')) throw new Error('仅可复用已完成的规划和实现；验证必须重新执行');
+  if (update.reused) {
+    const saved = update.id === 'planner' ? run.recovery?.planner : run.recovery?.implementation;
+    if (!saved || saved.turnId !== update.turn?.turnId || saved.threadId !== update.turn?.threadId || !update.sourceHash || update.sourceHash !== run.recovery?.sourceHash)
+      throw new Error('复用回合与已保存工程检查点不匹配');
+  }
+  if (update.evidence?.build && update.evidence.build.sourceHash !== update.evidence.sourceHash) throw new Error('任务证据与当前源码版本不一致');
+  if (current?.input && update.evidence && task.contract?.access === 'read-only' && current.input.sourceHash !== update.evidence.sourceHash)
+    throw new Error('只读步骤期间工程已变化，不能保存旧评审结果');
+  if (!current) {
+    // Repeat terminal callbacks cannot append another completed execution.
+    const previous = executions.at(-1);
+    if (update.status === 'running' && previous?.output && update.evidence && previous.output.sourceHash !== update.evidence.sourceHash)
+      throw new Error('前一步完成后工程已变化，不能沿用旧检查结果继续');
+    if (previous?.taskId === update.id && previous.status === update.status
+      && previous.detail === (update.detail ?? '').slice(0, 8000)
+      && JSON.stringify(previous.output) === JSON.stringify(update.evidence)) return;
+    const dependencies = new Set<string>();
+    for (const dependency of task.contract?.dependencies ?? []) {
+      const receipt = [...executions].reverse().find(value => value.taskId === dependency && value.status === 'completed');
+      if (receipt) dependencies.add(receipt.id);
+    }
+    // Includes repair findings and fresh host-evidence reviews without cycles.
+    if (previous) dependencies.add(previous.id);
+    current = { id: randomUUID(), taskId: update.id, dependencies: [...dependencies], status: 'running',
+      startedAt: now(), finishedAt: null, reused: update.reused ?? false, detail: '',
+      ...(update.status === 'running' && update.evidence ? { input: structuredClone(update.evidence) } : {}) };
+    executions.push(current);
+  }
+  current.status = update.status; current.detail = (update.detail ?? '').slice(0, 8000);
+  current.reused = update.reused ?? false;
+  if (update.status !== 'running') {
+    current.finishedAt = now();
+    if (update.evidence) current.output = structuredClone(update.evidence);
+    if (update.turn) current.turn = { threadId: update.turn.threadId, turnId: update.turn.turnId };
+  }
+}
 function publicProgress(run: StoredRun): ProductionProgress {
   const { contractKey: _contract, recovery: _recovery, repairInputs: _inputs, ...progress } = structuredClone(run);
   return progress;
@@ -39,7 +101,7 @@ export class ProductionRunStore {
           || (run.budget !== undefined && !validBudget(run.budget))
           || (run.repairInputs !== undefined && (!run.repairInputs || typeof run.repairInputs !== 'object'
             || Object.values(run.repairInputs).some(value => typeof value !== 'string')))
-          || run.attempts.some(attempt => !validId(attempt.id) || !validTasks(attempt.tasks))
+          || run.attempts.some(attempt => !validId(attempt.id) || !validTasks(attempt.tasks) || !validExecutions(attempt.executions))
           || (run.recovery && (!validTurn(run.recovery.planner) || typeof run.recovery.sourceHash !== 'string'
             || !run.recovery.sourceHash || (run.recovery.implementation && !validTurn(run.recovery.implementation)))))) throw new Error('制作进度存储损坏，未覆盖原记录');
       this.#state = value;
@@ -61,18 +123,20 @@ export class ProductionRunStore {
     return this.#mutate(() => { this.#state.runs = this.#state.runs.filter(run => run.projectId !== projectId); });
   }
   begin(input: { projectId: string; planRunId: string; planVersionId: string; planTitle: string; contractKey: string;
-    continuation: boolean; coreLoop: boolean; visualSample: boolean }): Promise<{ session: ProductionSession; recovery: ProductionRecovery | null; context: string }> {
+    continuation: boolean; coreLoop: boolean; visualSample: boolean; requirementIds?: string[] }): Promise<{ session: ProductionSession; recovery: ProductionRecovery | null; context: string }> {
     if (![input.projectId, input.planRunId, input.planVersionId].every(validId)) throw new Error('制作进度 ID 无效');
     return this.#mutate(() => {
       let run = this.#state.runs.find(run => run.projectId === input.projectId && run.planRunId === input.planRunId);
-      if (run?.status === 'running') throw new Error('该方案仍有正在执行的制作任务');
+      if (this.#state.runs.some(value => value.projectId === input.projectId && value.status === 'running')) throw new Error('该工程仍有正在执行的制作任务');
+      if (run && run.planVersionId !== input.planVersionId) throw new Error('选定方案版本已变化，不能复用同一制作记录');
+      const contracts = productionContracts(input.coreLoop, input.visualSample, [...new Set(input.requirementIds ?? [])]);
       const context = run ? JSON.stringify({ previousStatus: run.status, tasks: run.tasks.map(task => ({ task: task.title, status: task.status, detail: task.detail.slice(0, 500) })),
         lastError: run.attempts.at(-1)?.error?.slice(0, 2000) ?? null }) : '';
       const recovery = input.continuation && run?.contractKey === input.contractKey ? structuredClone(run.recovery) : null;
       const tasks = (Object.keys(PRODUCTION_TASK_TITLES) as ProductionTaskId[]).map(id => ({
         id, title: PRODUCTION_TASK_TITLES[id], status: (id === 'repair' || (id === 'core-loop' && !input.coreLoop)
           || (id === 'visual-sample' && !input.visualSample)) ? 'not-needed' as const : 'pending' as const,
-        attempts: run?.tasks.find(task => task.id === id)?.attempts ?? 0, reused: false, detail: '', updatedAt: now(),
+        attempts: run?.tasks.find(task => task.id === id)?.attempts ?? 0, reused: false, detail: '', updatedAt: now(), contract: contracts[id],
       }));
       if (!run) {
         run = { projectId: input.projectId, planRunId: input.planRunId, planVersionId: input.planVersionId,
@@ -84,7 +148,7 @@ export class ProductionRunStore {
       run.tasks = tasks; run.status = 'running'; run.contractKey = input.contractKey; run.recovery = recovery;
       run.failure = null;
       run.recoveryNote = input.continuation ? recovery ? '正在核对工程版本，决定是否复用已完成回合' : '无匹配检查点，先核对现有工程并保留已有内容' : '按已选方案开始制作';
-      const attempt = { id: randomUUID(), startedAt: now(), finishedAt: null, status: 'running' as const, error: null, tasks: [] };
+      const attempt = { id: randomUUID(), startedAt: now(), finishedAt: null, status: 'running' as const, error: null, tasks: [], executions: [] };
       run.attempts.push(attempt); this.#touch(run);
       return { session: { projectId: run.projectId, planRunId: run.planRunId, attemptId: attempt.id }, recovery, context };
     });
@@ -93,6 +157,9 @@ export class ProductionRunStore {
     return this.#mutate(() => {
       const run = this.#active(session); if (!run) return null;
       const task = run.tasks.find(task => task.id === update.id); if (!task) throw new Error('未知制作任务');
+      if (update.status === 'pending' && task.status === 'running') throw new Error('正在执行的步骤不能重置为待执行');
+      if (update.status === 'not-needed' && task.status !== 'not-needed') throw new Error('不能跳过已启用的制作检查');
+      recordExecution(run, update);
       if (update.status === 'running') task.attempts += 1;
       Object.assign(task, { status: update.status, detail: (update.detail ?? '').slice(0, 8000), reused: update.reused ?? false, updatedAt: now() });
       if (update.reused) run.recoveryNote = '已核对工程与制作规则，复用完成回合；评审和交付验证重新执行';
@@ -180,6 +247,9 @@ export class ProductionRunStore {
     }
     run.status = status;
     const attempt = run.attempts.at(-1);
+    for (const execution of attempt?.executions ?? []) if (execution.status === 'running') {
+      execution.status = status === 'interrupted' ? 'interrupted' : 'failed'; execution.finishedAt = now(); execution.detail = detail ?? '';
+    }
     if (attempt) Object.assign(attempt, { status, finishedAt: now(), error: detail, tasks: structuredClone(run.tasks),
       failure: run.failure, budgetUsed: structuredClone(run.budget?.used) });
     this.#touch(run);

@@ -1,3 +1,4 @@
+import { productionEvidence } from './production/productionEvidence.js';
 import { ReferenceModel3dService } from './referenceModel3d.js';
 import { renderReferenceModel } from './referenceModelRenderer.js';
 import { PlanStore } from './planStore.js';
@@ -1764,7 +1765,8 @@ async function executeHarness(
       model, effort, imageGenerationRoute, audioMode: audioGenerationRequirement.state === 'free-library' ? 'free-library' : 'configured', promptAdditions })).digest('hex');
     const progressRun = await productionRuns.begin({ projectId: project.id, planRunId: draft.run!.id,
       planVersionId: draft.version!.id, planTitle: draft.version!.options.find(option => option.id === draft.run!.optionId)!.title,
-      contractKey, continuation, coreLoop, visualSample });
+      contractKey, continuation, coreLoop, visualSample,
+      requirementIds: draft.version!.options.find(option => option.id === draft.run!.optionId)!.requirementIds });
     productionSession = progressRun.session;
     publish(await productionRuns.read(project.id, draft.run!.id));
     if ((await projectStore.get(project.id)).status !== 'running') throw new GameHarnessStoppedError(project.id);
@@ -1812,7 +1814,13 @@ async function executeHarness(
         finally { publish(await productionRuns.read(project.id, draft.run!.id)); }
       },
       onRepairCompleted: async (stage, findings, sourceHash) => { await productionRuns.repairCompleted(progressRun.session, stage, findings, sourceHash); },
-      onTask: async update => { publish(await productionRuns.update(progressRun.session, update)); },
+      onTask: async update => {
+        const evidence = ['running', 'completed', 'needs-repair'].includes(update.status)
+          ? await productionEvidence({ projectId: project.id, root: project.root, engine: project.engine,
+            builds: godotBuildStore, assets: () => assetPlanStore.list(project.id) }) : undefined;
+        if (update.sourceHash && evidence && update.sourceHash !== evidence.sourceHash) throw new Error('回合结束后工程发生变化，不能保存过时检查点');
+        publish(await productionRuns.update(progressRun.session, { ...update, evidence }));
+      },
       onRecoveryInvalidated: async reason => { publish(await productionRuns.invalidate(progressRun.session, reason)); },
       model,
       effort,

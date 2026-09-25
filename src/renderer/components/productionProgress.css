@@ -18,4 +18,10 @@
 .production-budget ul { padding-left: 18px; line-height: 1.7; }
 .production-budget button { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
 .production-budget button:disabled { opacity: .6; cursor: wait; }
+.production-task-contract { grid-column: 1 / -1; min-width: 0; }
+.production-task-contract summary, .production-executions summary { cursor: pointer; overflow-wrap: anywhere; }
+.production-executions { margin: 10px 0; }
+.production-executions ol { list-style: none; padding: 0 0 0 8px; }
+.production-executions li { padding: 7px 0; border-bottom: 1px solid var(--line); }
+.production-progress code { overflow-wrap: anywhere; font-size: 11px; }
 @media (max-width: 700px) { .production-progress { margin-inline: 8px; } .production-progress-body { max-height: 190px; } }

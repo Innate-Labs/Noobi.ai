@@ -186,3 +186,58 @@ describe('persistent execution budgets and repeated failures', () => {
     expect((await store.read('project'))!.budget!.used.repairs).toBe(6);
   });
 });
+
+describe('phase dependencies and execution receipts', () => {
+  const evidence = { sourceHash: 'a'.repeat(64), assetsHash: 'b'.repeat(64) };
+  it('enforces enabled gates, one executing step, immutable plan selection and no verification reuse', async () => {
+    const { store } = await setup(); const first = await store.begin({ ...input, coreLoop: true, visualSample: true, requirementIds: ['R01', 'R02'] });
+    await expect(store.update(first.session, { id: 'implementer', status: 'running' })).rejects.toThrow('依赖未完成');
+    await expect(store.update(first.session, { id: 'core-loop', status: 'not-needed' })).rejects.toThrow('不能跳过');
+    await store.update(first.session, { id: 'planner', status: 'running', evidence });
+    await expect(store.update(first.session, { id: 'planner', status: 'running', evidence })).rejects.toThrow('重复');
+    await store.update(first.session, { id: 'planner', status: 'completed', evidence });
+    await expect(store.update(first.session, { id: 'visual-sample', status: 'running' })).rejects.toThrow('核心玩法');
+    for (const id of ['core-loop', 'visual-sample', 'implementer'] as const) await store.update(first.session, { id, status: 'completed', evidence });
+    await expect(store.update(first.session, { id: 'delivery', status: 'running', evidence })).rejects.toThrow('独立评审');
+    await expect(store.update(first.session, { id: 'reviewer', status: 'completed', reused: true, evidence })).rejects.toThrow('验证必须重新执行');
+    expect((await store.read('project'))!.tasks[0]!.contract?.requirementIds).toEqual(['R01', 'R02']);
+    await store.finish(first.session, 'interrupted');
+    await expect(store.begin({ ...input, planVersionId: 'changed', continuation: true })).rejects.toThrow('版本已变化');
+  });
+  it('rejects stale review and build evidence atomically, including changes between steps', async () => {
+    const { store } = await setup(); const { session } = await store.begin(input);
+    await store.update(session, { id: 'planner', status: 'completed', evidence });
+    await store.update(session, { id: 'implementer', status: 'completed', evidence });
+    const changed = { sourceHash: 'c'.repeat(64) };
+    await expect(store.update(session, { id: 'reviewer', status: 'running', evidence: changed })).rejects.toThrow('前一步完成后工程已变化');
+    await store.update(session, { id: 'reviewer', status: 'running', evidence });
+    const before = await store.read('project');
+    await expect(store.update(session, { id: 'reviewer', status: 'completed', evidence: changed })).rejects.toThrow('只读步骤');
+    await expect(store.update(session, { id: 'reviewer', status: 'completed', evidence: { ...evidence, build: { id: 'old', sourceHash: changed.sourceHash, artifactHash: 'd'.repeat(64) } } })).rejects.toThrow('源码版本不一致');
+    expect(await store.read('project')).toEqual(before);
+  });
+  it('unrolls repair and fresh host review into an acyclic graph and retains interrupted receipts on disk', async () => {
+    const { store, file } = await setup(); const { session } = await store.begin(input);
+    for (const id of ['planner', 'implementer'] as const) await store.update(session, { id, status: 'completed', evidence });
+    await store.update(session, { id: 'reviewer', status: 'needs-repair', evidence, detail: '真实输入未触发' });
+    await store.update(session, { id: 'reviewer', status: 'pending' });
+    await store.update(session, { id: 'repair', status: 'running', evidence });
+    const repaired = { sourceHash: 'c'.repeat(64) };
+    await store.update(session, { id: 'repair', status: 'completed', evidence: repaired, turn });
+    await store.update(session, { id: 'delivery', status: 'running', evidence: repaired });
+    await store.update(session, { id: 'delivery', status: 'completed', evidence: repaired });
+    await store.update(session, { id: 'reviewer', status: 'running', evidence: repaired });
+    const reopened = new ProductionRunStore(file); await reopened.init();
+    const progress = (await reopened.read('project'))!;
+    const receipts = progress.attempts[0]!.executions!;
+    expect(receipts.map(item => item.taskId)).toEqual(['planner', 'implementer', 'reviewer', 'repair', 'delivery', 'reviewer']);
+    const seen = new Set<string>();
+    for (const receipt of receipts) { expect(receipt.dependencies.every(id => seen.has(id))).toBe(true); seen.add(receipt.id); }
+    expect(receipts[2]!.detail).toBe('真实输入未触发');
+    expect(receipts[3]!.input?.sourceHash).toBe(evidence.sourceHash); expect(receipts[3]!.output?.sourceHash).toBe(repaired.sourceHash);
+    expect(receipts.at(-1)!.status).toBe('interrupted'); expect(receipts.at(-1)!.output).toBeUndefined();
+    const damaged = JSON.parse(await readFile(file, 'utf8')); damaged.runs[0].attempts[0].executions[0].dependencies = [receipts.at(-1)!.id];
+    await writeFile(file, JSON.stringify(damaged));
+    await expect(new ProductionRunStore(file).init()).rejects.toThrow('损坏');
+  });
+});
