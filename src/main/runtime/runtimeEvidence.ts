@@ -3,6 +3,7 @@ export interface RuntimePacket {
   version: 1; buildId: string; sequence: number; engineFrame: number; paused: boolean;
   state: Record<string, string | number | boolean>;
   nodes: Array<Record<string, unknown>>;
+  nodesTruncated?: boolean;
   findings: Array<{ code: string; severity: string; path?: string; message: string; characters?: string }>;
 }
 export interface RuntimeEvidence { stepId: string; packet: RuntimePacket | null; error?: string }
@@ -29,6 +30,7 @@ export function parseRuntimeEvidence(raw: unknown, buildId: string, previousSequ
   }
   if (Object.values(p.state).some((v) => !['number', 'boolean', 'string'].includes(typeof v)
     || (typeof v === 'number' && !Number.isFinite(v)))) throw new Error('运行状态值无效');
+  if (p.nodesTruncated !== undefined && typeof p.nodesTruncated !== 'boolean') throw new Error('运行采样截断标记无效');
   if (p.scene3d !== undefined && (!p.scene3d || p.scene3d.version !== 1 || typeof p.scene3d.scene !== 'string'
     || typeof p.scene3d.truncated !== 'boolean' || !Number.isSafeInteger(p.scene3d.visited) || p.scene3d.visited < 0 || p.scene3d.visited > 8000
     || !Array.isArray(p.scene3d.nodes) || p.scene3d.nodes.length > 600
@@ -85,7 +87,7 @@ export function visiblePhysicsMoved(before: RuntimePacket | undefined, after: Ru
       || node.position.length !== next.position.length) return false;
     const positions = [...node.position, ...next.position];
     return positions.every(v => typeof v === 'number' && Number.isFinite(v))
-      && node.position.some((v, i) => Math.abs(Number(v) - Number((next.position as unknown[])[i])) > 1);
+      && node.position.some((v, i) => Math.abs(Number(v) - Number((next.position as unknown[])[i])) > (node.class === 'CharacterBody3D' ? 0.01 : 1));
   });
 }
 

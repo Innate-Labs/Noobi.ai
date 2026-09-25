@@ -575,7 +575,7 @@ export async function writeGameplayExperienceFailureReport(
 export async function writeSceneQualityEvidence(projectRoot: string, report: GameplayExperienceReport): Promise<void> {
   if (!report.sceneQuality || report.sceneQuality.buildId !== report.build?.buildId) throw new Error('场景证据与构建不一致');
   const root = await resolveSafeProjectRoot(projectRoot);
-  await safeWriteProjectFile(root, 'artifacts/playtest/latest/report.json', `${JSON.stringify(report, null, 2)}\n`);
+  await safeWriteProjectFile(root, join(root, 'artifacts/playtest/latest/report.json'), `${JSON.stringify(report, null, 2)}\n`);
 }
 
 export async function archiveLatestGameplayExperienceReport(projectRoot: string): Promise<void> {

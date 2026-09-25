@@ -10,6 +10,8 @@ import {
   parseGameplayPlaytestManifest,
   readLatestGameplayExperienceReport,
   sampledBitmapDifference,
+  writeGameplayExperienceFailureReport,
+  writeSceneQualityEvidence,
   type GameplayBrowserWindow,
   type GameplayBrowserWindowFactory,
   type GameplayCapturedImage,
@@ -21,6 +23,37 @@ const temporaryRoots: string[] = [];
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe('scene report persistence', () => {
+  async function sceneReport() {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-scene-report-')); temporaryRoots.push(root);
+    const report = await writeGameplayExperienceFailureReport(root, 'fixture');
+    report.build = { buildId: 'build-1', sourceHash: 'source-1', artifactHash: 'artifact-1', testSuiteVersion: 'v1' };
+    report.sceneQuality = { version: 1, buildId: 'build-1', sourceHash: 'source-1', artifactHash: 'artifact-1',
+      status: 'repair', checkedAt: report.checkedAt, scope: 'sample', observedGeometry: 4, coveredGeometry: 3,
+      proceduralGeometry: 2, findings: ['missing material'], reviewRequired: ['review screenshots'], reportPath: report.reportPath };
+    return { root, report };
+  }
+  it('updates the project report when the application cwd is outside that project', async () => {
+    const { root, report } = await sceneReport();
+    await writeSceneQualityEvidence(root, report);
+    expect(JSON.parse(await readFile(join(root, report.reportPath), 'utf8')).sceneQuality).toEqual(report.sceneQuality);
+  });
+  it('rejects a report from a different build without replacing the original', async () => {
+    const { root, report } = await sceneReport(); report.sceneQuality!.buildId = 'old-build';
+    const before = await readFile(join(root, report.reportPath), 'utf8');
+    await expect(writeSceneQualityEvidence(root, report)).rejects.toThrow('构建不一致');
+    expect(await readFile(join(root, report.reportPath), 'utf8')).toBe(before);
+  });
+  it('does not follow a replaced evidence report symlink', async () => {
+    const { root, report } = await sceneReport();
+    const outside = await mkdtemp(join(tmpdir(), 'noobi-outside-report-')); temporaryRoots.push(outside);
+    const file = join(outside, 'untouched.json'); await writeFile(file, 'untouched');
+    await rm(join(root, report.reportPath)); await symlink(file, join(root, report.reportPath));
+    await expect(writeSceneQualityEvidence(root, report)).rejects.toThrow('符号链接');
+    expect(await readFile(file, 'utf8')).toBe('untouched');
+  });
 });
 
 describe('gameplay experience pure checks', () => {

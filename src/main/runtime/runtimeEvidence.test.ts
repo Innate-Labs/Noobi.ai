@@ -34,6 +34,13 @@ describe('runtime evidence is an observation, never a self-reported verdict', ()
     expect(() => parseRuntimeEvidence(wrap(), 'build-1', 3)).toThrow('时序');
     expect(() => parseRuntimeEvidence(null, 'build-1')).toThrow('缺失');
   });
+  it('measures 3D movement in world units instead of requiring a one metre step', () => {
+    const before = { ...parseRuntimeEvidence(wrap(), 'build-1'), nodes: [{ path: 'Knight', class: 'CharacterBody3D', visible: true, inViewport: true, position: [0, 1, 0] }] };
+    const after = { ...before, sequence: 3, nodes: [{ ...before.nodes[0]!, position: [0.04, 1, 0] }] };
+    expect(visiblePhysicsMoved(before, after)).toBe(true);
+    expect(visiblePhysicsMoved(before, { ...after, nodes: [{ ...after.nodes[0]!, position: [0.001, 1, 0] }] })).toBe(false);
+    expect(visiblePhysicsMoved(before, { ...after, nodes: [{ ...after.nodes[0]!, inViewport: false }] })).toBe(false);
+  });
   it('checks typed state values without evaluating user-provided expressions', () => {
     const p = parseRuntimeEvidence(wrap(), 'build-1');
     expect(runtimeAssertionPassed(p, parseRuntimeAssertion('{"key":"score","minimum":1}'))).toBe(true);

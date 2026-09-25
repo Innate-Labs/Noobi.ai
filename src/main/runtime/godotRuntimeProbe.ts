@@ -29,6 +29,9 @@ var ticks := 0
 var sequence := 0
 var findings: Array = []
 var nodes: Array = []
+var node_priorities: Array = []
+var nodes_truncated := false
+var critical_nodes_truncated := false
 var scene_nodes: Array = []
 var watched_bodies: Array = []
 var contact_history: Dictionary = {}
@@ -51,6 +54,9 @@ func _process(_delta: float) -> void:
     sequence += 1
     findings = []
     nodes = []
+    node_priorities = []
+    nodes_truncated = false
+    critical_nodes_truncated = false
     scene_nodes = []
     watched_bodies = []
     visited = 0
@@ -63,7 +69,7 @@ func _process(_delta: float) -> void:
             var value: Variant = scene.get(key)
             if typeof(value) in [TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME]:
                 values[key] = value
-    var packet := {"version": 1, "buildId": BUILD_ID, "sequence": sequence, "engineFrame": Engine.get_process_frames(), "paused": get_tree().paused, "state": values, "nodes": nodes, "findings": findings, "scene3d": {"version": 1, "scene": scene.scene_file_path, "visited": visited, "truncated": scene_truncated, "nodes": scene_nodes}}
+    var packet := {"version": 1, "buildId": BUILD_ID, "sequence": sequence, "engineFrame": Engine.get_process_frames(), "paused": get_tree().paused, "state": values, "nodes": nodes, "nodesTruncated": nodes_truncated, "findings": findings, "scene3d": {"version": 1, "scene": scene.scene_file_path, "visited": visited, "truncated": scene_truncated, "nodes": scene_nodes}}
     var encoded: String = JSON.stringify(packet)
     if encoded.length() > 240000:
         packet["scene3d"]["nodes"] = []
@@ -108,6 +114,9 @@ func _collect(node: Node, scene: Node) -> void:
         item["inViewport"] = node.get_viewport_rect().has_point(node.get_global_transform_with_canvas().origin)
     elif node is Node3D:
         item["position"] = [node.global_position.x, node.global_position.y, node.global_position.z]
+        item["visible"] = node.is_visible_in_tree()
+        var active_camera: Camera3D = node.get_viewport().get_camera_3d()
+        item["inViewport"] = active_camera != null and not active_camera.is_position_behind(node.global_position) and node.get_viewport().get_visible_rect().has_point(active_camera.unproject_position(node.global_position))
     if node is CharacterBody2D:
         item["velocity"] = [node.velocity.x, node.velocity.y]
         item["onFloor"] = node.is_on_floor()
@@ -167,13 +176,42 @@ func _collect(node: Node, scene: Node) -> void:
                         absent += character
             if not absent.is_empty():
                 findings.append({"code": "missing-glyphs", "severity": "error", "path": item["path"], "characters": absent, "message": "Visible UI text has characters absent from the bound font."})
-    if nodes.size() < 350:
-        nodes.append(item)
+    _record_node(node, item)
     for child: Node in node.get_children():
         if visited >= 8000:
             scene_truncated = true
             break
         _collect(child, scene)
+
+func _record_node(node: Node, item: Dictionary) -> void:
+    # Meshes, cameras and spatial groups already have a separate 3D inventory.
+    # Preserve physics motion in the common stream, without letting GLB parts crowd out HUD.
+    if node is Node3D and not node is PhysicsBody3D:
+        return
+    var priority := 0
+    if node is CanvasItem:
+        priority = 1
+    if node is Control:
+        priority = 3 if node.is_visible_in_tree() else 2
+    if node is PhysicsBody2D or node is PhysicsBody3D:
+        priority = 3
+    if nodes.size() < 350:
+        nodes.append(item)
+        node_priorities.append(priority)
+        return
+    nodes_truncated = true
+    var lowest := 0
+    for index: int in range(node_priorities.size()):
+        if node_priorities[index] < node_priorities[lowest]:
+            lowest = index
+        if node_priorities[lowest] == 0:
+            break
+    if priority > node_priorities[lowest]:
+        nodes[lowest] = item
+        node_priorities[lowest] = priority
+    elif priority == 3 and not critical_nodes_truncated:
+        critical_nodes_truncated = true
+        findings.append({"code": "critical-telemetry-truncated", "severity": "error", "message": "Visible controls or physics bodies exceed the bounded telemetry budget; split the validation journey or scene."})
 
 func _texture_path(texture: Texture2D) -> String:
     if texture is AtlasTexture:
