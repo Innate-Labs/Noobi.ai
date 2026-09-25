@@ -15,7 +15,7 @@ import { ProductionRunStore } from './production/productionRunStore.js';
 import { GameVersionStore } from './production/gameVersionStore.js';
 import { GameVersionRestorer } from './production/gameVersionRestorer.js';
 import type { GameVersion, RestoreGameVersionInput } from '../shared/gameVersions.js';
-import type { ProductionProgress, ProductionSession } from '../shared/productionProgress.js';
+import type { ProductionProgress, ProductionSession, ProductionTaskUpdate } from '../shared/productionProgress.js';
 import { latestProjectPlan, type GeneratePlansInput, type PlanDraft, type PlanOption, type StartPlanInput, type ResumeProjectInput, type SavePlanEditsInput, type RevisePlansInput } from '../shared/planning.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -88,7 +88,7 @@ import type { VisualSampleValidation } from './production/visualSampleMilestone.
 import { journeyFeedback } from './runtime/journeyFeedback.js';
 import { buildGodotCandidate } from './production/godotBuilder.js';
 import { classifyDeliveryFailure, ExternalDeliveryBlockedError } from './production/deliveryFailure.js';
-import { gameQualitySpec, supportsVisualSample } from './production/gameQualitySpec.js';
+import { gameQualitySpec, supportsCoreLoop, supportsVisualSample } from './production/gameQualitySpec.js';
 import { gameGoalFindings } from './quality/gameGoalEvidence.js';
 import {
   archiveLatestGameplayExperienceReport,
@@ -1752,7 +1752,7 @@ async function executeHarness(
   productionFinalizations.add(project.id);
   try {
     const specification = (await projectQualitySpec(project));
-    const coreLoop = project.engine === 'godot' && specification.genre === 'platformer';
+    const coreLoop = project.engine === 'godot' && supportsCoreLoop(specification);
     const visualSample = project.engine === 'godot' && supportsVisualSample(specification);
     const engine = project.engine === 'godot' ? await godotEnvironmentService.getStatus() : null;
     const policySource = await Promise.all([readFile(fileURLToPath(import.meta.url)), readFile(new URL('./gameHarness.js', import.meta.url))]);
@@ -1767,6 +1767,13 @@ async function executeHarness(
       planVersionId: draft.version!.id, planTitle: draft.version!.options.find(option => option.id === draft.run!.optionId)!.title,
       contractKey, continuation, coreLoop, visualSample,
       requirementIds: draft.version!.options.find(option => option.id === draft.run!.optionId)!.requirementIds });
+    const recordTask = async (update: ProductionTaskUpdate) => {
+      const evidence = ['running', 'completed', 'needs-repair'].includes(update.status)
+        ? await productionEvidence({ projectId: project.id, root: project.root, engine: project.engine,
+          builds: godotBuildStore, assets: () => assetPlanStore.list(project.id) }) : undefined;
+      if (update.sourceHash && evidence && update.sourceHash !== evidence.sourceHash) throw new Error('回合结束后工程发生变化，不能保存过时检查点');
+      publish(await productionRuns.update(progressRun.session, { ...update, evidence }));
+    };
     productionSession = progressRun.session;
     publish(await productionRuns.read(project.id, draft.run!.id));
     if ((await projectStore.get(project.id)).status !== 'running') throw new GameHarnessStoppedError(project.id);
@@ -1814,13 +1821,7 @@ async function executeHarness(
         finally { publish(await productionRuns.read(project.id, draft.run!.id)); }
       },
       onRepairCompleted: async (stage, findings, sourceHash) => { await productionRuns.repairCompleted(progressRun.session, stage, findings, sourceHash); },
-      onTask: async update => {
-        const evidence = ['running', 'completed', 'needs-repair'].includes(update.status)
-          ? await productionEvidence({ projectId: project.id, root: project.root, engine: project.engine,
-            builds: godotBuildStore, assets: () => assetPlanStore.list(project.id) }) : undefined;
-        if (update.sourceHash && evidence && update.sourceHash !== evidence.sourceHash) throw new Error('回合结束后工程发生变化，不能保存过时检查点');
-        publish(await productionRuns.update(progressRun.session, { ...update, evidence }));
-      },
+      onTask: recordTask,
       onRecoveryInvalidated: async reason => { publish(await productionRuns.invalidate(progressRun.session, reason)); },
       model,
       effort,
@@ -1833,7 +1834,7 @@ async function executeHarness(
       targetFrameRate,
       promptAdditions,
       qualitySpecification: (await projectQualitySpec(project)),
-      ...(project.engine === 'godot' && (await projectQualitySpec(project)).genre === 'platformer' ? {
+      ...(coreLoop ? {
         validateCoreLoop: async (signal: AbortSignal) => {
           const report = await evaluateProjectExperience(project, { signal, preflight: 'required' });
           const findings = [
@@ -1884,7 +1885,7 @@ async function executeHarness(
         signal,
       ),
     });
-    publish(await productionRuns.update(progressRun.session, { id: 'delivery', status: 'running', detail: '正在核对最终构建与交付记录' }));
+    await recordTask({ id: 'delivery', status: 'running', detail: '正在核对最终构建与交付记录' });
     await Promise.allSettled([previews.stop(project.id), assetPreviews.stop(project.id), playtestPreviews.stop(project.id)]);
     await waitForAssetIngestions(project.id);
     if (project.engine === 'godot') {
@@ -1894,7 +1895,7 @@ async function executeHarness(
       await godotBuildStore.verifyArtifacts(deliveredBuild);
       await productionCheckpoints.accept('delivery', deliveredBuild);
     }
-    publish(await productionRuns.update(progressRun.session, { id: 'delivery', status: 'completed', detail: '当前构建及交付检查通过' }));
+    await recordTask({ id: 'delivery', status: 'completed', detail: '当前构建及交付检查通过' });
     const deliveredBuild = project.engine === 'godot' ? await godotBuildStore.latest(project.id) : null;
     if (deliveredBuild) { await godotBuildStore.assertCurrent(deliveredBuild); await godotBuildStore.verifyArtifacts(deliveredBuild); }
     await gameVersions.capture({ metadata: { ...await gameVersionRestorer.metadata(project), plan: draft }, kind: 'passed', title: '交付检查通过',

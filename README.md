@@ -54,6 +54,10 @@ Godot 3D production now validates a representative scene before expanding conten
 
 The experience report separates automatic scene checks from visual-review priorities. Complete registration does not certify appearance: the independent reviewer still inspects screenshots for placeholder art, style, proportions, lighting, occlusion and collision alignment. This probe currently covers Godot 3D, not Web Three.js scenes; unobserved, undeclared levels are not certified. See the [scene-quality acceptance report](docs/development-plan/reports/10-platform-scene-quality.md).
 
+### Reusable 3D mechanics
+
+New Godot projects include optional versioned third-person control, collision camera, interaction, melee/enemy and checkpoint components in `runtime/noobi/ADVENTURE_V1.md` and `CHECKPOINT_V1.md`. Use only mechanics selected in the plan and supply game-specific visuals, collision shapes and save validation. Real Godot physics and browser drag-camera/checkpoint fixtures have been exercised; these fixtures are not generated games or finished artwork. Native pointer capture remains unverified in the tested Electron environment. The [stage 06 report](docs/development-plan/reports/06-delivery.md) tracks remaining autonomous-generation acceptance.
+
 ### Free game audio by default
 
 Noobi bundles 2 music tracks and 16 sound effects under CC0. Music and SFX requests select and import these local files without audio API calls; they retain author, source and license metadata. This is a small existing library, not custom composition. Voice recordings are not included. To use a configured audio service, explicitly choose it in Settings → Media API and save. See [audio sources and licenses](resources/free-audio/LICENSES.md).

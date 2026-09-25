@@ -24,8 +24,8 @@
 | [02](02-plan-editing.md) | 方案编辑、自带计划与变更方案 | 待用户验收 | `0ad9d31` | [交付报告](reports/02-delivery.md) | 未验收；用户已授权连续推进开发 |
 | [03](03-image-reference.md) | 截图参考与可靠的视觉输入 | 待用户验收 | `aa10ac7` | [交付报告](reports/03-delivery.md) | 未验收 |
 | [04](04-video-reference.md) | 短视频玩法理解与方案生成 | 待用户验收 | `56f5017` | [交付报告](reports/04-delivery.md) | 未验收 |
-| [05](05-production-runtime.md) | 持久化制作、恢复与可玩版本 | 待用户验收 | 本轮提交 | [交付报告](reports/05-delivery.md) | 未验收 |
-| [06](06-3d-playable-slice.md) | 第三人称 3D 基础与可玩样板 | 开发中（部分专项/样板） | 本地工作树 | 见专项记录 | 整阶段未验收 |
+| [05](05-production-runtime.md) | 持久化制作、恢复与可玩版本 | 待用户验收 | `87c5650` | [交付报告](reports/05-delivery.md) | 未验收 |
+| [06](06-3d-playable-slice.md) | 第三人称 3D 基础与可玩样板 | 开发中（通用组件与真实运行） | 本地工作树 | [开发记录](reports/06-delivery.md) | 整阶段未验收 |
 | [07](07-3d-assets.md) | 统一风格与游戏可用 3D 资产 | 开发中（部分专项/样板） | 本地工作树 | 见专项记录 | 整阶段未验收 |
 | [08](08-complete-game.md) | 多区域、任务成长与完整游戏 | 开发中（部分专项/样板） | 本地工作树 | 见专项记录 | 整阶段未验收 |
 | [09](09-quality-and-reference-match.md) | 参考对照、长流程与体验质量 | 开发中（部分专项/样板） | 本地工作树 | 见专项记录 | 整阶段未验收 |

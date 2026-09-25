@@ -1,3 +1,5 @@
+import { CHECKPOINT_KIT, CHECKPOINT_GUIDE } from './runtime/checkpointKit.js';
+import { ADVENTURE_KIT_FILES } from './runtime/adventureKit.js';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import {
@@ -194,6 +196,9 @@ function workspaceFiles(project: WorkspaceProject): Record<string, string> {
       [NOOBI_GODOT_ICON_PATH]: NOOBI_GODOT_ICON_SVG,
       'scenes/main.tscn': godotMainScene(),
       'scripts/main.gd': godotMainScript(project),
+      ...ADVENTURE_KIT_FILES,
+      'runtime/noobi/checkpoint_v1.gd': CHECKPOINT_KIT,
+      'runtime/noobi/CHECKPOINT_V1.md': CHECKPOINT_GUIDE,
       'runtime/noobi/platformer_controller.gd': PLATFORMER_CONTROLLER,
       'runtime/noobi/README.md': PLATFORMER_KIT_GUIDE,
       'runtime/noobi/presentation_v1.gd': PRESENTATION_KIT,

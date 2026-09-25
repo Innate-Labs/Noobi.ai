@@ -54,6 +54,10 @@ Godot 3D 制作现在先检查代表性场景，再扩展内容，最终交付�
 
 体验报告新增「3D 场景检查」，分开展示自动覆盖核对与画面审查重点。登记齐全不等于画面合格；独立 Reviewer 仍须检查实际截图中的占位外观、风格、比例、灯光、遮挡与穿模。当前检查支持 Godot 3D，Web Three.js 场景尚未接入此探针；未覆盖或未声明的隐藏关卡不能因此被认定完成。见 [场景质量专项与验收步骤](docs/development-plan/reports/10-platform-scene-quality.md)。
 
+### 可复用的 3D 玩法组件
+
+新 Godot 工程提供可选的第三人称控制、碰撞相机、交互、近战/敌人与检查点组件，说明位于 `runtime/noobi/ADVENTURE_V1.md` 和 `CHECKPOINT_V1.md`。只组合选定方案需要的机制，游戏仍须配置外观、碰撞形状和存档规则。真实 Godot 物理与浏览器拖拽镜头/检查点测试已经运行；工程测试场景不代表自主生成游戏或最终美术。当前 Electron 环境的原生鼠标锁定尚未通过，完整生成验收进度见 [阶段 06 报告](docs/development-plan/reports/06-delivery.md)。
+
 ## 为什么选择 Noobi.ai
 
 | | 你会得到什么 |

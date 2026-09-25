@@ -14,6 +14,10 @@ export interface GameQualitySpec {
   milestones: Array<{ id: string; acceptance: string }>;
 }
 
+export function supportsCoreLoop(spec: GameQualitySpec): boolean {
+  return spec.genre === 'platformer' || (spec.presentation === '3d' && spec.interactionMode === 'real-time');
+}
+
 export function supportsVisualSample(spec: GameQualitySpec): boolean {
   return spec.presentation === '3d' || spec.genre === 'platformer';
 }
@@ -69,6 +73,7 @@ export function qualitySpecPrompt(spec: GameQualitySpec): string {
     + 'Inspect Control rect/minimumSize and TextureRect textureSize/expandMode for oversized UI; inspect Sprite2D scale/frame/region/offset for art binding and foot anchors. '
     + 'customDraw marks nodes whose text and geometry need screenshot review: Label/Button font checks do not certify custom-drawn text. '
     + 'New Godot workspaces include runtime/noobi/platformer_controller.gd and its README; reuse its tested physics when appropriate, keeping level design and art separate. '
+    + 'For selected third-person 3D mechanics, new Godot workspaces also provide runtime/noobi/ADVENTURE_V1.md with optional camera-relative control, step/slope physics, collision camera, interaction and melee components. Read the guide, wire their real state and visuals, and keep unrequested combat out of noncombat games. These are reusable mechanics, not an existing completed game. '
     + 'Use runtime-state observations alongside screenshots, with value as JSON such as {"key":"state","equals":"won"}. '
     + 'Supported root state keys include state, phase, score, lives, collected, has_relic, seal_broken, turn_number, player_health, enemy_health, mana; paused is observed by the host bridge. '
     + 'For supported Godot game genres, expose real root state as ready/playing/paused/won/lost (or phase with these values). '
