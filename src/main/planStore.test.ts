@@ -26,6 +26,24 @@ async function ready(store: PlanStore) {
   return { draftId: d.id, versionId: 'version-1', optionId: 'option-1' } satisfies StartPlanInput;
 }
 describe('PlanStore and production reservation', () => {
+  it('does not reserve a run when folder preflight fails; corrected inputs can start once', async () => {
+    const { store } = await setup(); const input = await ready(store);
+    const project = { id: 'preflight-project' } as ProjectRecord;
+    const preflight = vi.fn().mockRejectedValueOnce(new Error('missing directory')).mockResolvedValue(undefined);
+    const prepare = vi.fn(async () => project);
+    const starter = new PlanStarter(store, { preflight, prepare, dispatch: async () => project, getProject: async () => project });
+    await expect(starter.start(input)).rejects.toThrow('missing directory');
+    expect((await store.get(input.draftId)).run).toBeNull();
+    await starter.start(input); expect(prepare).toHaveBeenCalledTimes(1);
+  });
+  it('copies only failed unbound plans and retains original analysis and failed reservation', async () => {
+    const { store } = await setup(); const input = await ready(store);
+    await store.reserve(input); await store.markRun(input.draftId, 'failed', 'missing directory');
+    const copy = await store.copyFailedUnbound(input.draftId);
+    expect(copy.run).toBeNull(); expect(copy.copiedFromDraftId).toBe(input.draftId); expect(copy.analysisAttempts).toEqual([]);
+    expect((await store.get(input.draftId)).run?.error).toBe('missing directory');
+    await store.bindProject(input.draftId, 'real-project'); await expect(store.copyFailedUnbound(input.draftId)).rejects.toThrow('尚未绑定');
+  });
   it('rejects missing selection and stale versions before creating a project', async () => {
     const { store } = await setup(); const input = await ready(store);
     const prepare = vi.fn(); const starter = new PlanStarter(store, { prepare, dispatch: vi.fn(), getProject: vi.fn() });

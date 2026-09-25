@@ -14,6 +14,7 @@ import { PlanResumer, continuationPrompt } from './planResumer.js';
 import { ProductionRunStore } from './production/productionRunStore.js';
 import { FreeModelLibrary } from './freeModelLibrary.js';
 import { GameVersionStore } from './production/gameVersionStore.js';
+import { exportGameWeb } from './production/gameWebExport.js';
 import { GameVersionRestorer } from './production/gameVersionRestorer.js';
 import type { GameVersion, RestoreGameVersionInput } from '../shared/gameVersions.js';
 import type { ProductionProgress, ProductionSession, ProductionTaskUpdate } from '../shared/productionProgress.js';
@@ -282,6 +283,13 @@ async function launch(): Promise<void> {
   });
   planStarter = new PlanStarter(planStore, {
     getProject: id => projectStore.get(id),
+    preflight: async (draft, input, attachments) => {
+      if (draft.projectId) return;
+      const count = [attachments[0], attachments[1]].reduce<number>((n, value) => n + (Array.isArray(value) ? value.length : 0), 0);
+      if (count !== draft.attachmentCount) throw new Error('附件数量与规划时不一致，请重新添加参考附件');
+      if (typeof input.projectDirectory !== 'string') throw new Error('请选择项目文件夹');
+      await resolveEmptyProjectDirectory(input.projectDirectory);
+    },
     prepare: async (draft, option, input, attachments) => {
       if (draft.projectId) {
         const project = await projectStore.get(draft.projectId);
@@ -769,6 +777,30 @@ async function dispatchApprovedProject(input: RunProjectInput, draft: PlanDraft,
 }
 
 function bindIpc(): void {
+  handle('noobi:plans:copy-failed', (_event, draftId: string) => planStore.copyFailedUnbound(draftId));
+  handle('noobi:versions:export-web', async (_event, projectId: string, versionId: string) => {
+    const project = await projectStore.get(validateProjectId(projectId));
+    if (typeof versionId !== 'string') throw new Error('版本 ID 无效');
+    let root: string; let directory: string; let status: string; let binding: Record<string,string>; let verify: () => Promise<void>;
+    if (versionId.startsWith('legacy-')) {
+      const build = await godotBuildStore.get(project.id, versionId.slice(7));
+      if (build.record.status !== 'built') throw new Error('该构建未完成');
+      root = build.root; directory = 'build/web'; status = '历史构建，未声明完整交付验收';
+      binding = { buildId: build.record.buildId, sourceHash: build.record.sourceHash, artifactHash: build.record.artifactHash };
+      verify = async () => { await godotBuildStore.verifyInputs(build); await godotBuildStore.verifyArtifacts(build); };
+    } else {
+      const record = await gameVersions.read(project.id, versionId);
+      if (!record.canPreview || !record.previewDirectory) throw new Error('该版本没有可玩产物');
+      root = await gameVersions.verify(record); directory = record.previewDirectory; status = record.kind;
+      binding = { versionId: record.id, snapshotHash: createHash('sha256').update(JSON.stringify(record.files)).digest('hex') };
+      verify = async () => { await gameVersions.verify(record); };
+    }
+    const options = { title: '选择 Web 试玩包保存位置', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
+    const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    if (selection.canceled || !selection.filePaths[0]) return null;
+    const result = await exportGameWeb({ root, directory, destinationParent: selection.filePaths[0], versionId, title: project.name, status, binding, verify });
+    shell.showItemInFolder(result.path); return result;
+  });
   handle('noobi:versions:list', async (_event, projectId: string): Promise<GameVersion[]> => {
     const project = await projectStore.get(validateProjectId(projectId));
     const versions = await gameVersions.list(project.id);

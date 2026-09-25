@@ -38,6 +38,16 @@ export class PlanStore {
     });
   }
   async list(): Promise<PlanDraft[]> { await this.#queue; return structuredClone(this.#drafts); }
+  copyFailedUnbound(id: string): Promise<PlanDraft> {
+    return this.#mutate(() => {
+      const source = this.#find(id);
+      if (source.projectId || source.run?.projectId || source.run?.status !== 'failed' || !source.version || source.status !== 'ready') throw new Error('只可复制尚未绑定项目的启动失败方案');
+      const draft: PlanDraft = { ...structuredClone(source), id: randomUUID(), copiedFromDraftId: source.id,
+        updatedAt: new Date().toISOString(), run: null, error: null, analysisAttempts: [] };
+      // Reuses unchanged model-authored options; original analysis and failed launch remain at source.id.
+      this.#drafts.push(draft); return draft;
+    });
+  }
   importRestored(source: PlanDraft, projectId: string): Promise<PlanDraft> {
     return this.#mutate(() => {
       if (!source.version || !source.run || source.run.versionId !== source.version.id

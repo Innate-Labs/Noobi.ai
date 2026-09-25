@@ -94,7 +94,8 @@ export function PlanDialog({ initial, files = [], onClose, onStarted }: {
           {!!draft.history?.length && <details className="plan-version-history"><summary>版本历史与差异 · {draft.history.length + 1} 版</summary>{[...draft.history, draft.version].slice().reverse().map(version => <details key={version.id}><summary>第 {version.number} 版 · {version.authoredBy === 'user' ? '手动编辑' : '模型生成'}</summary><p>{new Date(version.createdAt).toLocaleString()}</p><ul>{(version.changes ?? []).map((change, i) => <li key={i}>{change.split(' · ').map(planFieldLabel).join(' · ')}</li>)}</ul>{version.options.map(option => <div key={option.id}><strong>{option.title}</strong><p>{option.approach}</p><ol>{option.coreLoop.map((step, i) => <li key={i}>{step}</li>)}</ol></div>)}</details>)}</details>}
         </>}
         {!generating && !ready && !draft.error && !draft.run && <div className="plan-loading"><h3>规划已取消</h3><p>你的文字需求已保存，可以重新生成。</p></div>}
-        {draft.run && <p className="plan-analysis-note">此版本已保留一次启动记录。{draft.run.status === 'dispatched' ? '对应制作任务已经启动，请到项目查看。' : '请先检查项目状态，再重新规划；不会重复创建制作任务。'}</p>}
+        {draft.run && <p className="plan-analysis-note">此版本已保留一次启动记录。{draft.run.status === 'dispatched' ? '对应制作任务已经启动，请到项目查看。' : '请先检查项目状态；尚未绑定项目的失败方案可复制后重新选择文件夹。'}</p>}
+        {draft.run?.status === 'failed' && !draft.run.projectId && !draft.projectId && <button type="button" disabled={busy} onClick={() => void action(async () => { setSelected(null); setDraft(await window.noobi.copyFailedPlan(draft.id)); })}>复制方案重新开始 · 保留失败记录</button>}
       </div>
       <footer className="plan-footer">
         <div>{chosen && ready ? <><strong>{chosen.title}</strong><small>将按当前显示的方案版本制作</small></> : <><strong>{generating ? '正在分析需求' : '由你决定什么时候开始'}</strong><small>选择方案不会自动启动</small></>}</div>

@@ -6,6 +6,7 @@ import { PlanStore } from './planStore.js';
 export class PlanStarter {
   #inFlight = new Map<string, { selection: string; promise: Promise<ProjectRecord> }>();
   constructor(private readonly store: PlanStore, private readonly dependencies: {
+    preflight?(draft: PlanDraft, input: StartPlanInput, attachments: unknown[]): Promise<void>;
     prepare(draft: PlanDraft, option: PlanOption, input: StartPlanInput, attachments: unknown[]): Promise<ProjectRecord>;
     dispatch(project: ProjectRecord, draft: PlanDraft): Promise<ProjectRecord>;
     getProject(id: string): Promise<ProjectRecord>;
@@ -19,6 +20,8 @@ export class PlanStarter {
     this.#inFlight.set(input.draftId, { selection, promise }); return promise;
   }
   async #start(input: StartPlanInput, attachments: unknown[]): Promise<ProjectRecord> {
+    const candidate = await this.store.get(input.draftId);
+    if (!candidate.run) await this.dependencies.preflight?.(candidate, input, attachments);
     const { draft, fresh } = await this.store.reserve(input);
     if (!fresh) {
       if (draft.run?.status === 'dispatched' && draft.run.projectId) return this.dependencies.getProject(draft.run.projectId);

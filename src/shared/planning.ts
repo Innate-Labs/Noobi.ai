@@ -88,6 +88,7 @@ export interface PlanAnalysisAttempt {
   status: 'generating' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 }
 export interface PlanDraft {
+  copiedFromDraftId?: string;
   video?: VideoSelection;
   videoSpecOverride?: VideoSpec;
   references?: ReferenceSelection[];

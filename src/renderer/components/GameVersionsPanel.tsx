@@ -6,6 +6,7 @@ const labels = { passed: '交付检查通过', failed: '制作失败', backup: '
 export function GameVersionsPanel({ project, refreshSignal, onRestored }: { project: ProjectRecord; refreshSignal: number; onRestored: (project: ProjectRecord) => void }) {
   const [versions, setVersions] = useState<GameVersion[]>([]); const [error, setError] = useState('');
   const [busy, setBusy] = useState(false); const pending = useRef(false);
+  const [exported, setExported] = useState('');
   const [preview, setPreview] = useState<{ version: GameVersion; url: string } | null>(null);
   const [confirm, setConfirm] = useState<GameVersion | null>(null);
   const request = useRef<{ versionId: string; id: string } | null>(null);
@@ -31,6 +32,11 @@ export function GameVersionsPanel({ project, refreshSignal, onRestored }: { proj
     await window.noobi.backupGameVersion(project.id);
     const next = await window.noobi.listGameVersions(project.id); if (mounted.current && selection.current === project.id) setVersions(next);
   });
+  const exportWeb = (version: GameVersion) => void perform(async () => {
+    setExported('');
+    const result = await window.noobi.exportGameVersionWeb(project.id, version.id);
+    if (result && mounted.current && selection.current === project.id) setExported(`已导出 ${result.files} 个文件：${result.path}。这是 Web 试玩包，请按包内说明通过 HTTP 服务打开。`);
+  });
   const restore = () => void perform(async () => {
     if (!confirm) return;
     if (request.current?.versionId !== confirm.id) request.current = { versionId: confirm.id, id: crypto.randomUUID() };
@@ -47,6 +53,7 @@ export function GameVersionsPanel({ project, refreshSignal, onRestored }: { proj
         <button type="button" disabled={busy || project.status === 'running'} onClick={backup}>保存当前工程备份</button>
       </div>
       {error && <p role="alert">{error}</p>}
+      {exported && <p role="status">{exported}</p>}
       {!versions.length && <p>尚无完整版本记录。可先保存备份；之后成功交付会自动存档。</p>}
       <ol>{versions.map(version => <li key={version.id}>
         <div><strong>{version.title}</strong><small>{labels[version.kind]} · {new Date(version.createdAt).toLocaleString('zh-CN')}</small></div>
@@ -56,6 +63,7 @@ export function GameVersionsPanel({ project, refreshSignal, onRestored }: { proj
         {version.error && <p role="note" className="version-error">{version.error}</p>}
         <div className="version-actions">
           <button type="button" disabled={busy || !version.canPreview} onClick={() => play(version)}>试玩此存档</button>
+          <button type="button" disabled={busy || !version.canPreview} onClick={() => exportWeb(version)}>导出 Web 试玩包</button>
           <button type="button" disabled={busy || !version.canRestore || project.status === 'running'} onClick={() => { request.current = null; setConfirm(version); }}>恢复为独立副本</button>
         </div>
       </li>)}</ol>
