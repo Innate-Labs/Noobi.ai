@@ -37,6 +37,13 @@ export function GameVersionsPanel({ project, refreshSignal, onRestored }: { proj
     const result = await window.noobi.exportGameVersionWeb(project.id, version.id);
     if (result && mounted.current && selection.current === project.id) setExported(`已导出 ${result.files} 个文件：${result.path}。这是 Web 试玩包，请按包内说明通过 HTTP 服务打开。`);
   });
+  const exportMac = (version: GameVersion) => void perform(async () => {
+    setExported('正在导出 macOS 游戏包…');
+    try {
+      const result = await window.noobi.exportGameVersionMac(project.id, version.id);
+      if (mounted.current && selection.current === project.id) setExported(result ? `已导出 macOS 游戏包：${result.path}。打开文件夹中的 Game.app；原生版本仍需单独试玩验收。` : '');
+    } catch (error) { if (mounted.current && selection.current === project.id) setExported(''); throw error; }
+  });
   const restore = () => void perform(async () => {
     if (!confirm) return;
     if (request.current?.versionId !== confirm.id) request.current = { versionId: confirm.id, id: crypto.randomUUID() };
@@ -64,6 +71,7 @@ export function GameVersionsPanel({ project, refreshSignal, onRestored }: { proj
         <div className="version-actions">
           <button type="button" disabled={busy || !version.canPreview} onClick={() => play(version)}>试玩此存档</button>
           <button type="button" disabled={busy || !version.canPreview} onClick={() => exportWeb(version)}>导出 Web 试玩包</button>
+          {project.engine === 'godot' && <button type="button" title="在 Mac 上导出独立应用；本地签名，未公证" disabled={busy || !version.canPreview} onClick={() => exportMac(version)}>导出 macOS 游戏包</button>}
           <button type="button" disabled={busy || !version.canRestore || project.status === 'running'} onClick={() => { request.current = null; setConfirm(version); }}>恢复为独立副本</button>
         </div>
       </li>)}</ol>

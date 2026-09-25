@@ -15,6 +15,7 @@ import { ProductionRunStore } from './production/productionRunStore.js';
 import { FreeModelLibrary } from './freeModelLibrary.js';
 import { GameVersionStore } from './production/gameVersionStore.js';
 import { exportGameWeb } from './production/gameWebExport.js';
+import { exportGameMac } from './production/gameMacExport.js';
 import { ReferenceComparisonStore } from './quality/referenceComparison.js';
 import type { ReferenceComparisonPayload, SaveReferenceComparisonInput } from '../shared/referenceComparison.js';
 import { safeVisualRead } from './visualEvidence.js';
@@ -822,6 +823,39 @@ function bindIpc(): void {
     return referenceComparisons.save(input, payload);
   });
   handle('noobi:plans:copy-failed', (_event, draftId: string) => planStore.copyFailedUnbound(draftId));
+  const nativeExports = new Set<string>();
+  handle('noobi:versions:export-mac', async (_event, projectId: string, versionId: string) => {
+    const project = await projectStore.get(validateProjectId(projectId));
+    if (project.engine !== 'godot' || process.platform !== 'darwin') throw new Error('当前只支持在 Mac 上导出 Godot 游戏');
+    if (typeof versionId !== 'string') throw new Error('版本 ID 无效');
+    if (nativeExports.has(project.id)) throw new Error('此项目已有 macOS 导出任务');
+    nativeExports.add(project.id);
+    try {
+      const engine = await godotEnvironmentService.getStatus();
+      if (!engine.tool.binaryPath || engine.tool.state !== 'ready') throw new Error('请先在设置中配置可用的 Godot 引擎');
+      let root: string; let status: string; let binding: Record<string, string>; let expectedEngineVersion: string | undefined;
+      let verify: () => Promise<void>;
+      if (versionId.startsWith('legacy-')) {
+        const build = await godotBuildStore.get(project.id, versionId.slice(7));
+        if (build.record.status !== 'built') throw new Error('该构建未完成');
+        root = build.root; status = '历史构建，未声明完整交付验收'; expectedEngineVersion = build.record.engineVersion;
+        binding = { buildId: build.record.buildId, sourceHash: build.record.sourceHash, artifactHash: build.record.artifactHash };
+        verify = async () => { await godotBuildStore.verifyInputs(build); await godotBuildStore.verifyArtifacts(build); };
+      } else {
+        const record = await gameVersions.read(project.id, versionId);
+        if (!record.canPreview || record.metadata.project.engine !== 'godot') throw new Error('此版本不是可导出的 Godot 游戏');
+        root = await gameVersions.verify(record); status = record.kind;
+        binding = { versionId: record.id, snapshotHash: createHash('sha256').update(JSON.stringify(record.files)).digest('hex') };
+        verify = async () => { await gameVersions.verify(record); };
+      }
+      const options = { title: '选择 macOS 游戏包保存位置', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
+      const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+      if (selection.canceled || !selection.filePaths[0]) return null;
+      const result = await exportGameMac({ root, destinationParent: selection.filePaths[0], versionId, projectId: project.id,
+        title: project.name, status, binding, verify, enginePath: engine.tool.binaryPath, expectedEngineVersion });
+      shell.showItemInFolder(result.path); return result;
+    } finally { nativeExports.delete(project.id); }
+  });
   handle('noobi:versions:export-web', async (_event, projectId: string, versionId: string) => {
     const project = await projectStore.get(validateProjectId(projectId));
     if (typeof versionId !== 'string') throw new Error('版本 ID 无效');

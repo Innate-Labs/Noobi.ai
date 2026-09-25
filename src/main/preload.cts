@@ -138,6 +138,7 @@ const api: NoobiApi = {
   getProductionProgress: (projectId: string) => ipcRenderer.invoke('noobi:project:progress', projectId) as Promise<ProductionProgress | null>,
   listGameVersions: projectId => ipcRenderer.invoke('noobi:versions:list', projectId),
   previewGameVersion: (projectId, versionId) => ipcRenderer.invoke('noobi:versions:preview', projectId, versionId),
+  exportGameVersionMac: (projectId, versionId) => ipcRenderer.invoke('noobi:versions:export-mac', projectId, versionId),
   exportGameVersionWeb: (projectId, versionId) => ipcRenderer.invoke('noobi:versions:export-web', projectId, versionId),
   copyFailedPlan: (draftId) => ipcRenderer.invoke('noobi:plans:copy-failed', draftId),
   getReferenceComparison: (projectId) => ipcRenderer.invoke('noobi:comparison:get', projectId),

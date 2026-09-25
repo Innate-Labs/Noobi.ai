@@ -610,6 +610,7 @@ export interface NoobiApi {
   getProductionProgress(projectId: string): Promise<ProductionProgress | null>;
   listGameVersions(projectId: string): Promise<import('./gameVersions.js').GameVersion[]>;
   previewGameVersion(projectId: string, versionId: string): Promise<string>;
+  exportGameVersionMac(projectId: string, versionId: string): Promise<{ path: string; manifestHash: string; files: number } | null>;
   exportGameVersionWeb(projectId: string, versionId: string): Promise<{ path: string; manifestHash: string; files: number } | null>;
   copyFailedPlan(draftId: string): Promise<import('./planning.js').PlanDraft>;
   getReferenceComparison(projectId: string): Promise<import('./referenceComparison.js').ReferenceComparisonPayload | null>;
