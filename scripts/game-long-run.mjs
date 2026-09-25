@@ -10,11 +10,16 @@ import {PreviewServer} from '../dist/main/previewServer.js';
 import {parseLongRunPolicy,frameDistribution} from '../dist/main/quality/longRun.js';
 import {READ_RUNTIME_EVIDENCE,parseRuntimeEvidence} from '../dist/main/runtime/runtimeEvidence.js';
 const arg=n=>process.argv[process.argv.indexOf(n)+1];
-for(const n of ['--store','--project','--build','--policy'])if(!process.argv.includes(n))throw Error('Missing '+n);
-const policyBytes=await readFile(resolve(arg('--policy'))), policy=parseLongRunPolicy(JSON.parse(policyBytes));
+let policyBytes, policy;
+try {
+ for(const n of ['--store','--project','--build','--policy'])if(!process.argv.includes(n))throw Error('Missing '+n);
+ policyBytes=await readFile(resolve(arg('--policy'))); policy=parseLongRunPolicy(JSON.parse(policyBytes));
+} catch(error) { console.error(error.message); app.exit(2); }
+
 const out=resolve('.noobi-private/stage-09/long-run',new Date().toISOString().replaceAll(':','-'));
 app.setPath('userData',join(out,'electron'));app.on('window-all-closed',()=>{});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let interrupted=false;process.on('SIGINT',()=>{interrupted=true});process.on('SIGTERM',()=>{interrupted=true});
 app.whenReady().then(async()=>{
  const server=new PreviewServer(),store=new GodotBuildStore(resolve(arg('--store')));let win,report={version:1,startedAt:new Date().toISOString(),policy,policyHash:createHash('sha256').update(policyBytes).digest('hex'),completed:false,fullGameCompletion:'not-assessed',referenceMatch:'not-assessed',playerExperience:'not-assessed',errors:[],samples:[],focusChanges:[]};
  let intervals=[],start=0,previousSequence=0,previousFrame=0,metricsMissing=false;
@@ -38,6 +43,7 @@ const bounded=async promise=>{let timer;try{return await Promise.race([promise,n
  for(const s of policy.initial)await input(s);
  start=performance.now();let step=0,nextSample=0,nextCapture=0;
  while(performance.now()-start < policy.durationSeconds*1000){
+  if(interrupted)throw Error('Run interrupted; incomplete duration is not a pass');
   if(report.errors.length)throw Error('Runtime error; see evidence');
   await input(policy.cycle[step++%policy.cycle.length]);
   const elapsed=performance.now()-start;if(elapsed<nextSample)continue;nextSample=elapsed+5000;
