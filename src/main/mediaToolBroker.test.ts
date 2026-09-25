@@ -632,6 +632,30 @@ describe('media tool broker', () => {
     expect(plan.error?.message).toContain('[redacted]');
   });
 
+  it('does not repeat an entitlement failure after a resumed plan update, but allows explicit host requeue', async () => {
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const assetPlanStore = await makePlanStore();
+    const generationService = { generate: vi.fn(async () => {
+      throw new MediaGenerationPublicError('MiniMax status_code: 2153 没有 Music API 使用资格');
+    }) };
+    const broker = brokerWith({ responses, assetStore: new AssetStore(), assetPlanStore, generationService,
+      resolveProject: async () => ({ id: 'blocked-project', root: '/private/workspace' }) });
+    const args = { name: 'forest_theme', prompt: 'Forest music', purpose: 'music' };
+    broker.handle(toolRequest(901, 'noobi_audio_generate', args));
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    broker.handle(toolRequest(902, 'noobi_audio_generate', { ...args, prompt: 'An updated forest music request' }));
+    await vi.waitFor(() => expect(responses).toHaveLength(2));
+    expect(generationService.generate).toHaveBeenCalledOnce();
+    expect(readToolResponse(responses[1]!.result)).toMatchObject({ success: false,
+      payload: { error: expect.stringContaining('外部素材服务仍被阻塞') } });
+    expect(await assetPlanStore.get('blocked-project', 'audio-forest_theme')).toMatchObject({ attemptCount: 1,
+      error: { code: 'provider-blocked', retryable: false } });
+    await assetPlanStore.queue('blocked-project', 'audio-forest_theme');
+    broker.handle(toolRequest(903, 'noobi_audio_generate', args));
+    await vi.waitFor(() => expect(responses).toHaveLength(3));
+    expect(generationService.generate).toHaveBeenCalledTimes(2);
+  });
+
   it('surfaces only trusted redacted media failures and keeps unexpected errors opaque', async () => {
     const root = '/private/workspace';
     const responses: Array<{ id: string | number; result: unknown }> = [];

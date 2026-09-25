@@ -1,3 +1,6 @@
+import { READ_RUNTIME_EVIDENCE, parseRuntimeEvidence, parseRuntimeAssertion, runtimeAssertionPassed, runtimeIsPaused, physicsStateUnchanged, hasObservedPhysicsBodies, visiblePhysicsMoved, runtimeTextVisible,
+  type RuntimeEvidence, type RuntimePacket } from './runtime/runtimeEvidence.js';
+import { holdKeyboardInput } from './runtime/heldKeyboardInput.js';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, readdir, realpath, rename, rm, unlink } from 'node:fs/promises';
@@ -65,6 +68,7 @@ export type GameplayPlaytestInput =
   | { type: 'wait'; ms: number };
 
 export type GameplayObservationKind =
+  | 'runtime-state'
   | 'canvas-not-blank'
   | 'screen-change'
   | 'text-visible'
@@ -147,6 +151,7 @@ export interface GameplayJourneyStepResult {
 }
 
 export interface GameplayTemporalSample {
+  physicsMotion?: boolean;
   stepId: string;
   action: 'move' | 'primary' | 'resume';
   screenshotPath: string;
@@ -173,10 +178,15 @@ export interface GameplayExperienceReport extends SharedGameplayExperienceReport
   droppedErrors: number;
   timedOut: boolean;
   entrypoint?: string;
+  runtimeEvidence?: RuntimeEvidence[];
 }
 
 export interface GameplayExperienceEvaluationOptions {
   projectRoot: string;
+  /** Read the manifest/entrypoint from frozen inputs; publish evidence to projectRoot. */
+  manifestRoot?: string;
+  build?: SharedGameplayExperienceReport['build'];
+  interactionMode?: 'real-time' | 'turn-based';
   previewUrl: string;
   expectedEngine?: 'web' | 'godot';
   expectedEntrypoint?: string;
@@ -291,6 +301,8 @@ interface EvaluationState {
   loadDurationMs?: number;
   timedOut: boolean;
   entrypoint?: string;
+  runtimeEvidence?: RuntimeEvidence[];
+  interactionMode?: 'real-time' | 'turn-based';
 }
 
 interface StagedGameplayEvidence {
@@ -521,17 +533,24 @@ export async function readLatestGameplayExperienceReport(
 export async function writeGameplayExperienceFailureReport(
   projectRoot: string,
   message: string,
-): Promise<SharedGameplayExperienceReport> {
+): Promise<GameplayExperienceReport> {
   const root = await resolveSafeProjectRoot(projectRoot);
   const staging = await createStagedGameplayEvidence(root);
   const safeMessage = sanitizeReportMessage(message, root);
-  const report: SharedGameplayExperienceReport = {
+  const report: GameplayExperienceReport = {
     version: 1,
     verdict: 'repair',
     score: 0,
     checkedAt: new Date().toISOString(),
     reportPath: 'artifacts/playtest/latest/report.json',
     summary: safeMessage.slice(0, 500),
+    durationMs: 0,
+    surface: null,
+    actions: [], journey: [], observations: [], temporalSamples: [], runtimeEvidence: [],
+    screenshots: { before: null, idle: null, after: null, action: [] },
+    errors: [{ kind: 'load', message: safeMessage.slice(0, 4000), fatal: true }],
+    droppedErrors: 0,
+    timedOut: false,
     checks: [
       { id: 'load', label: '加载与启动', status: 'repair', message: safeMessage.slice(0, 500) },
       { id: 'runtime-errors', label: '运行稳定性', status: 'skipped', message: '预览未启动，未执行运行检查。' },
@@ -662,10 +681,12 @@ export class GameplayExperienceEvaluator {
       loadCompleted: false,
       timedOut: false,
       entrypoint: undefined,
+      runtimeEvidence: [],
+      interactionMode: options.interactionMode ?? 'real-time',
     };
     let manifest: GameplayPlaytestManifest;
     try {
-      manifest = await readGameplayPlaytestManifest(projectRoot);
+      manifest = await readGameplayPlaytestManifest(options.manifestRoot ?? projectRoot);
       if (options.expectedEngine !== undefined && manifest.engine !== options.expectedEngine) {
         throw new Error(
           `playtest.engine 为 ${manifest.engine}，与宿主项目引擎 ${options.expectedEngine} 不一致`,
@@ -687,6 +708,7 @@ export class GameplayExperienceEvaluator {
         fatal: true,
       });
       const invalidReport = buildReport(state, this.#now());
+      if (options.build) invalidReport.build = options.build;
       await safeWriteProjectFile(
         projectRoot,
         staging.reportPath,
@@ -767,6 +789,7 @@ export class GameplayExperienceEvaluator {
     }
 
     const report = buildReport(state, this.#now());
+    if (options.build) report.build = options.build;
     await safeWriteProjectFile(projectRoot, staging.reportPath, `${JSON.stringify(report, null, 2)}\n`);
     await publishStagedGameplayEvidence(projectRoot, staging, report.checkedAt);
     published = true;
@@ -853,6 +876,7 @@ export class GameplayExperienceEvaluator {
         waitAfterMs: Math.min(options.actionDelayMs ?? DEFAULT_ACTION_DELAY_MS, manifest.limits.stepTimeoutMs),
       };
       const heldFrames: CapturedFrame[] = [];
+      const heldPackets: Array<RuntimePacket | undefined> = [];
       const shouldSampleHeldInput = step.action === 'move' || step.action === 'primary';
       const sampledDuringHold = await dispatchAction(
         window,
@@ -876,6 +900,7 @@ export class GameplayExperienceEvaluator {
             );
             heldFrames.push(heldFrame);
             state.screenshots.action.push(heldFrame.path);
+            if (options.build) heldPackets.push(await captureFinalRuntimePacket(window, options.build.buildId, state, signal, `${step.id}-held-${sampleIndex}`));
           }
           : undefined,
       );
@@ -911,6 +936,23 @@ export class GameplayExperienceEvaluator {
       });
       state.screenshots.action.push(captured.path);
       state.framesByStepId.set(step.id, captured);
+      let runtimePacket: RuntimePacket | undefined;
+      if (options.build) {
+        try {
+          const raw = await abortableOperation(window.webContents.executeJavaScript(READ_RUNTIME_EVIDENCE, false), signal);
+          const previousSequence = state.runtimeEvidence?.at(-1)?.packet?.sequence ?? 0;
+          runtimePacket = parseRuntimeEvidence(raw, options.build.buildId, previousSequence);
+          state.runtimeEvidence?.push({ stepId: step.id, packet: runtimePacket });
+          for (const finding of runtimePacket.findings.filter((item) => item.severity === 'error')) {
+            recordRuntimeError(state, { kind: 'console', fatal: true,
+              message: `${finding.code} @ ${finding.path ?? ''}: ${finding.message} ${finding.characters ?? ''}` });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          state.runtimeEvidence?.push({ stepId: step.id, packet: null, error: message });
+          recordRuntimeError(state, { kind: 'configuration', fatal: true, message });
+        }
+      }
       const observationResults = await evaluateObservations(
         window,
         step.id,
@@ -920,6 +962,8 @@ export class GameplayExperienceEvaluator {
         state.framesByStepId,
         visualChangeThreshold(state, INPUT_CHANGE_RATIO),
         signal,
+        runtimePacket,
+        state.runtimeEvidence,
       );
       state.observations.push(...observationResults);
       let nextPrevious = captured;
@@ -929,6 +973,7 @@ export class GameplayExperienceEvaluator {
           stepId: step.id,
           action: step.action,
           screenshotPath: heldFrames[1].path,
+          physicsMotion: visiblePhysicsMoved(heldPackets[0], heldPackets[1]),
           ...temporalDifference,
         });
       } else if (step.action === 'move' || step.action === 'primary') {
@@ -946,11 +991,15 @@ export class GameplayExperienceEvaluator {
           signal,
         );
         const temporalDifference = compareFrames(captured, temporalProbe);
+        const temporalPacket = options.build
+          ? await captureFinalRuntimePacket(window, options.build.buildId, state, signal, `${step.id}-temporal`)
+          : undefined;
         state.screenshots.action.push(temporalProbe.path);
         state.temporalSamples.push({
           stepId: step.id,
           action: step.action,
           screenshotPath: temporalProbe.path,
+          physicsMotion: visiblePhysicsMoved(runtimePacket, temporalPacket),
           ...temporalDifference,
         });
         nextPrevious = temporalProbe;
@@ -975,15 +1024,25 @@ export class GameplayExperienceEvaluator {
         );
         state.screenshots.action.push(probe.path);
         const probeDifference = compareFrames(captured, probe);
-        const passed = isPause
+        let passed = isPause
           ? probeDifference.changedPixelRatio <= PAUSE_FROZEN_MAX_RATIO
-          : probeDifference.changedPixelRatio >= visualChangeThreshold(state, CONTINUOUS_CHANGE_RATIO);
+          : state.interactionMode === 'turn-based' || probeDifference.changedPixelRatio >= visualChangeThreshold(state, CONTINUOUS_CHANGE_RATIO);
+        if (options.build && runtimePacket) {
+          const nextPacket = await captureFinalRuntimePacket(window, options.build.buildId, state, signal, `${step.id}-pause-probe`);
+          passed = Boolean(nextPacket && (isPause
+            ? runtimeIsPaused(nextPacket) && physicsStateUnchanged(runtimePacket, nextPacket)
+              && (hasObservedPhysicsBodies(runtimePacket) || passed)
+            : !runtimeIsPaused(nextPacket) && passed));
+        }
         const pauseObservation: GameplayObservationResult = {
           stepId: step.id,
           kind: 'screen-change',
           description: isPause ? '暂停后玩法画面基本冻结' : '再次触发暂停键后恢复运行',
           status: passed ? 'pass' : 'repair',
-          message: isPause
+          message: options.build && runtimePacket
+            ? passed ? '运行状态与暂停/恢复一致，暂停期间物理位置和规则计数保持不变；UI 动画不作为物理运行证据。'
+              : '暂停状态、物理位置或恢复行为没有满足检查。'
+            : isPause
             ? passed
               ? `暂停采样仅变化 ${(probeDifference.changedPixelRatio * 100).toFixed(2)}%。`
               : `暂停后仍变化 ${(probeDifference.changedPixelRatio * 100).toFixed(2)}%，玩法可能未冻结。`
@@ -1047,8 +1106,24 @@ export class GameplayExperienceEvaluator {
       state.framesByStepId,
       visualChangeThreshold(state, INPUT_CHANGE_RATIO),
       signal,
+      options.build ? await captureFinalRuntimePacket(window, options.build.buildId, state, signal) : undefined,
     );
     state.observations.push(...successResults);
+  }
+}
+
+async function captureFinalRuntimePacket(window: GameplayBrowserWindow, buildId: string,
+  state: EvaluationState, signal: AbortSignal, stepId = 'success'): Promise<RuntimePacket | undefined> {
+  try {
+    const raw = await abortableOperation(window.webContents.executeJavaScript(READ_RUNTIME_EVIDENCE, false), signal);
+    const packet = parseRuntimeEvidence(raw, buildId, state.runtimeEvidence?.at(-1)?.packet?.sequence ?? 0);
+    state.runtimeEvidence?.push({ stepId, packet });
+    return packet;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    recordRuntimeError(state, { kind: 'configuration', message, fatal: true });
+    state.runtimeEvidence?.push({ stepId, packet: null, error: message });
+    return undefined;
   }
 }
 
@@ -1416,32 +1491,17 @@ async function dispatchAction(
       continue;
     }
     const keyCode = electronKeyCode(input.code);
-    window.webContents.sendInputEvent({ type: 'keyDown', keyCode });
     const holdMs = input.holdMs > 0 ? input.holdMs : keyHoldMs;
-    try {
-      if (captureWhileHeld && !capturedWhileHeld && holdMs >= MIN_HELD_TEMPORAL_MS) {
-        const firstSlice = Math.floor(holdMs / 3);
-        const secondSlice = Math.floor(holdMs / 3);
-        await sleep(firstSlice, signal);
+    const sampled = await holdKeyboardInput({ holdMs, sleep, signal,
+      down: repeat => {
         ensureActive(window, signal);
-        await captureWhileHeld(1);
-        // Chromium may batch synthetic key events for a hidden renderer until
-        // the first capture/compositor flush. Reassert the held key as an OS-
-        // style repeat so continuous controls observe it during the second
-        // temporal interval instead of receiving keyDown/keyUp in one frame.
-        window.webContents.sendInputEvent({ type: 'keyDown', keyCode });
-        await sleep(secondSlice, signal);
-        ensureActive(window, signal);
-        await captureWhileHeld(2);
-        const remaining = holdMs - firstSlice - secondSlice;
-        if (remaining > 0) await sleep(remaining, signal);
-        capturedWhileHeld = true;
-      } else if (holdMs > 0) {
-        await sleep(holdMs, signal);
-      }
-    } finally {
-      if (!window.isDestroyed()) window.webContents.sendInputEvent({ type: 'keyUp', keyCode });
-    }
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode, ...(repeat ? { modifiers: ['isautorepeat'] } : {}) });
+      },
+      up: () => { if (!window.isDestroyed()) window.webContents.sendInputEvent({ type: 'keyUp', keyCode }); },
+      ...(captureWhileHeld && !capturedWhileHeld && holdMs >= MIN_HELD_TEMPORAL_MS
+        ? { capture: async (sample: 1 | 2) => { ensureActive(window, signal); await captureWhileHeld(sample); } } : {}),
+    });
+    capturedWhileHeld ||= sampled;
   }
   return capturedWhileHeld;
 }
@@ -1580,9 +1640,18 @@ async function evaluateObservations(
   framesByStepId: ReadonlyMap<string, CapturedFrame>,
   screenChangeThreshold: number,
   signal: AbortSignal,
+  runtimePacket?: RuntimePacket,
+  runtimeHistory?: RuntimeEvidence[],
 ): Promise<GameplayObservationResult[]> {
   const results: GameplayObservationResult[] = [];
   for (const observation of observations) {
+    if (observation.kind === 'runtime-state') {
+      const passed = Boolean(runtimePacket && runtimeAssertionPassed(runtimePacket, parseRuntimeAssertion(observation.value ?? '')));
+      results.push({ stepId, kind: observation.kind, description: observation.description,
+        status: passed ? 'pass' : 'repair', message: passed ? '构建匹配的运行状态满足断言，需结合当前截图判断体验。'
+          : '运行状态未满足断言，或缺少当前构建的有效反馈。' });
+      continue;
+    }
     if (observation.kind === 'canvas-not-blank') {
       const stats = sampledBitmapVisualStats(current.bitmap, current.width, current.height);
       const passed = stats.uniqueColors >= 3 && stats.luminanceRange >= 0.015;
@@ -1602,7 +1671,10 @@ async function evaluateObservations(
         ? framesByStepId.get(observation.baselineStepId)
         : previous;
       const difference = baseline ? compareFrames(baseline, current) : null;
-      const passed = Boolean(difference && difference.changedPixelRatio >= screenChangeThreshold);
+      const baselinePacket = runtimeHistory?.find(e => e.stepId === observation.baselineStepId)?.packet ?? undefined;
+      const jointMotion = Boolean(difference && difference.changedPixelRatio >= INPUT_CHANGE_RATIO
+        && visiblePhysicsMoved(baselinePacket, runtimePacket));
+      const passed = Boolean(difference && (difference.changedPixelRatio >= screenChangeThreshold || jointMotion));
       results.push({
         stepId,
         kind: observation.kind,
@@ -1610,7 +1682,7 @@ async function evaluateObservations(
         status: passed ? 'pass' : 'repair',
         message: difference
           ? passed
-            ? `相对 ${observation.baselineStepId ?? '上一步'} 的画面变化为 ${(difference.changedPixelRatio * 100).toFixed(2)}%。`
+            ? `相对 ${observation.baselineStepId ?? '上一步'} 的画面变化为 ${(difference.changedPixelRatio * 100).toFixed(2)}%。${jointMotion ? ' 同一构建的可见物理角色位置也发生变化。' : ''}`
             : `画面变化仅 ${(difference.changedPixelRatio * 100).toFixed(2)}%，低于动态阈值 ${(screenChangeThreshold * 100).toFixed(2)}%。`
           : `找不到基线步骤 ${observation.baselineStepId ?? ''}。`,
       });
@@ -1618,13 +1690,14 @@ async function evaluateObservations(
     }
     if (observation.kind === 'text-visible') {
       const expected = observation.value ?? '';
-      const visible = await inspectTextVisibility(window, expected, signal);
+      const engineText = runtimePacket && runtimeTextVisible(runtimePacket, expected);
+      const visible = engineText || await inspectTextVisibility(window, expected, signal);
       results.push({
         stepId,
         kind: observation.kind,
         description: observation.description,
         status: visible ? 'pass' : 'repair',
-        message: visible ? `检测到可见文字“${expected}”。` : `没有检测到可见文字“${expected}”。`,
+        message: visible ? `${engineText ? 'Godot 可见控件与字形覆盖支持' : '检测到可见文字'}“${expected}”，仍需核对截图排版。` : `没有检测到可见文字“${expected}”。`,
       });
       continue;
     }
@@ -1741,7 +1814,8 @@ function buildReport(state: EvaluationState, checkedAt: Date): GameplayExperienc
   const temporalThreshold = visualChangeThreshold(state, CONTINUOUS_CHANGE_RATIO);
   const missingTemporalActions = requiredTemporalActions.filter((action) =>
     !state.temporalSamples.some((sample) =>
-      sample.action === action && sample.changedPixelRatio >= temporalThreshold));
+      sample.action === action && (sample.changedPixelRatio >= temporalThreshold
+        || (sample.physicsMotion && sample.changedPixelRatio >= CONTINUOUS_CHANGE_RATIO))));
   const continuouslyRendered = missingTemporalActions.length === 0;
   const restartAction = [...normalActions].reverse().find((action) => action.role === 'restart');
   const responseThreshold = visualChangeThreshold(state, INPUT_CHANGE_RATIO);
@@ -1825,10 +1899,10 @@ function buildReport(state: EvaluationState, checkedAt: Date): GameplayExperienc
     {
       id: 'continuous-render',
       label: '持续渲染与动画',
-      status: state.screenshots.after && state.actions.length > 0
+      status: state.interactionMode === 'turn-based' ? 'skipped' : state.screenshots.after && state.actions.length > 0
         ? continuouslyRendered ? 'pass' : 'repair'
         : 'skipped',
-      message: state.screenshots.after && state.actions.length > 0
+      message: state.interactionMode === 'turn-based' ? '回合制允许等待输入时静止；操作与规则仍需独立验证。' : state.screenshots.after && state.actions.length > 0
         ? continuouslyRendered
           ? `操作后画面仍持续变化 ${(ongoingChange * 100).toFixed(2)}%。`
           : `以下核心动作没有检测到时间中间态：${missingTemporalActions.join('、')}；画面可能只是静态姿态跳变。`
@@ -1869,6 +1943,7 @@ function buildReport(state: EvaluationState, checkedAt: Date): GameplayExperienc
     journey: state.journey,
     observations: state.observations,
     temporalSamples: state.temporalSamples,
+    runtimeEvidence: state.runtimeEvidence,
     screenshots: state.screenshots,
     errors: state.errors,
     droppedErrors: state.droppedErrors,
@@ -2506,6 +2581,7 @@ function parseObservations(
     if (kind === 'text-visible' && !optionalValue) {
       throw new Error(`${observationPath}.value 是 text-visible 的必填文字`);
     }
+    if (kind === 'runtime-state') parseRuntimeAssertion(optionalValue ?? '');
     if (kind === 'element-visible') {
       if (!optionalValue) throw new Error(`${observationPath}.value 是 element-visible 的必填选择器`);
       validateSafeSelector(optionalValue, `${observationPath}.value`);
@@ -2541,6 +2617,10 @@ function parseLatestGameplayExperienceReport(value: unknown): SharedGameplayExpe
     reportPath: value.reportPath,
     summary: typeof value.summary === 'string' ? value.summary : undefined,
     checks,
+    ...(isRecord(value.build) && typeof value.build.buildId === 'string'
+      && typeof value.build.sourceHash === 'string' && typeof value.build.artifactHash === 'string'
+      && typeof value.build.testSuiteVersion === 'string'
+      ? { build: value.build as unknown as SharedGameplayExperienceReport['build'] } : {}),
   };
 }
 
@@ -2605,7 +2685,7 @@ function isJourneyAction(value: string): value is GameplayJourneyAction {
 }
 
 function isObservationKind(value: string): value is GameplayObservationKind {
-  return value === 'canvas-not-blank'
+  return value === 'runtime-state' || value === 'canvas-not-blank'
     || value === 'screen-change'
     || value === 'text-visible'
     || value === 'element-visible';

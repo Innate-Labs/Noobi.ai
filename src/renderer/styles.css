@@ -46,6 +46,7 @@
   --glass-chip: rgba(23, 26, 21, 0.4);
   --glass-chip-hover: rgba(40, 44, 37, 0.55);
   --glass-control: rgba(255, 255, 255, 0.07);
+  --glass-card: rgba(34, 38, 31, 0.45);
   --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.38), 0 4px 16px rgba(0, 0, 0, 0.22);
 }
 
@@ -93,6 +94,7 @@
   --glass-chip: rgba(255, 255, 255, 0.45);
   --glass-chip-hover: rgba(255, 255, 255, 0.62);
   --glass-control: rgba(255, 255, 255, 0.4);
+  --glass-card: rgba(255, 255, 255, 0.78);
   --glass-shadow: 0 20px 50px rgba(43, 46, 39, 0.16), 0 4px 14px rgba(43, 46, 39, 0.08);
 }
 
@@ -140,6 +142,7 @@
     --glass-chip: rgba(255, 255, 255, 0.45);
     --glass-chip-hover: rgba(255, 255, 255, 0.62);
     --glass-control: rgba(255, 255, 255, 0.4);
+    --glass-card: rgba(255, 255, 255, 0.78);
     --glass-shadow: 0 20px 50px rgba(43, 46, 39, 0.16), 0 4px 14px rgba(43, 46, 39, 0.08);
   }
 }
@@ -2769,30 +2772,30 @@ a {
 .settings-modal .extension-row {
   border: 1px solid var(--studio-border);
   border-radius: 16px;
-  background: color-mix(in srgb, var(--studio-surface-raised) 42%, transparent);
+  background: var(--glass-card);
 }
 
 .settings-modal .environment-summary.tone-ready,
 .settings-modal .environment-tool-card.tone-ready,
 .settings-modal .export-templates-panel.state-ready,
 .settings-modal .runtime-card.state-ready {
-  border-color: color-mix(in srgb, var(--green) 30%, transparent);
-  background: color-mix(in srgb, var(--green) 7%, transparent);
+  border-color: color-mix(in srgb, var(--green) 34%, transparent);
+  background: color-mix(in srgb, var(--green) 9%, var(--glass-card));
 }
 
 .settings-modal .environment-summary.tone-blocked,
 .settings-modal .environment-tool-card.tone-blocked,
 .settings-modal .export-templates-panel.state-missing,
 .settings-modal .runtime-card.state-error {
-  border-color: color-mix(in srgb, var(--red) 30%, transparent);
-  background: color-mix(in srgb, var(--red) 6%, transparent);
+  border-color: color-mix(in srgb, var(--red) 34%, transparent);
+  background: color-mix(in srgb, var(--red) 7%, var(--glass-card));
 }
 
 .settings-modal .environment-summary.tone-attention,
 .settings-modal .environment-summary.tone-checking,
 .settings-modal .runtime-card.state-starting {
-  border-color: color-mix(in srgb, var(--studio-accent) 30%, transparent);
-  background: color-mix(in srgb, var(--studio-accent) 6%, transparent);
+  border-color: color-mix(in srgb, var(--studio-accent) 34%, transparent);
+  background: color-mix(in srgb, var(--studio-accent) 8%, var(--glass-card));
 }
 
 .settings-modal .environment-tool-index {
@@ -2826,25 +2829,61 @@ a {
 
 .settings-modal .environment-badge {
   min-height: 22px;
+  border: 0;
   border-radius: 999px;
-  padding: 0 9px;
+  background: color-mix(in srgb, var(--faint) 12%, transparent);
+  color: var(--muted);
+  padding: 0 10px;
   font-size: 9px;
+  line-height: 22px;
+}
+
+.settings-modal .environment-badge.tone-ready {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: var(--green);
+}
+
+.settings-modal .environment-badge.tone-attention,
+.settings-modal .environment-badge.tone-checking {
+  background: color-mix(in srgb, var(--studio-accent) 16%, transparent);
+  color: var(--studio-accent);
+}
+
+.settings-modal .environment-badge.tone-blocked {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  color: var(--red);
 }
 
 .settings-modal .environment-tool-facts {
   overflow: hidden;
   border-color: var(--studio-border);
   border-radius: 12px;
+  background: color-mix(in srgb, var(--studio-surface) 60%, transparent);
 }
 
 .settings-modal .environment-tool-facts > div {
   border-color: var(--studio-border);
+  padding: 6px 10px;
+}
+
+.settings-modal .environment-tool-facts span {
+  font-size: 8px;
+}
+
+.settings-modal .environment-tool-facts strong {
+  margin-top: 3px;
+  font-size: 9px;
 }
 
 .settings-modal .environment-path-row {
   border-color: var(--studio-border);
   border-radius: 10px;
   background: color-mix(in srgb, var(--studio-bg) 45%, transparent);
+  padding: 6px 10px;
+}
+
+.settings-modal .environment-path-row code {
+  font-size: 9px;
 }
 
 .settings-modal .export-templates-panel > header {
@@ -9987,4 +10026,28 @@ a {
     animation: none !important;
     transition: none !important;
   }
+}
+.build-preview-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #aab5ad);
+  background: var(--panel-bg, #202820);
+}
+.build-preview-status[data-state="stale"],
+.build-preview-status[data-state="legacy"],
+.build-preview-status[data-state="unavailable"] { color: #e1b979; }
+
+.composer-network-status {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }

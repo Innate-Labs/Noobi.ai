@@ -48,6 +48,7 @@ interface GodotCandidate {
 export interface GodotProcessOptions {
   cwd?: string;
   timeoutMs: number;
+  signal?: AbortSignal;
 }
 
 export interface GodotProcessResult {
@@ -75,6 +76,7 @@ export interface GodotEnvironmentInspection {
 export type GodotHeadlessTask =
   | { kind: 'import'; projectPath: string }
   | { kind: 'validate'; projectPath: string }
+  | { kind: 'runtime'; projectPath: string }
   | {
     kind: 'export';
     projectPath: string;
@@ -174,7 +176,8 @@ export class GodotEnvironmentService {
     return this.refresh();
   }
 
-  async execute(task: GodotHeadlessTask): Promise<GodotHeadlessResult> {
+  async execute(task: GodotHeadlessTask, signal?: AbortSignal): Promise<GodotHeadlessResult> {
+    signal?.throwIfAborted();
     const status = await this.getStatus();
     const binaryPath = status.tool.binaryPath;
     if (status.tool.state !== 'ready' || !binaryPath) {
@@ -203,12 +206,16 @@ export class GodotEnvironmentService {
         '--quit-after', '1',
       ];
       timeoutMs = 60_000;
+    } else if (task.kind === 'runtime') {
+      // Run the main scene, not the editor. Script failures may still exit 0,
+      // so the shared diagnostic check below remains mandatory.
+      args = ['--headless', '--path', projectPath, '--quit-after', '180'];
+      timeoutMs = 30_000;
     } else {
       const preset = validatePreset(task.preset);
       const outputPath = validateOutputPath(projectPath, task.outputPath);
       args = [
         '--headless',
-        '--recovery-mode',
         '--path', projectPath,
         task.debug ? '--export-debug' : '--export-release',
         preset,
@@ -221,7 +228,8 @@ export class GodotEnvironmentService {
       await removeExistingArtifacts(expectedArtifacts);
     }
 
-    const result = await this.#processRunner(binaryPath, args, { cwd: projectPath, timeoutMs });
+    const result = await this.#processRunner(binaryPath, args, { cwd: projectPath, timeoutMs, signal });
+    signal?.throwIfAborted();
     const outputHasFatalError = FATAL_GODOT_OUTPUT.test(`${result.stdout}\n${result.stderr}`);
     const artifacts = task.kind === 'export'
       ? await existingFiles(expectedArtifacts)
@@ -428,6 +436,7 @@ export async function runGodotProcess(
   args: readonly string[],
   options: GodotProcessOptions,
 ): Promise<GodotProcessResult> {
+  options.signal?.throwIfAborted();
   const startedAt = Date.now();
   return new Promise((resolvePromise) => {
     let stdout = '';
@@ -445,10 +454,14 @@ export async function runGodotProcess(
       timedOut = true;
       child.kill('SIGKILL');
     }, options.timeoutMs);
+    const abort = (): void => { child.kill('SIGKILL'); };
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
     const finish = (exitCode: number | null, error?: Error): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
       if (error) stderr = appendProcessOutput(stderr, error.message);
       resolvePromise({
         exitCode,

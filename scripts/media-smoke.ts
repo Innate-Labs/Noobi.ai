@@ -36,6 +36,7 @@ try {
     idea: 'Verify Noobi dynamic media tools through the real Codex App Server.',
     createdAt: new Date().toISOString(),
     model: null,
+    targetFrameRate: 60,
   });
   const status = await runtime.start();
   if (!status.account) throw new Error('Codex is not signed in.');

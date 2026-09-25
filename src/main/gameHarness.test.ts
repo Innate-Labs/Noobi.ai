@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { gameQualitySpec } from './production/gameQualitySpec.js';
 import { describe, expect, it } from 'vitest';
 
 import type { StartThreadOptions, StartTurnOptions } from './codexAppServer.js';
@@ -73,6 +74,127 @@ class CapturingRuntime extends EventEmitter {
 }
 
 describe('game harness required ImageGen contract', () => {
+  it('checks and reviews the visual sample before allowing full content production', async () => {
+    const pass = JSON.stringify({ verdict: 'pass', summary: 'Inspected gameplay screenshot', findings: [] });
+    const runtime = new CapturingRuntime(['Plan', 'Sample repaired', pass, 'Full implementation', pass]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    let checked = 0; let accepted = false;
+    await harness.run({ projectId: 'visual-sample', cwd: '/tmp/visual-sample', prompt: 'Build a platformer',
+      imageGenerationRoute: 'configured-api',
+      workspaceFingerprint: async () => 'current',
+      validateVisualSample: async () => (++checked === 1 ? { ok: false, findings: ['HUD oversized'] }
+        : { ok: true, findings: [], sourceHash: 'current', buildId: 'build', artifactHash: 'artifact', evidencePath: 'report.json' }),
+      acceptVisualSample: async () => { accepted = true; },
+    });
+    expect(accepted).toBe(true);
+    expect(runtime.turns[1]?.prompt).toContain('<production_milestone>visual-sample');
+    expect(runtime.turns[2]?.prompt).toContain('actual gameplay screenshots');
+    expect(runtime.threads[2]?.sandbox).toBe('read-only');
+    expect(runtime.turns[3]?.prompt).toContain('Implement the requested game change');
+  });
+
+  it('cannot expand content after a persistently rejected visual sample', async () => {
+    const runtime = new CapturingRuntime(['Plan', 'No-op repair']);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    await expect(harness.run({ projectId: 'visual-failure', cwd: '/tmp/visual-failure', prompt: 'Build a platformer',
+      imageGenerationRoute: 'configured-api',
+      workspaceFingerprint: async () => 'unchanged', validateVisualSample: async () => ({ ok: false, findings: ['HUD oversized'] }),
+      acceptVisualSample: async () => { throw new Error('Should not accept'); },
+    })).rejects.toThrow('没有进展');
+    expect(runtime.turns).toHaveLength(2);
+    expect(runtime.turns.some(turn => turn.prompt.includes('Implement the requested game change'))).toBe(false);
+  });
+
+  it('cancels the actual visual validation when the user stops production', async () => {
+    const runtime = new CapturingRuntime(['Plan']);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    let entered!: () => void; const checking = new Promise<void>(resolve => { entered = resolve; });
+    let aborted = false;
+    const run = harness.run({ projectId: 'visual-stop', cwd: '/tmp/visual-stop', prompt: 'Build a platformer',
+      imageGenerationRoute: 'configured-api', workspaceFingerprint: async () => 'source',
+      acceptVisualSample: async () => { throw Error('Should not accept'); },
+      validateVisualSample: signal => new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => { aborted = true; reject(Error('cancelled')); }, { once: true }); entered();
+      }),
+    });
+    const rejected = expect(run).rejects.toBeInstanceOf(GameHarnessStoppedError);
+    await checking; await harness.stop('visual-stop'); await rejected;
+    expect(aborted).toBe(true); expect(runtime.turns).toHaveLength(1);
+  });
+
+  it('blocks full production until a core-loop writer turn passes the actual host gate', async () => {
+    const runtime = new CapturingRuntime(['Plan', 'Core implemented', 'Full implementation',
+      JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [] })]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    let checks = 0;
+    await harness.run({ projectId: 'core-loop', cwd: '/tmp/core-loop', prompt: 'Build a platformer',
+      imageGenerationRoute: 'configured-api', imageGenerationSkill: { name: 'imagegen', path: '/host/imagegen' },
+      validateCoreLoop: async () => (++checks === 1 ? { ok: false, findings: ['No victory'] } : { ok: true, findings: [] }),
+    });
+    expect(checks).toBe(2);
+    expect(runtime.turns[1]?.prompt).toContain('<production_milestone>core-loop');
+    expect(runtime.turns[1]?.skills).toBeUndefined();
+    expect(runtime.turns[2]?.prompt).toContain('Implement the requested game change');
+    expect(runtime.turns[2]?.skills).toHaveLength(1);
+  });
+
+  it('never starts full production or review if core-loop evidence remains missing', async () => {
+    const runtime = new CapturingRuntime(['Plan', 'Core still broken', 'Core still broken']);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    await expect(harness.run({ projectId: 'core-failure', cwd: '/tmp/core-failure', prompt: 'Build a platformer',
+      imageGenerationRoute: 'configured-api', validateCoreLoop: async () => ({ ok: false, findings: ['No inputs'] }),
+    })).rejects.toThrow('核心玩法未通过');
+    expect(runtime.turns).toHaveLength(3);
+    expect(runtime.threads).toHaveLength(2);
+  });
+
+  it('shares the repair budget between core-loop and final-delivery failures', async () => {
+    const review = JSON.stringify({ verdict: 'repair', summary: 'Needs art repair', findings: ['Wrong sprite size'] });
+    const runtime = new CapturingRuntime(['Plan', 'Core 1', 'Core 2', 'Full implementation', review, 'Repair 1', review]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    let checks = 0;
+    await expect(harness.run({ projectId: 'shared-budget', cwd: '/tmp/shared-budget', prompt: 'Build a platformer',
+      imageGenerationRoute: 'configured-api',
+      validateCoreLoop: async () => (++checks < 3 ? { ok: false, findings: ['No victory'] } : { ok: true, findings: [] }),
+    })).rejects.toThrow('Repair limit reached after 1 attempts');
+    expect(runtime.turns).toHaveLength(7);
+  });
+
+  it('keeps host acceptance requirements in all role instructions, outside editable preferences', async () => {
+    const runtime = new CapturingRuntime(['Plan', 'Implementation', JSON.stringify({ verdict: 'pass', summary: 'ok', findings: [] })]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    const spec = gameQualitySpec({ name: '横版游戏', idea: '收集种子并到达出口', engine: 'godot', targetFrameRate: 60 });
+    await harness.run({ projectId: 'project-quality', cwd: '/tmp/project-quality', prompt: 'Build a game',
+      imageGenerationRoute: 'configured-api', qualitySpecification: spec,
+      promptAdditions: { planner: 'Use warm colors.' } });
+    for (const thread of runtime.threads) {
+      expect(thread.developerInstructions).toContain(`Host quality specification ${spec.id}`);
+      expect(thread.developerInstructions).toContain('must reach won');
+    }
+    expect(runtime.turns[0]?.prompt).toContain('Use warm colors.');
+    expect(runtime.turns[0]?.prompt).not.toContain(spec.id);
+  });
+
+  it('stops a repeated repair when neither files nor the host finding changed', async () => {
+    const runtime = new CapturingRuntime(['Plan', 'Implementation',
+      JSON.stringify({ verdict: 'pass', summary: 'ready', findings: [] }), 'No files changed']);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    await expect(harness.run({ projectId: 'project-1', cwd: '/tmp/project-1', prompt: 'Build a game',
+      imageGenerationRoute: 'configured-api', workspaceFingerprint: async () => 'unchanged-source',
+      validateHostDelivery: async () => ({ ok: false, findings: ['Invisible platform'] }),
+    })).rejects.toThrow('修复没有进展');
+    expect(runtime.turns).toHaveLength(4);
+  });
+  it('stops on host-confirmed provider entitlement failures before spending any code repair turn', async () => {
+    const runtime = new CapturingRuntime(['Plan', 'Implemented, audio failed',
+      JSON.stringify({ verdict: 'repair', summary: 'Music missing', findings: ['Generate music'] })]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    await expect(harness.run({ projectId: 'project-1', cwd: '/tmp/project-1', prompt: 'Build a game',
+      imageGenerationRoute: 'configured-api',
+      externalBlockers: async () => ['MiniMax status_code: 2153 没有 Music API 使用资格'],
+    })).rejects.toThrow('外部服务阻塞');
+    expect(runtime.turns).toHaveLength(3);
+  });
   it('injects the required ImageGen contract into planning, implementation, review, repair, and re-review', async () => {
     const runtime = new CapturingRuntime([
       'Plan the game.',

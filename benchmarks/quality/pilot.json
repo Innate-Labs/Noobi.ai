@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "status": "development-pilot-incomplete-comparison-batch-not-started",
+  "developmentPilot": "forest-seeds-01.json",
+  "scope": "Small Godot 2D platform games; not evidence for every genre",
+  "runsPerPromptPerPipeline": 3,
+  "pipelines": [
+    "baseline",
+    "candidate"
+  ],
+  "totalPlannedRuns": 18,
+  "budgetCny": null,
+  "fairComparison": [
+    "Freeze scope, model/provider settings, per-run limits and quality rubric before starting.",
+    "Alternate baseline and candidate runs; retain every failure and external blocker.",
+    "Never tune on the held-out prompt or report the pilot as a population success-rate estimate.",
+    "Count autonomous completion separately from player win rate and quality review.",
+    "Recheck source/artifact/report identity before comparing any outputs."
+  ],
+  "cases": [
+    {
+      "id": "forest-seeds",
+      "split": "development",
+      "prompt": "制作一个小型 Godot 2D 横版森林冒险：玩家移动、跳跃、冲刺，在一个完整关卡中收集三枚种子并抵达出口。包含一条容易但较长的路线和一条短而有风险的路线、移动的危险、明确的受伤与失败反馈、暂停和立即重玩。角色、地形、动画、中文 HUD 和音效统一且清晰。先证明核心玩法，再扩展正式美术，不得把背景中的平台当作可碰撞地形。"
+    },
+    {
+      "id": "clockwork-courier",
+      "split": "development",
+      "prompt": "制作一个小型 Godot 2D 横版机械信使游戏：玩家移动、跳跃和短冲刺，将电池送到三个终端后到达出口。一个完整短关卡包含有节奏的移动障碍、安全落脚区和需要判断时机的路线；冲刺有冷却，失误有可理解的代价。提供完整胜负、暂停和重开，清晰中文引导，风格一致的角色与环境素材。"
+    },
+    {
+      "id": "tide-lantern",
+      "split": "held-out",
+      "prompt": "制作一个小型 Godot 2D 横版海岸灯火游戏：移动、跳跃、冲刺，在涨落的危险区域之间点亮三个灯塔并抵达终点。提供安全路径与可选的风险奖励，一种移动敌人，明确的目标、碰撞、受伤、失败、胜利、暂停和立即重玩。一个完整短关卡即可，重视可读性、角色动作、音画反馈和统一美术，不通过扩大判定或取消失败来让自动测试成功。"
+    }
+  ],
+  "requiredEvidence": [
+    "frozen-source",
+    "artifact-hash",
+    "input-replay",
+    "runtime-state",
+    "screenshots",
+    "win-and-failure",
+    "restart",
+    "cost-and-time",
+    "blind-quality-review"
+  ],
+  "qualityDimensions": [
+    "goal-clarity",
+    "control-feedback",
+    "meaningful-challenge",
+    "visual-audio-coherence"
+  ],
+  "qualityThreshold": "Calibrate against a fixed reference sample before generation; do not use basic-check percentage as the threshold."
+}

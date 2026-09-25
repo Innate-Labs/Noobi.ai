@@ -120,6 +120,12 @@ export interface ProjectIconData {
   updatedAt: string;
 }
 
+/** Clipboard-pasted files have no on-disk path; the renderer sends their bytes instead. */
+export interface InlineAttachmentInput {
+  name: string;
+  dataBase64: string;
+}
+
 export interface ProjectRecord {
   id: string;
   name: string;
@@ -409,13 +415,29 @@ export interface GameplayExperienceCheck {
 export interface GameplayExperienceReport {
   version: 1;
   verdict: GameplayExperienceVerdict;
-  /** Normalized host score, clamped by the producer to the inclusive 0–100 range. */
+  /** Basic runtime checks passed, as a percentage. This is not an art/fun quality score. */
   score: number;
   checkedAt: string;
   durationMs?: number;
   reportPath: string;
   summary?: string;
   checks: GameplayExperienceCheck[];
+  /** App-owned identity of the exact frozen inputs and delivered artifact. */
+  build?: GameplayBuildBinding;
+}
+
+export interface GameplayBuildBinding {
+  buildId: string;
+  sourceHash: string;
+  artifactHash: string;
+  testSuiteVersion: string;
+}
+
+export interface BuildPreviewStatus {
+  state: 'current' | 'stale' | 'legacy' | 'unavailable';
+  message: string;
+  buildId?: string;
+  builtAt?: string;
 }
 
 export interface ProjectInspectorPayload {
@@ -425,6 +447,7 @@ export interface ProjectInspectorPayload {
   assetPlans: AssetPlanRecord[];
   imageGenerationGate: ImageGenerationGate;
   experienceReport: GameplayExperienceReport | null;
+  buildPreview?: BuildPreviewStatus;
 }
 
 export type MediaCapability = GameAssetKind;

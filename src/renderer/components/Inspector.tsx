@@ -111,8 +111,8 @@ export function Inspector({
       ? 'is-error'
       : 'is-pending';
   const showExperienceReport = evaluatingExperience
-    || project.status === 'completed'
-    || (project.status === 'failed' && payload.experienceReport !== null);
+    || terminal
+    || project.status === 'waiting';
   const showProductionScene = !payload.previewUrl
     || (project.status === 'running' && !showBuildPreview);
   const resolvedNoobiPackId = project.noobiPackOverrideId
@@ -517,6 +517,12 @@ export function Inspector({
 
       {tab === 'preview' ? (
         <div className="preview-pane">
+          {payload.buildPreview ? (
+            <div className="build-preview-status" role="status" data-state={payload.buildPreview.state}>
+              <Info size={14} aria-hidden="true" />
+              <span>{payload.buildPreview.message}</span>
+            </div>
+          ) : null}
           {!showProductionScene && payload.previewUrl ? (
             <iframe
               key={`${payload.previewUrl}:${previewRevision}`}
@@ -540,7 +546,7 @@ export function Inspector({
             <ExperienceReport
               report={payload.experienceReport}
               evaluating={evaluatingExperience}
-              disabled={project.status === 'running' || !payload.previewUrl}
+              disabled={project.status === 'running' || (!payload.previewUrl && project.engine !== 'godot')}
               onEvaluate={() => void evaluateExperience()}
               onCancel={() => void cancelExperience()}
               onOpenReport={(relativePath) => {
@@ -647,8 +653,8 @@ function ExperienceReport({
       <section className="experience-report is-running" aria-label="体验评测运行中" aria-busy="true">
         <header className="experience-report-header">
           <div>
-            <span>PLAYTEST / EXPERIENCE</span>
-            <strong>体验评测</strong>
+            <span>PLAYTEST / RUNTIME</span>
+            <strong>基础运行检查</strong>
           </div>
           <span className="experience-verdict is-running">
             <CircleDashed size={12} className="spin" aria-hidden="true" /> RUNNING
@@ -658,7 +664,7 @@ function ExperienceReport({
           <PlayCircle size={18} aria-hidden="true" />
           <div>
             <strong>正在自动试玩正式构建</strong>
-            <span>{report ? `上次结果 ${report.score}/100；本次完成前不沿用旧结论。` : '正在执行操作、动画、暂停与重开检查。'}</span>
+            <span>{report ? `上次基础检查通过率 ${report.score}%；本次完成前不沿用旧结论。` : '正在执行操作、动画、暂停与重开检查。'}</span>
           </div>
           <button type="button" className="experience-evaluate-button is-stop" onClick={onCancel}>
             <Square size={10} fill="currentColor" aria-hidden="true" /> 停止评测
@@ -673,8 +679,8 @@ function ExperienceReport({
       <section className="experience-report is-waiting" aria-label="体验评测">
         <header className="experience-report-header">
           <div>
-            <span>PLAYTEST / EXPERIENCE</span>
-            <strong>体验评测</strong>
+            <span>PLAYTEST / RUNTIME</span>
+            <strong>基础运行检查</strong>
           </div>
           <span className="experience-verdict is-waiting">
             <CircleDashed size={12} aria-hidden="true" /> WAITING
@@ -700,7 +706,8 @@ function ExperienceReport({
     );
   }
 
-  const score = Math.max(0, Math.min(100, Math.round(report.score)));
+  const passedChecks = report.checks.filter((check) => check.status === 'pass').length;
+  const applicableChecks = report.checks.filter((check) => check.status !== 'skipped').length;
   const checkedAt = formatExperienceTime(report.checkedAt);
 
   return (
@@ -710,12 +717,12 @@ function ExperienceReport({
     >
       <header className="experience-report-header">
         <div>
-          <span>PLAYTEST / EXPERIENCE</span>
-          <strong>体验评测</strong>
+          <span>PLAYTEST / RUNTIME</span>
+          <strong>基础运行检查</strong>
         </div>
-        <div className="experience-score" aria-label={`体验评分 ${score} 分`}>
-          <strong>{score}</strong>
-          <span>/100</span>
+        <div className="experience-score" aria-label={`${passedChecks} 项基础检查通过，共 ${applicableChecks} 项`}>
+          <strong>{passedChecks}</strong>
+          <span>/{applicableChecks} 项</span>
         </div>
         <span className={`experience-verdict is-${report.verdict}`}>
           {report.verdict === 'pass'
@@ -731,6 +738,7 @@ function ExperienceReport({
         ))}
       </div>
 
+      <p className="experience-summary">基础检查验证运行与输入反馈；美术、玩法深度与趣味需专项验收。</p>
       {report.summary ? <p className="experience-summary">{report.summary}</p> : null}
 
       <footer className="experience-report-meta">

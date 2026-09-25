@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -13,6 +13,26 @@ afterEach(async () => {
 });
 
 describe('project infrastructure', () => {
+  it('creates beneath a selected parent alias without following later alias changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-parent-alias-'));
+    roots.push(root);
+    const games = join(root, 'real-games');
+    const elsewhere = join(root, 'elsewhere');
+    const alias = join(root, 'Noobi Games');
+    await mkdir(games);
+    await mkdir(elsewhere);
+    await symlink(games, alias, 'dir');
+    const store = new ProjectStore(join(root, 'data/projects.json'), alias);
+    const project = await store.create({ name: 'Alias Game', idea: 'Test directory selection.', parentDirectory: alias });
+    expect(project.root).toBe(join(await realpath(games), 'alias-game'));
+    await rm(alias);
+    await symlink(elsewhere, alias, 'dir');
+    await expect(store.readProjectFile(project.id, 'README.md')).resolves.toBeDefined();
+    await writeFile(join(elsewhere, 'private.txt'), 'outside');
+    await symlink(join(elsewhere, 'private.txt'), join(project.root, 'escape.txt'));
+    await expect(store.readProjectFile(project.id, 'escape.txt')).rejects.toThrow();
+  });
+
   it('atomically reloads projects and rejects inspector traversal', async () => {
     const root = await mkdtemp(join(tmpdir(), 'noobi-store-test-'));
     roots.push(root);

@@ -739,6 +739,43 @@ describe('media generation service', () => {
     expect(assetStore.importFiles).not.toHaveBeenCalled();
   });
 
+  it('checks the selected MiniMax music model through one real music request without registering an asset', async () => {
+    const { providerStore } = await configuredStore({
+      presetId: 'minimax-audio-cn',
+      model: 'music-3.0',
+      apiKey: 'minimax-music-probe-secret',
+    });
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://api.minimaxi.com/v1/music_generation');
+      const body = JSON.parse(init?.body as string);
+      expect(body).toMatchObject({ model: 'music-3.0', is_instrumental: true, output_format: 'hex' });
+      expect(body).not.toHaveProperty('durationSeconds');
+      expect(body).not.toHaveProperty('text');
+      return miniMaxResponse(tinyMp3(0x55));
+    });
+    const assetStore = { importFiles: vi.fn(), registerExisting: vi.fn() };
+    const service = new MediaGenerationService({ providerStore, assetStore: assetStore as never, fetch: fetchMock as typeof fetch });
+    const result = await service.probeActiveAudioProvider('music');
+    expect(result).toMatchObject({ outcome: 'ready', provider: { model: 'music-3.0' } });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(assetStore.importFiles).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain('minimax-music-probe-secret');
+  });
+
+  it('does not accept working speech as evidence of music access or retry a rejected music probe', async () => {
+    const { providerStore } = await configuredStore({ presetId: 'minimax-audio-cn', apiKey: 'minimax-probe-secret' });
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith('/v1/t2a_v2')) return miniMaxResponse(tinyMp3(0x56));
+      return new Response(JSON.stringify({
+        base_resp: { status_code: 2153, status_msg: 'private-provider-details' },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const service = new MediaGenerationService({ providerStore, assetStore: new AssetStore(), fetch: fetchMock as typeof fetch });
+    await expect(service.probeActiveAudioProvider()).resolves.toMatchObject({ outcome: 'ready' });
+    await expect(service.probeActiveAudioProvider('music')).rejects.toThrow(/2153.*Music API 使用资格/u);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/v1/music_generation'))).toHaveLength(1);
+  });
+
   it('routes a China-region MiniMax key only to the official minimaxi.com Speech endpoint', async () => {
     const { providerStore } = await configuredStore({
       presetId: 'minimax-audio-cn',

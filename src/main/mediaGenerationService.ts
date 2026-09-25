@@ -242,10 +242,11 @@ export class MediaGenerationService {
   }
 
   /**
-   * Performs a deliberately tiny, redacted connectivity check for the active audio provider.
-   * MiniMax uses its low-cost speech turbo model; other vendors are never charged implicitly.
+   * Performs one explicit, redacted generation check for the active audio provider.
+   * Music checks hit the real music endpoint; speech remains the low-cost default.
+   * Other vendors are never charged implicitly, and probes do not register game assets.
    */
-  async probeActiveAudioProvider(): Promise<MediaProviderProbeResult> {
+  async probeActiveAudioProvider(purpose: 'speech' | 'music' = 'speech'): Promise<MediaProviderProbeResult> {
     const result = await this.#options.providerStore.withActiveProvider('audio', async (provider) => {
       const providerSummary = (model: string): MediaProviderProbeSummary => ({
         id: provider.id,
@@ -255,6 +256,13 @@ export class MediaGenerationService {
       });
       if (provider.preset.adapter !== 'minimax-audio') {
         return { outcome: 'unsupported', provider: providerSummary(provider.model) } satisfies MediaProviderProbeResult;
+      }
+      if (purpose === 'music') {
+        const model = resolveModel(provider, undefined, { purpose });
+        await this.#requestGeneratedMedia(provider, 'audio',
+          'A very short instrumental game menu cue, gentle marimba, simple melody, calm ending.',
+          model, { purpose, format: 'mp3', instrumental: true });
+        return { outcome: 'ready', provider: providerSummary(model) } satisfies MediaProviderProbeResult;
       }
       await this.#requestGeneratedMedia(provider, 'audio', 'OK.', MINIMAX_PROBE_MODEL, {
         purpose: 'speech',

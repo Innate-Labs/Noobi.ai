@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type ClipboardEvent,
   type KeyboardEvent,
 } from 'react';
 
@@ -204,6 +205,16 @@ export function HomeDashboard({
     addAttachments(Array.from(event.dataTransfer.files));
   }
 
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData?.files ?? []);
+    if (files.length === 0) return;
+    event.preventDefault();
+    addAttachments(files);
+    setAttachmentNotice(
+      `已粘贴 ${files.length} 个文件${files.some((file) => !SUPPORTED_ATTACHMENT.test(file.name)) ? '（不支持的格式已被忽略）' : ''}`,
+    );
+  }
+
   function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && launchReady) {
       event.preventDefault();
@@ -232,7 +243,17 @@ export function HomeDashboard({
         </div>
       </header>
 
-      <div className="home-scroll">
+      <div
+        className="home-scroll"
+        onDragEnter={handleDragEnter}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <section className="home-hero" aria-labelledby="home-title">
           <div className="home-hero-content">
             <h1 id="home-title">今天想做什么游戏？</h1>
@@ -240,14 +261,6 @@ export function HomeDashboard({
 
             <div
               className={`home-prompt-card${dragActive ? ' is-dragging' : ''}`}
-              onDragEnter={handleDragEnter}
-              onDragOver={(event) => {
-                if (!event.dataTransfer.types.includes('Files')) return;
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'copy';
-              }}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
             >
               <input
                 ref={imageInputRef}
@@ -279,6 +292,7 @@ export function HomeDashboard({
                 busy={busy}
                 onChange={(event) => setIdea(event.target.value)}
                 onKeyDown={handlePromptKeyDown}
+                onPaste={handlePaste}
               />
               {attachments.length > 0 ? (
                 <div className="home-attachment-list" aria-label="已添加的参考附件">

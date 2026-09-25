@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "kind": "development-pilot",
+  "status": "incomplete-external-blocked",
+  "caseId": "forest-seeds",
+  "projectId": "60e8486d-877d-4d06-8e8a-bc1308ab007a",
+  "projectName": "森林种子 · 自主制作验证 01",
+  "startedAt": "2026-09-05T04:07:51.891Z",
+  "invocation": "Actual Noobi renderer API: createProject then runProject, using the user's configured account and providers.",
+  "model": "gpt-5.6-sol",
+  "effort": "medium",
+  "engine": "godot",
+  "targetFrameRate": 60,
+  "maxWallTimeMinutes": 35,
+  "maxCodeRepairs": 3,
+  "imageRoute": "codex-imagegen",
+  "audioRoute": "minimax-audio-cn/music-3.0",
+  "costCny": null,
+  "costNote": "Uses existing configured account/services. No purchase or 18-run batch started. Monetary usage is not available in the current host events and must not be invented.",
+  "interventions": [
+    "Creation initially failed because the configured parent ~/Noobi Games is a symlink. Fixed ProjectStore to resolve the selected parent, retaining strict checks on project roots and inspector paths; restarted the app before creating the pilot.",
+    "Attempt 1 never reached implementation: model TLS EOF / waiting for network, finally shown as Planner interrupted. Added macOS static proxy inheritance and a 90-second continuous reconnect deadline with preserved cause before retrying the same project. This is an assisted development run, not an unassisted success.",
+    "Attempt 2 hit the 20-minute Implementer deadline with the playtest manifest missing. Preserved that build and used a separate host-written diagnostic input plan against its unchanged Web artifacts: holding right without jumping reached victory; visible UI glyphs and icon size failed. Restarted Noobi with the scoped Godot check tool and sent a targeted repair prompt. Game source remains written by Noobi. This is assisted development, not unassisted benchmark success."
+  ],
+  "scope": "One development run. Does not establish autonomous success rate, quality generalization, or blinded fun assessment.",
+  "finishedAt": "2026-09-05T05:41:18.685Z",
+  "finalBuild": {
+    "buildId": "aa921d85-8c77-42d5-b3cc-7e6174a7ce35",
+    "sourceHash": "184f0103c19d6904e95edad3011cd26b6432c70d3ec4a9745f06afd8b9eff114",
+    "artifactHash": "2cd2f37ffb0ab46504592c6b431d61f9f52efb31de1699abfd0da97d10911d8b",
+    "testSuiteVersion": "godot-delivery-v3"
+  },
+  "autonomousCompleted": false,
+  "finalVerdict": "repair",
+  "actualProviderMusicCalls": 1,
+  "remaining": [
+    "Model connection interrupted the repair turn after continuous reconnect deadline.",
+    "MiniMax Music entitlement 2153 remains blocked.",
+    "HUD heart texture is actually 384x512 despite a requested 42x56 size; heart glyph missing.",
+    "New journey only collects one seed; win, damage, and post-win restart remain unproven.",
+    "Resume temporal evidence remains insufficient for a static viewport; do not equate this with proven broken resume.",
+    "Meaningful route choice and final art/gameplay quality not accepted."
+  ]
+}

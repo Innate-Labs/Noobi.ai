@@ -1,6 +1,7 @@
 import {
   forwardRef,
   type ChangeEventHandler,
+  type ClipboardEventHandler,
   type KeyboardEventHandler,
 } from 'react';
 
@@ -11,10 +12,11 @@ interface RotatingIdeaInputProps {
   busy: boolean;
   onChange: ChangeEventHandler<HTMLTextAreaElement>;
   onKeyDown: KeyboardEventHandler<HTMLTextAreaElement>;
+  onPaste?: ClipboardEventHandler<HTMLTextAreaElement>;
 }
 
 export const RotatingIdeaInput = forwardRef<HTMLTextAreaElement, RotatingIdeaInputProps>(
-  function RotatingIdeaInput({ value, busy, onChange, onKeyDown }, ref) {
+  function RotatingIdeaInput({ value, busy, onChange, onKeyDown, onPaste }, ref) {
     const prompt = useRotatingPrompt({ paused: value.length > 0 || busy });
     return (
       <textarea
@@ -27,6 +29,7 @@ export const RotatingIdeaInput = forwardRef<HTMLTextAreaElement, RotatingIdeaInp
         placeholder={prompt.text}
         onChange={onChange}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
       />
     );
   },

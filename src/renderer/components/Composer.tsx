@@ -87,6 +87,7 @@ export function Composer({
             : 'NEW CODEX THREAD'}
         </span>
       </header>
+      {running && project.lastError ? <p className="composer-network-status" role="status">{project.lastError}</p> : null}
       <div className="composer-body">
         <textarea
           value={prompt}

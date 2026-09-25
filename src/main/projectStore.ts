@@ -171,7 +171,7 @@ export class ProjectStore {
   async create(input: ProjectStoreCreateInput): Promise<ProjectRecord> {
     return this.#mutate(async (state) => {
       const normalized = validateCreateProjectInput(input);
-      const parent = await ensureDirectory(normalized.parentDirectory);
+      const parent = await ensureWorkspaceParent(normalized.parentDirectory);
       const projectRoot = await createUniqueWorkspaceDirectory(parent, normalized.name);
       const timestamp = new Date().toISOString();
       const project: ProjectRecord = {
@@ -798,9 +798,12 @@ function defaultSettings(defaultWorkspace: string): AppSettings {
   };
 }
 
-async function ensureDirectory(directory: string): Promise<string> {
+async function ensureWorkspaceParent(directory: string): Promise<string> {
   await mkdir(directory, { recursive: true, mode: 0o755 });
-  return canonicalDirectory(directory);
+  // The user-selected container may be an alias (for example ~/Noobi Games).
+  // Resolve it once, then create and persist a real child root. Project roots
+  // and inspector paths still use the stricter, no-symlink checks below.
+  return canonicalDirectory(await realpath(directory));
 }
 
 async function canonicalDirectory(directory: string): Promise<string> {

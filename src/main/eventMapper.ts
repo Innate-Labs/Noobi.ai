@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { modelConnectionFailure } from './modelConnection.js';
 import type { AgentEvent, AgentEventKind, PipelineStage } from '../shared/contracts.js';
 
 export interface ThreadRoute {
@@ -82,6 +83,11 @@ export function notificationToEvent(
       kind = 'error';
       title = `${roleName} · 运行错误`;
       message = readString(params.message) ?? readString(asRecord(params.error)?.message) ?? describe(params);
+      if (modelConnectionFailure(params.error ?? params.message)) {
+        kind = 'lifecycle';
+        title = `${roleName} · 网络重连中`;
+        message = `网络暂时不可用，Noobi 会自动重连并继续。${message}`;
+      }
       break;
     case 'warning':
     case 'configWarning':
@@ -142,6 +148,7 @@ export function stageForNotification(
 
   if (itemType === 'dynamicToolCall' || itemType === 'mcpToolCall') {
     const tool = cleanToolName(readString(item?.tool)).toLowerCase();
+    if (tool === 'noobi_godot_check') return 'verify';
     return isMediaTool(tool) ? 'assets' : currentStage;
   }
 
@@ -292,8 +299,13 @@ function describeItem(
     case 'dynamicToolCall':
       return {
         kind: item.status === 'failed' || item.success === false ? 'error' : 'tool',
-        title: `素材工具 ${cleanToolName(readString(item.tool))}`.trim(),
-        message: `状态：${readString(item.status) ?? 'unknown'}${typeof item.success === 'boolean' ? `\n结果：${item.success ? '成功' : '失败'}` : ''}`,
+        title: cleanToolName(readString(item.tool)) === 'noobi_godot_check'
+          ? 'Godot · 构建与试玩检查'
+          : `素材工具 ${cleanToolName(readString(item.tool))}`.trim(),
+        message: `状态：${readString(item.status) ?? 'unknown'}${typeof item.success === 'boolean'
+          ? cleanToolName(readString(item.tool)) === 'noobi_godot_check'
+            ? `\n${item.success ? '检查调用已完成；是否通过请查看体验报告。' : '检查调用失败。'}`
+            : `\n结果：${item.success ? '成功' : '失败'}` : ''}`,
       };
     case 'plan':
       return { kind: 'plan', title: '计划', message: describe(item) };

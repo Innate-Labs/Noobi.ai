@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { locateCodexBinary, readCodexVersion } from './codexLocator.js';
+import { runtimeProxyEnvironment } from './systemProxyEnvironment.js';
 import {
   JsonRpcPeer,
   type JsonRpcServerRequest,
@@ -502,11 +503,12 @@ export class CodexAppServer extends EventEmitter {
       const binaryPath = await locateCodexBinary();
       this.#assertGeneration(generation);
       const version = readCodexVersion(binaryPath);
+      const runtimeEnv = await runtimeProxyEnvironment();
       this.#assertGeneration(generation);
       child = spawn(binaryPath, ['app-server', '--listen', 'stdio://', '--strict-config'], {
         cwd: process.cwd(),
         env: {
-          ...process.env,
+          ...runtimeEnv,
           RUST_LOG: process.env.RUST_LOG ?? 'warn',
           LOG_FORMAT: 'json',
           ...(this.#configuredCodexHome ? { CODEX_HOME: this.#configuredCodexHome } : {}),

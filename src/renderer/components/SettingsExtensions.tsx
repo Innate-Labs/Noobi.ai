@@ -498,6 +498,7 @@ function ProviderModule({
   const presets = PROVIDERS[value.capability];
   const provider = presets.find((item) => item.id === draft.provider) ?? presets.at(-1)!;
   const isMiniMax = provider.id === 'minimax-audio' || provider.id === 'minimax-audio-cn';
+  const testsMusic = isMiniMax && draft.model.trim().startsWith('music-');
   const models = provider.models;
   const modelKnown = models.some((item) => item.id === draft.model);
   const hasSavedKeyForDraft = draft.provider === value.provider && value.hasApiKey;
@@ -666,17 +667,20 @@ function ProviderModule({
             title={dirty
               ? '请先保存更改，再检查服务'
               : isMiniMax
-                ? '使用已保存的加密凭据调用一次极短 MiniMax Speech Turbo 鉴权探测；不会生成音乐素材'
+                ? testsMusic
+                  ? '调用一次所选 MiniMax Music 模型生成测试音乐，可能产生费用'
+                  : '调用一次极短 MiniMax Speech Turbo 语音，检查语音连接'
                 : '检查已保存的服务配置；实际模型可用性将在生成时确认'}
             onClick={() => void test()}
           >
-            <RefreshCw size={13} className={busy === 'test' ? 'spin' : ''} /> {busy === 'test' ? '检查中' : '检查服务'}
+            <RefreshCw size={13} className={busy === 'test' ? 'spin' : ''} /> {busy === 'test' ? '检查中' : testsMusic ? '测试音乐生成' : '检查服务'}
           </button>
           <button className="primary-button compact" type="button" disabled={disabled || busy !== null || Boolean(apiKeyError) || !draft.endpoint.trim() || !draft.model.trim()} onClick={() => void save()}>
             <Save size={13} /> {busy === 'save' ? '保存中' : '保存'}
           </button>
         </div>
       </footer>
+      {testsMusic ? <p className="module-message">音乐测试会生成一次音频，可能产生费用；测试成功后才标记为可用。</p> : null}
       {value.statusMessage ? <p className="module-message">{value.statusMessage}</p> : null}
       {dirty ? <p className="module-message is-dirty">当前更改尚未保存；保存后才能检查服务。</p> : null}
       {value.capability === 'model3d' ? (

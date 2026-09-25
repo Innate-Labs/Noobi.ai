@@ -17,6 +17,27 @@ afterEach(async () => {
 });
 
 describe('GodotEnvironmentService', () => {
+  it('runs the actual main scene and rejects script errors even with exit code zero', async () => {
+    const root = await temporaryRoot('noobi-runtime-gate-');
+    const binary = await fakeExecutable(root, 'godot');
+    const projectPath = join(root, 'game'); await mkdir(projectPath);
+    await writeFile(join(projectPath, 'project.godot'), '[application]\n');
+    const calls: string[][] = [];
+    let broken = true;
+    const service = new GodotEnvironmentService({ storageFile: join(root, 'config.json'),
+      platform: 'linux', environment: { NOOBI_GODOT_BIN: binary, PATH: '' }, homeDirectory: root,
+      processRunner: async (_binary, args) => {
+        calls.push([...args]);
+        if (args.includes('--version')) return result({ stdout: '4.7.1.stable.official.test' });
+        return result({ stderr: broken ? 'SCRIPT ERROR: Cannot call method on null' : '' });
+      },
+    });
+    await service.init();
+    expect((await service.execute({ kind: 'runtime', projectPath })).ok).toBe(false);
+    expect(calls.at(-1)).toEqual(['--headless', '--path', projectPath, '--quit-after', '180']);
+    broken = false;
+    expect((await service.execute({ kind: 'runtime', projectPath })).ok).toBe(true);
+  });
   it('requires the exact export-template version instead of accepting a nearby install', async () => {
     const root = await temporaryRoot('noobi-godot-mismatch-');
     const binary = await fakeExecutable(root, 'bin/godot');
@@ -222,7 +243,6 @@ describe('GodotEnvironmentService', () => {
     });
     expect(calls[2]?.args).toEqual([
       '--headless',
-      '--recovery-mode',
       '--path', projectPath,
       '--export-release',
       'Web',

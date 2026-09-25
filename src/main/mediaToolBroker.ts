@@ -1,3 +1,4 @@
+import { classifyDeliveryFailure } from './production/deliveryFailure.js';
 import type { AssetStore } from './assetStore.js';
 import type { AssetPlanStore, AssetPlanUpsertInput } from './assetPlanStore.js';
 import type { CodexAppServer, DynamicToolSpec, JsonValue } from './codexAppServer.js';
@@ -546,6 +547,10 @@ export class MediaToolBroker {
     planId: string,
     route?: AssetPlanRoute,
   ): Promise<AssetPlanRecord> {
+    const current = await this.#requireAssetPlanStore().get(project.id, planId);
+    if (current.status === 'failed' && current.error?.code === 'provider-blocked') {
+      throw new ToolInputError(`外部素材服务仍被阻塞：${current.error.message}。更新服务配置后在素材面板重新排队；不要反复调用生成。`);
+    }
     const plan = await this.#requireAssetPlanStore().begin(project.id, planId, route);
     await this.#notifyPlans(project.id);
     return plan;
@@ -574,10 +579,12 @@ export class MediaToolBroker {
 
   async #recordFailedPlan(project: MediaToolProject, planId: string, error: unknown): Promise<void> {
     try {
+      const message = safeError(error, project.root);
+      const external = classifyDeliveryFailure(message) === 'external-blocked';
       await this.#requireAssetPlanStore().fail(project.id, planId, {
-        code: error instanceof ToolInputError ? 'generation-input-invalid' : 'media-generation-failed',
-        message: safeError(error, project.root),
-        retryable: !(error instanceof ToolInputError),
+        code: error instanceof ToolInputError ? 'generation-input-invalid' : external ? 'provider-blocked' : 'media-generation-failed',
+        message,
+        retryable: !external && !(error instanceof ToolInputError),
       });
       await this.#notifyPlans(project.id);
     } catch {

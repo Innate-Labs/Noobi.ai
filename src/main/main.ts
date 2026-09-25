@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -24,7 +24,6 @@ import type {
   EnvironmentToolStatus,
   ExtensionSettingsSnapshot,
   GameAssetRecord,
-  GameplayExperienceReport,
   McpServerSetting,
   MediaCapability,
   MediaProviderSetting,
@@ -63,16 +62,27 @@ import {
   type EngineAdvisorAttachment,
 } from './gameEngineAdvisor.js';
 import { GodotEnvironmentService } from './godotEnvironmentService.js';
+import { GodotBuildStore } from './production/godotBuildStore.js';
+import { ProductionCheckpointStore } from './production/productionCheckpointStore.js';
+import { readVisualSample, visualSampleFindings } from './quality/visualSample.js';
+import type { VisualSampleValidation } from './production/visualSampleMilestone.js';
+import { journeyFeedback } from './runtime/journeyFeedback.js';
+import { buildGodotCandidate } from './production/godotBuilder.js';
+import { classifyDeliveryFailure, ExternalDeliveryBlockedError } from './production/deliveryFailure.js';
+import { gameQualitySpec, supportsVisualSample } from './production/gameQualitySpec.js';
+import { gameGoalFindings } from './quality/gameGoalEvidence.js';
 import {
   archiveLatestGameplayExperienceReport,
   GameplayExperienceEvaluator,
   readLatestGameplayExperienceReport,
   writeGameplayExperienceFailureReport,
+  type GameplayExperienceReport,
 } from './gameplayExperienceEvaluator.js';
 import {
   GameHarness,
   GAME_HARNESS_TOOLSET_VERSION,
   GameHarnessStoppedError,
+  GameHarnessConnectionError,
   reusableImplementerThreadId,
   type GameHarnessStateEvent,
   type GameHarnessThreadEvent,
@@ -95,6 +105,7 @@ import {
   type MediaProviderSummary,
 } from './mediaProviderStore.js';
 import { MEDIA_DYNAMIC_TOOLS, MediaToolBroker } from './mediaToolBroker.js';
+import { GODOT_DYNAMIC_TOOLS, GodotToolBroker } from './godotToolBroker.js';
 import { PreviewServer } from './previewServer.js';
 import {
   generateAiProjectIcon,
@@ -143,8 +154,11 @@ let projectStore: ProjectStore;
 let assetPlanStore: AssetPlanStore;
 let eventLog: EventLog;
 let godotEnvironmentService: GodotEnvironmentService;
+let godotBuildStore: GodotBuildStore;
+let productionCheckpoints: ProductionCheckpointStore;
 let approvalBroker: ApprovalBroker;
 let mediaToolBroker: MediaToolBroker;
+let godotToolBroker: GodotToolBroker;
 let mediaProviderStore: MediaProviderStore;
 let mediaGenerationService: MediaGenerationService;
 let mcpConfigManager: McpConfigManager;
@@ -152,6 +166,7 @@ let promptTemplateStore: PromptTemplateStore;
 let imageGenerationAttestations: ImageGenerationAttestationStore;
 let mainWindow: BrowserWindow | null = null;
 let shuttingDown = false;
+let launchReady = false;
 const mediaProviderTests = new Map<MediaCapability, MediaProviderTestResult>();
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -172,7 +187,9 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on('activate', () => {
-  if (!mainWindow && !shuttingDown) void createWindow();
+  // macOS may activate while asynchronous stores/Godot discovery are still
+  // initializing. Do not expose a renderer before its IPC handlers exist.
+  if (launchReady && !mainWindow && !shuttingDown) void createWindow();
 });
 
 app.on('window-all-closed', () => {
@@ -201,6 +218,8 @@ async function launch(): Promise<void> {
   });
   eventLog = new EventLog(join(userData, 'events'));
   assetPlanStore = new AssetPlanStore(join(userData, 'asset-plans.json'));
+  godotBuildStore = new GodotBuildStore(join(userData, 'game-builds'));
+  productionCheckpoints = new ProductionCheckpointStore(join(userData, 'production-checkpoints'));
   godotEnvironmentService = new GodotEnvironmentService({
     storageFile: join(userData, 'godot-environment.json'),
   });
@@ -231,6 +250,33 @@ async function launch(): Promise<void> {
   promptTemplateStore = new PromptTemplateStore(join(userData, 'prompt-templates.json'));
   mcpConfigManager = new McpConfigManager(runtime);
   approvalBroker = new ApprovalBroker(runtime, (threadId) => threadRoutes.get(threadId)?.projectId ?? null);
+  godotToolBroker = new GodotToolBroker({
+    server: runtime,
+    resolveProject: async threadId => {
+      const route = threadRoutes.get(threadId);
+      return route?.role === 'implementer' ? projectStore.get(route.projectId) : null;
+    },
+    check: async (project, mode, signal) => {
+      if (mode === 'build') {
+        await verifyGodotProject(project, true, signal);
+        const build = await godotBuildStore.latest(project.id);
+        return { ok: true, buildId: build?.record.buildId, sourceHash: build?.record.sourceHash,
+          summary: 'Import, validation, main-scene runtime and Web export passed. Full gameplay and media acceptance remain pending.' };
+      }
+      const report = await evaluateProjectExperience(project, { signal, preflight: 'required' });
+      const goals = gameGoalFindings(report, gameQualitySpec(project));
+      const visual = supportsVisualSample(gameQualitySpec(project))
+        ? await validateProjectVisualSample(project, signal, report) : null;
+      return { ok: report.verdict === 'pass' && goals.length === 0, build: report.build,
+        checks: report.checks, goalFindings: goals, reportPath: report.reportPath,
+        journey: journeyFeedback(report),
+        visualSample: visual,
+        errors: report.errors.slice(0, 20).map(error => ({ kind: error.kind, message: error.message.slice(0, 4000) })),
+        summary: report.errors.some(error => error.kind === 'configuration')
+          ? 'The playtest contract is invalid; browser input did not run. Fix the exact configuration error below and rerun. Build metadata, when present, identifies the exported candidate.'
+          : 'Read the host report and screenshots. These checks do not certify art, fun or required media.' };
+    },
+  });
   mediaToolBroker = new MediaToolBroker({
     server: runtime,
     assetStore,
@@ -287,6 +333,7 @@ async function launch(): Promise<void> {
   bindHarnessEvents();
   bindIpc();
   await ensureSmokeProject();
+  launchReady = true;
   await createWindow();
 }
 
@@ -337,7 +384,7 @@ function bindRuntimeEvents(): void {
     if (process.env.NOOBI_DEBUG === '1') process.stderr.write(`[codex] ${message}\n`);
   });
   runtime.on('serverRequest', (request) => {
-    if (!mediaToolBroker.handle(request)) approvalBroker.handle(request);
+    if (!godotToolBroker.handle(request) && !mediaToolBroker.handle(request)) approvalBroker.handle(request);
   });
   runtime.on('notification', (notification: { method: string; params?: unknown }) => {
     if (notification.method === 'serverRequest/resolved') {
@@ -405,6 +452,7 @@ function bindHarnessEvents(): void {
   });
   harness.on('event', (event: AgentEvent) => emitAgentEvent(event));
   harness.on('state', (event: GameHarnessStateEvent) => {
+    if (event.state !== 'running') godotToolBroker.cancel(event.projectId);
     // Completion is provisional until the host validates all fixed generated-
     // media requirements after pending outputs have been ingested.
     if (event.state === 'completed') return;
@@ -463,8 +511,9 @@ function bindIpc(): void {
     _event,
     input: CreateProjectInput,
     attachmentPaths: unknown = [],
+    inlineAttachments: unknown = [],
   ) => {
-    const attachments = await inspectCreationAttachments(attachmentPaths);
+    const attachments = await inspectCreationAttachments(attachmentPaths, inlineAttachments);
     const [settings, godot] = await Promise.all([
       projectStore.getSettings(),
       godotEnvironmentService.refresh(),
@@ -525,7 +574,11 @@ function bindIpc(): void {
         });
         broadcast('noobi:event:project', failed);
         return failed;
+      } finally {
+        await attachments.cleanup();
       }
+    } else {
+      await attachments.cleanup();
     }
     if (project.engine === 'godot') {
       try {
@@ -644,6 +697,7 @@ function bindIpc(): void {
 
   handle('noobi:project:stop', async (_event, projectId: string) => {
     validateProjectId(projectId);
+    godotToolBroker.cancel(projectId);
     await harness.stop(projectId);
     const project = await projectStore.get(projectId);
     return project.status === 'running'
@@ -720,20 +774,23 @@ function bindIpc(): void {
   });
   handle('noobi:project:inspect', async (_event, projectId: string): Promise<ProjectInspectorPayload> => {
     const project = await projectStore.get(validateProjectId(projectId));
-    const useSourceAssetOverlay = project.status !== 'completed';
+    const buildInspection = project.engine === 'godot'
+      ? await godotBuildStore.inspect(project.id, project.root).catch(() => ({ build: null,
+          preview: { state: 'unavailable' as const, message: '无法验证构建版本，请重新构建；工程文件仍可查看。' } }))
+      : null;
     const [files, previewUrl, assets, experienceReport] = await Promise.all([
       projectStore.listProjectFiles(project.id),
       project.engine === 'godot'
-        ? previews.start(project.id, project.root, {
+        ? (buildInspection?.preview.state === 'unavailable' ? Promise.resolve('') : previews.start(project.id, buildInspection?.build?.root ?? project.root, {
             directory: 'build/web',
             sourceFallback: false,
             hideGodotSplash: true,
-            sourceAssetOverlay: useSourceAssetOverlay,
-          }).catch(() => '')
+            sourceAssetOverlay: false,
+          }).catch(() => ''))
         : previews.start(project.id, project.root, {
             directory: 'dist',
             sourceFallback: project.status !== 'completed',
-            sourceAssetOverlay: useSourceAssetOverlay,
+            sourceAssetOverlay: false,
           }).catch(() => ''),
       assetStore.list(project.id, project.root),
       readLatestGameplayExperienceReport(project.root).catch(() => null),
@@ -743,7 +800,13 @@ function bindIpc(): void {
       verifyHostGeneratedImage(project, assets),
     ]);
     const imageGenerationGate = imageGenerationGateFromVerification(imageVerification);
-    return { files, previewUrl, assets, assetPlans, imageGenerationGate, experienceReport };
+    const matchingReport = buildInspection
+      ? buildInspection.preview.state === 'current' && buildInspection.build
+        ? await godotBuildStore.report(buildInspection.build).catch(() => null) : null
+      : experienceReport;
+    return { files, previewUrl, assets, assetPlans, imageGenerationGate, experienceReport: matchingReport,
+      ...(buildInspection ? { buildPreview: buildInspection.preview } : {}),
+    };
   });
   handle('noobi:project:experience:evaluate', async (_event, projectId: string) => {
     const project = await projectStore.get(validateProjectId(projectId));
@@ -903,17 +966,19 @@ function bindIpc(): void {
         ? '未发现可用图像 API；制作时将回退 Codex ImageGen。'
         : '当前服务未启用，或缺少所需 API Key。';
     if (kind === 'audio' && (provider?.presetId === 'minimax-audio' || provider?.presetId === 'minimax-audio-cn')) {
+      const purpose = provider.model.startsWith('music-') ? 'music' : 'speech';
+      const probeLabel = purpose === 'music' ? 'MiniMax Music' : 'MiniMax Speech';
       try {
-        const probe = await mediaGenerationService.probeActiveAudioProvider();
+        const probe = await mediaGenerationService.probeActiveAudioProvider(purpose);
         ok = probe.outcome === 'ready';
         message = probe.outcome === 'ready'
-          ? 'MiniMax Speech 鉴权与短音频探测通过；Music 3.0 的账户资格将在首次实际音乐生成时确认。'
+          ? `${probeLabel} 实际生成测试通过（${probe.provider.model}）；已收到有效音频。`
           : probe.outcome === 'not-configured'
             ? 'MiniMax 音频服务未启用，或缺少所需 API Key。'
             : '当前音频服务不支持在线鉴权探测。';
       } catch (error) {
         ok = false;
-        message = `MiniMax Speech 连通性检查失败：${asError(error).message}`;
+        message = `${probeLabel} 生成测试失败：${asError(error).message}`;
       }
     }
     const result: MediaProviderTestResult = {
@@ -1011,9 +1076,10 @@ const CREATION_ATTACHMENT_MIME_TYPES = new Map<string, string>([
   ['.csv', 'text/csv'],
 ]);
 
-async function inspectCreationAttachments(value: unknown): Promise<{
+async function inspectCreationAttachments(value: unknown, inline: unknown = []): Promise<{
   paths: string[];
   metadata: EngineAdvisorAttachment[];
+  cleanup: () => Promise<void>;
 }> {
   if (!Array.isArray(value) || value.length > 50) throw new Error('一次最多上传 50 个附件');
   const paths: string[] = [];
@@ -1037,7 +1103,45 @@ async function inspectCreationAttachments(value: unknown): Promise<{
       size: info.size,
     });
   }
-  return { paths, metadata };
+
+  // Clipboard-pasted files arrive as base64 bytes (they have no on-disk path).
+  if (!Array.isArray(inline)) throw new Error('粘贴附件格式无效');
+  if (value.length + inline.length > 50) throw new Error('一次最多上传 50 个附件');
+  let tempDir: string | null = null;
+  try {
+    for (const [index, candidate] of inline.entries()) {
+      const record = asRecord(candidate);
+      if (!record) throw new Error('粘贴附件格式无效');
+      const displayName = typeof record.name === 'string' && record.name.trim()
+        ? basename(record.name.trim()).slice(0, 180)
+        : `pasted-${index + 1}.png`;
+      const extension = extname(displayName).toLowerCase();
+      const mimeType = CREATION_ATTACHMENT_MIME_TYPES.get(extension);
+      if (!mimeType) throw new Error(`不支持的附件格式：${extension || '无扩展名'}`);
+      if (typeof record.dataBase64 !== 'string' || record.dataBase64.length > 48 * 1024 * 1024) {
+        throw new Error(`粘贴附件过大或内容无效：${displayName}`);
+      }
+      const bytes = Buffer.from(record.dataBase64, 'base64');
+      if (bytes.length <= 0 || bytes.length > 32 * 1024 * 1024) {
+        throw new Error(`粘贴附件过大或内容无效：${displayName}`);
+      }
+      tempDir ??= await mkdtemp(join(tmpdir(), 'noobi-inline-attachments-'));
+      const tempPath = join(tempDir, `${String(index).padStart(2, '0')}-${displayName}`);
+      await writeFile(tempPath, bytes, { mode: 0o600 });
+      paths.push(tempPath);
+      metadata.push({ name: displayName, extension, mimeType, size: bytes.length });
+    }
+  } catch (error) {
+    if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  return {
+    paths,
+    metadata,
+    cleanup: async () => {
+      if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    },
+  };
 }
 
 async function importInitialProjectAttachments(
@@ -1316,13 +1420,47 @@ async function executeHarness(
       model,
       effort,
       threadId: reusableImplementerThreadId(project.threadId, project.toolsetVersion),
-      dynamicTools: MEDIA_DYNAMIC_TOOLS,
+      dynamicTools: [...MEDIA_DYNAMIC_TOOLS, ...GODOT_DYNAMIC_TOOLS],
       ...(imageGenerationSkill ? { imageGenerationSkill } : {}),
       imageGenerationRequirement,
       audioGenerationRequirement,
       imageGenerationRoute,
       targetFrameRate,
       promptAdditions,
+      qualitySpecification: gameQualitySpec(project),
+      ...(project.engine === 'godot' && gameQualitySpec(project).genre === 'platformer' ? {
+        validateCoreLoop: async (signal: AbortSignal) => {
+          const report = await evaluateProjectExperience(project, { signal, preflight: 'required' });
+          const findings = [
+            ...report.checks.filter(check => check.status === 'repair').map(check => `${check.label}: ${check.message}`),
+            ...gameGoalFindings(report, gameQualitySpec(project)),
+          ];
+          if (report.verdict === 'pass' && findings.length === 0) {
+            const build = await godotBuildStore.latest(project.id);
+            if (build && report.build?.buildId === build.record.buildId) {
+              await godotBuildStore.assertCurrent(build, signal);
+              await productionCheckpoints.accept('core-loop', build);
+            }
+          }
+          return { ok: report.verdict === 'pass' && findings.length === 0, findings };
+        },
+      } : {}),
+      ...(project.engine === 'godot' && supportsVisualSample(gameQualitySpec(project)) ? {
+        validateVisualSample: (signal: AbortSignal) => validateProjectVisualSample(project, signal),
+        acceptVisualSample: async (evidence: VisualSampleValidation) => {
+          const build = await godotBuildStore.latest(project.id);
+          if (!build || build.record.buildId !== evidence.buildId || build.record.sourceHash !== evidence.sourceHash
+            || build.record.artifactHash !== evidence.artifactHash) throw new Error('视觉样板检查点版本已变化');
+          await godotBuildStore.assertCurrent(build);
+          await godotBuildStore.verifyArtifacts(build);
+          await productionCheckpoints.accept('visual-sample', build);
+        },
+      } : {}),
+      externalBlockers: async () => (await assetPlanStore.list(project.id))
+        .filter((plan) => plan.required && plan.status === 'failed' && plan.error
+          && classifyDeliveryFailure(plan.error.message) === 'external-blocked')
+        .map((plan) => `${plan.name}: ${plan.error!.message}`),
+      ...(project.engine === 'godot' ? { workspaceFingerprint: () => godotBuildStore.fingerprint(project.root) } : {}),
       refreshImageGenerationRequirement: async () => {
         await waitForAssetIngestions(project.id);
         return resolveHostImageGenerationRequirement(project);
@@ -1342,6 +1480,13 @@ async function executeHarness(
     });
     await Promise.allSettled([previews.stop(project.id), playtestPreviews.stop(project.id)]);
     await waitForAssetIngestions(project.id);
+    if (project.engine === 'godot') {
+      const deliveredBuild = await godotBuildStore.latest(project.id);
+      if (!deliveredBuild) throw new Error('缺少已验证的 Godot 构建');
+      await godotBuildStore.assertCurrent(deliveredBuild);
+      await godotBuildStore.verifyArtifacts(deliveredBuild);
+      await productionCheckpoints.accept('delivery', deliveredBuild);
+    }
     await updateProject(project.id, {
       status: 'completed',
       stage: 'complete',
@@ -1353,9 +1498,10 @@ async function executeHarness(
   } catch (error) {
     if (error instanceof GameHarnessStoppedError) return;
     const message = asError(error).message;
+    const connectionBlocked = error instanceof GameHarnessConnectionError;
     await updateProject(project.id, {
-      status: isExternalDeliveryBlocker(message) ? 'waiting' : 'failed',
-      stage: 'verify',
+      status: connectionBlocked || error instanceof ExternalDeliveryBlockedError || isExternalDeliveryBlocker(message) ? 'waiting' : 'failed',
+      ...(connectionBlocked ? {} : { stage: 'verify' }),
       activeTurnId: null,
       lastError: message,
     }).catch(() => undefined);
@@ -1372,9 +1518,15 @@ function isProjectBusyForMutation(projectId: string): boolean {
     || experienceEvaluationRuns.has(projectId);
 }
 
-function startProductionPreview(project: ProjectRecord): Promise<string> {
+async function startProductionPreview(project: ProjectRecord): Promise<string> {
+  const build = project.engine === 'godot' ? await godotBuildStore.latest(project.id) : null;
+  if (project.engine === 'godot') {
+    if (!build) throw new Error('尚无可验证的独立 Godot 构建');
+    await godotBuildStore.assertCurrent(build);
+    await godotBuildStore.verifyArtifacts(build);
+  }
   return project.engine === 'godot'
-    ? playtestPreviews.start(project.id, project.root, {
+    ? playtestPreviews.start(project.id, build!.root, {
         directory: 'build/web',
         sourceFallback: false,
         hideGodotSplash: true,
@@ -1388,6 +1540,30 @@ function startProductionPreview(project: ProjectRecord): Promise<string> {
 }
 
 type ExperienceEvaluationPreflight = 'required' | 'already-validated';
+
+async function validateProjectVisualSample(project: ProjectRecord, signal: AbortSignal,
+  existingReport?: GameplayExperienceReport): Promise<VisualSampleValidation> {
+  try {
+    const report = existingReport ?? await evaluateProjectExperience(project, { signal, preflight: 'required' });
+    signal.throwIfAborted();
+    const build = await godotBuildStore.latest(project.id);
+    if (!build || report.build?.buildId !== build.record.buildId) throw new Error('缺少当前构建的视觉采样');
+    await godotBuildStore.assertCurrent(build, signal);
+    await godotBuildStore.verifyArtifacts(build);
+    const contract = await readVisualSample(build.root);
+    const findings = [
+      ...report.checks.filter(c => c.status === 'repair').map(c => `${c.label}: ${c.message}`),
+      ...gameGoalFindings(report, gameQualitySpec(project)),
+      ...visualSampleFindings(contract, report),
+    ];
+    return { ok: report.verdict === 'pass' && findings.length === 0, findings,
+      sourceHash: build.record.sourceHash, buildId: build.record.buildId, artifactHash: build.record.artifactHash,
+      evidencePath: report.reportPath };
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { ok: false, findings: [`VISUAL_SAMPLE: ${asError(error).message}`] };
+  }
+}
 
 interface ExperienceEvaluationOptions {
   signal?: AbortSignal;
@@ -1432,15 +1608,26 @@ async function performProjectExperienceEvaluation(
     }
     throwIfExperienceEvaluationAborted(signal);
     const previewUrl = await startProductionPreview(project);
+    const build = project.engine === 'godot' ? await godotBuildStore.latest(project.id) : null;
     report = await gameplayExperienceEvaluator.evaluate({
       projectRoot: project.root,
+      ...(build ? { manifestRoot: build.root, build: {
+        buildId: build.record.buildId, sourceHash: build.record.sourceHash,
+        artifactHash: build.record.artifactHash, testSuiteVersion: build.record.testSuiteVersion,
+      } } : {}),
       previewUrl,
       expectedEngine: project.engine === 'godot' ? 'godot' : 'web',
+      interactionMode: gameQualitySpec(project).interactionMode,
       expectedEntrypoint: project.engine === 'godot'
         ? 'build/web/index.html'
         : 'dist/index.html',
       signal,
     });
+    if (build) {
+      await godotBuildStore.assertCurrent(build, signal);
+      await godotBuildStore.verifyArtifacts(build);
+      await godotBuildStore.recordReport(build, report);
+    }
   } catch (error) {
     if (signal?.aborted) throw error;
     const message = `正式构建无法完成自动试玩：${asError(error).message}`;
@@ -1456,8 +1643,8 @@ async function performProjectExperienceEvaluation(
     kind: report.verdict === 'pass' ? 'assistant' : 'error',
     title: report.verdict === 'pass' ? '体验评测 · 通过' : '体验评测 · 需要修复',
     message: report.verdict === 'pass'
-      ? `自动试玩完成，体验评分 ${Math.round(report.score)}/100。`
-      : `自动试玩评分 ${Math.round(report.score)}/100；${failed.map((check) => check.label).join('、') || '存在未通过步骤'}。`,
+      ? `基础运行检查完成，通过率 ${Math.round(report.score)}%；美术与玩法品质需专项验收。`
+      : `基础运行检查通过率 ${Math.round(report.score)}%；${failed.map((check) => check.label).join('、') || '存在未通过步骤'}。`,
     stage: 'verify',
     timestamp: new Date().toISOString(),
     method: `playtest/experience/${report.verdict}`,
@@ -1629,13 +1816,18 @@ async function validateProjectDelivery(
       preflight: 'already-validated',
     });
     throwIfDeliveryAborted(signal);
+    if (project.engine === 'godot') findings.push(...gameGoalFindings(experienceReport, gameQualitySpec(project)));
+    if (project.engine === 'godot' && supportsVisualSample(gameQualitySpec(project))) {
+      const visual = await validateProjectVisualSample(project, signal, experienceReport);
+      findings.push(...visual.findings);
+    }
     if (experienceReport.verdict !== 'pass') {
       const failed = experienceReport.checks
         .filter((check) => check.status === 'repair')
         .map((check) => `${check.label}: ${check.message}`)
         .join('；');
       findings.push(
-        `PLAYTEST_EXPERIENCE: 自动试玩评分 ${Math.round(experienceReport.score)}/100。${failed || experienceReport.summary || '存在未通过的体验步骤。'} `
+        `PLAYTEST_EXPERIENCE: 基础运行检查通过率 ${Math.round(experienceReport.score)}%。${failed || experienceReport.summary || '存在未通过的体验步骤。'} `
           + '检查 artifacts/playtest/latest/report.json 及其截图，修复真实控制、反馈、动画、暂停/恢复、重开或运行错误，并保持 .noobi/playtest.json 与正式构建一致。',
       );
     }
@@ -1670,27 +1862,36 @@ async function verifyGodotProject(
     kind: 'lifecycle',
     title: 'Godot · 构建验证',
     message: exportWeb
-      ? '正在执行资源导入、场景检查和 Web 正式导出。'
+      ? '正在冻结源码，执行导入、静态检查、主场景运行并生成独立 Web 构建。'
       : '正在执行资源导入和场景检查；导出模板就绪后再生成 Web 构建。',
     stage: 'verify',
     timestamp: new Date().toISOString(),
     method: 'godot/verify/started',
   });
+  if (exportWeb) {
+    const build = await buildGodotCandidate({ projectId: project.id, projectRoot: project.root,
+      store: godotBuildStore, environment: godotEnvironmentService, signal, qualitySpec: gameQualitySpec(project) });
+    emitAgentEvent({ id: randomUUID(), projectId: project.id, kind: 'lifecycle',
+      title: 'Godot · 构建验证通过',
+      message: `独立构建 ${build.record.buildId.slice(0, 8)} 已通过主场景运行和 Web 导出，继续检查实际玩法。`,
+      stage: 'verify', timestamp: new Date().toISOString(), method: 'godot/verify/completed' });
+    return;
+  }
   const imported = await godotEnvironmentService.execute({
     kind: 'import',
     projectPath: project.root,
-  });
+  }, signal);
   throwIfExperienceEvaluationAborted(signal);
   assertGodotTask(imported, project.root, '资源导入');
 
   const validated = await godotEnvironmentService.execute({
     kind: 'validate',
     projectPath: project.root,
-  });
+  }, signal);
   throwIfExperienceEvaluationAborted(signal);
   assertGodotTask(validated, project.root, '场景与脚本检查');
 
-  if (!exportWeb) {
+  {
     emitAgentEvent({
       id: randomUUID(),
       projectId: project.id,
@@ -1704,29 +1905,6 @@ async function verifyGodotProject(
     return;
   }
 
-  const outputPath = join(project.root, 'build', 'web', 'index.html');
-  throwIfExperienceEvaluationAborted(signal);
-  await mkdir(dirname(outputPath), { recursive: true, mode: 0o755 });
-  throwIfExperienceEvaluationAborted(signal);
-  const exported = await godotEnvironmentService.execute({
-    kind: 'export',
-    projectPath: project.root,
-    preset: 'Web',
-    outputPath,
-  });
-  throwIfExperienceEvaluationAborted(signal);
-  assertGodotTask(exported, project.root, 'Web 正式导出');
-
-  emitAgentEvent({
-    id: randomUUID(),
-    projectId: project.id,
-    kind: 'lifecycle',
-    title: 'Godot · 验证通过',
-    message: `资源导入、场景检查和 Web 导出通过；已验证 ${exported.artifacts.length} 个构建产物。`,
-    stage: 'verify',
-    timestamp: new Date().toISOString(),
-    method: 'godot/verify/completed',
-  });
 }
 
 function assertGodotTask(
@@ -2559,6 +2737,7 @@ async function readSmokeAssistantState(window: BrowserWindow): Promise<{
 }
 
 async function shutdown(): Promise<void> {
+  godotToolBroker?.close();
   approvalBroker?.closeAll();
   for (const controller of manualExperienceControllers.values()) controller.abort();
   manualExperienceControllers.clear();

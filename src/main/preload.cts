@@ -13,6 +13,7 @@ import type {
   GameAssetRecord,
   GameplayExperienceReport,
   ExtensionSettingsSnapshot,
+  InlineAttachmentInput,
   LoginStartResult,
   McpServerSetting,
   MediaCapability,
@@ -49,14 +50,41 @@ const api: NoobiApi = {
     if (!Array.isArray(files) || files.length > 50) {
       return Promise.reject(new Error('一次最多上传 50 个附件'));
     }
-    let paths: string[];
+    const paths: string[] = [];
+    const inline: InlineAttachmentInput[] = [];
+    const pathless: File[] = [];
     try {
-      paths = files.map((file) => webUtils.getPathForFile(file as File)).filter(Boolean);
+      for (const candidate of files) {
+        const path = webUtils.getPathForFile(candidate as File);
+        if (path) paths.push(path);
+        else pathless.push(candidate as File);
+      }
     } catch {
       return Promise.reject(new Error('无法读取上传文件的本地路径'));
     }
-    if (paths.length !== files.length) return Promise.reject(new Error('上传文件缺少本地路径'));
-    return ipcRenderer.invoke('noobi:project:create', input, paths) as Promise<ProjectRecord>;
+    const encode = async (): Promise<InlineAttachmentInput[]> => {
+      for (const file of pathless) {
+        if (!(file instanceof File) || file.size <= 0) {
+          throw new Error('粘贴内容不是有效的文件');
+        }
+        if (file.size > 32 * 1024 * 1024) {
+          throw new Error(`粘贴文件过大（上限 32MB）：${file.name || '未命名'}`);
+        }
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = '';
+        for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+          binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+        }
+        inline.push({
+          name: file.name || `pasted-${inline.length + 1}.png`,
+          dataBase64: btoa(binary),
+        });
+      }
+      return inline;
+    };
+    return encode().then((inlineAttachments) =>
+      ipcRenderer.invoke('noobi:project:create', input, paths, inlineAttachments) as Promise<ProjectRecord>,
+    );
   },
   runProject: (input: RunProjectInput) =>
     ipcRenderer.invoke('noobi:project:run', input) as Promise<ProjectRecord>,

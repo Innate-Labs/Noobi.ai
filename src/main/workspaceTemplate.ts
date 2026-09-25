@@ -12,6 +12,9 @@ import {
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { ProjectRecord } from '../shared/contracts.js';
 import { isTargetFrameRate } from '../shared/contracts.js';
+import { PLATFORMER_CONTROLLER, PLATFORMER_KIT_GUIDE } from './runtime/platformerKit.js';
+import { PRESENTATION_KIT } from './runtime/presentationKit.js';
+import { VISUAL_SAMPLE_GUIDE } from './quality/visualSample.js';
 
 export type WorkspaceProject = Pick<
   ProjectRecord,
@@ -20,7 +23,7 @@ export type WorkspaceProject = Pick<
 
 export const NOOBI_HOST_RUNTIME_POLICY_START = '<!-- NOOBI:HOST-RUNTIME-POLICY:START -->';
 export const NOOBI_HOST_RUNTIME_POLICY_END = '<!-- NOOBI:HOST-RUNTIME-POLICY:END -->';
-export const NOOBI_HOST_RUNTIME_POLICY_VERSION = 4;
+export const NOOBI_HOST_RUNTIME_POLICY_VERSION = 6;
 
 const HOST_POLICY_FILES = {
   metadata: '.noobi/project.json',
@@ -191,6 +194,10 @@ function workspaceFiles(project: WorkspaceProject): Record<string, string> {
       [NOOBI_GODOT_ICON_PATH]: NOOBI_GODOT_ICON_SVG,
       'scenes/main.tscn': godotMainScene(),
       'scripts/main.gd': godotMainScript(project),
+      'runtime/noobi/platformer_controller.gd': PLATFORMER_CONTROLLER,
+      'runtime/noobi/README.md': PLATFORMER_KIT_GUIDE,
+      'runtime/noobi/presentation_v1.gd': PRESENTATION_KIT,
+      'runtime/noobi/VISUAL_SAMPLE.md': VISUAL_SAMPLE_GUIDE,
     };
   }
 
@@ -300,7 +307,7 @@ ${engineContract(project)}
 
 - \`.noobi/playtest.json\` is the executable, project-owned description of the shortest complete player journey. Update it whenever the entrypoint, controls, rules, UI, or state flow changes.
 - Keep all five common action mappings: \`start\`, \`move\`, \`primary\`, \`pause\`, and \`restart\`. Its ordered journey must prove a non-blank launch, visible movement/navigation, primary-action feedback, progress, representative failure or invalid feedback, pause/resume, a terminal state, and a restart to a fresh playable state.
-- Inputs are limited to bounded key, pointer, look, drag, and wait actions. Use look for first/third-person camera motion and drag for card, inventory, map, aiming, or touch-like gestures. Observations are limited to canvas-not-blank, screen-change, text-visible, and element-visible checks. Use only project-relative entrypoint and evidence paths; never include executable JavaScript, shell commands, URLs, absolute paths, or secrets.
+- Inputs are limited to bounded key, pointer, look, drag, and wait actions. Use look for first/third-person camera motion and drag for card, inventory, map, aiming, or touch-like gestures. Observations are limited to canvas-not-blank, screen-change, text-visible, element-visible, and runtime-state checks. Use only project-relative entrypoint and evidence paths; never include executable JavaScript, shell commands, URLs, absolute paths, or secrets.
 - The Noobi host exclusively owns \`artifacts/playtest/\`. Never create, edit, or fabricate its report or screenshots. When \`artifacts/playtest/latest/report.json\` exists, treat its per-step statuses, console/runtime errors, durations, and referenced screenshots as verification evidence; repair failed, stale, blank, missing, or implausibly unchanged evidence.
 
 ## Engineering boundaries
@@ -420,7 +427,7 @@ ${verificationChecklist(project)}
 
 For media-heavy or 3D work, also verify asset load failures, mute/volume behavior, representative low-end performance, GLB materials from more than one camera angle, and that every manifest path resolves from a production build.
 
-Update and inspect \`.noobi/playtest.json\` before handoff. It must use schemaVersion 1, project-relative paths, the five common actions (start, move, primary, pause, restart), bounded key/pointer/look/drag/wait inputs, and only canvas-not-blank, screen-change, text-visible, or element-visible observations. Use look for camera motion and drag for card, inventory, map, aiming, or touch-like gestures. It may not contain executable JavaScript, shell commands, URLs, absolute paths, or secrets. Never write to \`artifacts/playtest/\`; that evidence belongs to the host. If \`artifacts/playtest/latest/report.json\` exists, inspect every declared journey step and referenced screenshot, and reject failures, timeouts, console/runtime errors, blank or missing captures, stale entrypoints, and implausibly unchanged before/after frames. If it does not exist yet, report host playtest as pending rather than inventing a pass.
+Update and inspect \`.noobi/playtest.json\` before handoff. It must use schemaVersion 1, project-relative paths, the five common actions (start, move, primary, pause, restart), bounded key/pointer/look/drag/wait inputs, and only canvas-not-blank, screen-change, text-visible, element-visible, or runtime-state observations. Use look for camera motion and drag for card, inventory, map, aiming, or touch-like gestures. It may not contain executable JavaScript, shell commands, URLs, absolute paths, or secrets. Never write to \`artifacts/playtest/\`; that evidence belongs to the host. If \`artifacts/playtest/latest/report.json\` exists, inspect every declared journey step and referenced screenshot, and reject failures, timeouts, console/runtime errors, blank or missing captures, stale entrypoints, and implausibly unchanged before/after frames. If it does not exist yet, report host playtest as pending rather than inventing a pass.
 
 Before handing off any game, verify all three generated-image acceptance conditions: the host has a private path/SHA proof from the configured API or Codex ImageGen fallback, the project-relative path resolves in the production build, and the running game visibly uses it. Manifest provider fields alone do not count. If any condition fails, continue fixing or report a blocker instead of claiming completion.
 
@@ -1110,7 +1117,7 @@ function managedRuntimePolicy(targetFrameRate: ProjectRecord['targetFrameRate'])
 ### Experience playtest acceptance
 
 - Maintain \`.noobi/playtest.json\` at schemaVersion 1 as the executable shortest player journey. It must map real production inputs for start, move, primary, pause, and restart, then cover progress, representative failure or invalid feedback, a terminal state, and restart to a fresh playable state.
-- Use only bounded key, pointer, look, drag, and wait inputs; safe canvas-not-blank, screen-change, text-visible, and element-visible observations; and project-relative entrypoint/evidence paths. Use look for camera motion and drag for card, inventory, map, aiming, or touch-like gestures. Never place executable JavaScript, shell commands, URLs, absolute paths, or secrets in this contract.
+- Use only bounded key, pointer, look, drag, and wait inputs; safe canvas-not-blank, screen-change, text-visible, element-visible, and runtime-state observations; and project-relative entrypoint/evidence paths. Use look for camera motion and drag for card, inventory, map, aiming, or touch-like gestures. Never place executable JavaScript, shell commands, URLs, absolute paths, or secrets in this contract.
 - \`artifacts/playtest/\` is host-owned immutable evidence. Agents must not create or edit its report or captures. When a report exists, inspect its per-step status, console/runtime errors, timings, and referenced screenshots; failed, stale, blank, missing, or implausibly unchanged evidence requires repair. If artifacts are absent before the host gate runs, describe the host playtest as pending rather than fabricating a pass.
 
 ### Required music contract
@@ -1118,6 +1125,7 @@ function managedRuntimePolicy(targetFrameRate: ProjectRecord['targetFrameRate'])
 - The current run's host media-routing notice is authoritative. When it reports an enabled MiniMax Music service, a complete game must ship with at least one MiniMax-generated music track by default. Do not infer that the routed service is unavailable merely because a planning role cannot call its tool; the implementing role must attempt the required generation.
 - Satisfy that requirement by actually calling \`noobi_audio_generate\` with \`purpose=music\`. The accepted audio file must exist under \`public/assets/audio/\`, be registered in \`public/assets/asset-pack.json\` through the asset tools when available or with verified metadata otherwise, and be loaded and played by production game code during normal gameplay (after any platform-required user gesture). A tool call without accepted output, provider text, a manifest-only entry, or an unused file does not count.
 - If required music generation, ingestion, loading, or playback fails, repair/retry it or report the game as blocked. Never silently substitute procedural or synthesized audio and present that substitute as the required MiniMax music or as successful completion.
+- A host plan with error.code=provider-blocked and retryable=false is an established non-retryable attempt. It overrides any requirement below to attempt again during each run. Do not repeat that call or create a replacement plan to bypass it; wait for explicit host requeue after service repair. Continue independent gameplay work, but final music delivery remains externally blocked.
 - Programmatic or synthesized audio remains valid for generic non-vocal SFX such as impacts, footsteps, gunshots, and UI cues, including \`noobi_audio_synthesize\` or engine-native deterministic audio. Those effects may accompany the generated track but never satisfy or replace the required-music contract.
 ${NOOBI_HOST_RUNTIME_POLICY_END}`;
 }
