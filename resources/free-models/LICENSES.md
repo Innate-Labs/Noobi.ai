@@ -1,6 +1,6 @@
 # Free 3D library sources
 
-14 unmodified GLB files selected from [Kenney Nature Kit](https://kenney.nl/assets/nature-kit), licensed [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The included archive license identifies Nature Kit 2.1; its original text is retained as `kenney-LICENSE.txt`.
+14 unmodified GLB files selected from [Kenney Nature Kit](https://kenney.nl/assets/nature-kit), licensed [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The included archive license identifies Nature Kit 2.1; its text is retained with normalized line endings as `kenney-LICENSE.txt`.
 
 Retrieved 2026-09-26 from the official free download. Archive SHA-256: `fa7974a0d342bfe63c38664ba9f8ec1a4aab8ea25f099bdc56870e33588c4d9d`. Individual file checksums are in `catalog.json`.
 
