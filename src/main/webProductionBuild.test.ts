@@ -79,6 +79,36 @@ describe('verifyWebProductionBuild', () => {
     });
   });
 
+  it('ignores resource-like markup in comments, script text, and custom attributes', async () => {
+    const root = await fixture();
+    await writeFile(join(root, 'dist/index.html'), [
+      '<!doctype html>',
+      '<!-- <script src="/old-game.js"></script> -->',
+      '<!-- <script src="https://example.invalid/old.js"></script> -->',
+      '<script>const example = \'<img src="/unused.png">\';</script>',
+      '<img data-src="/not-loaded.png" alt="Example">',
+      '<script src="/assets/app.js"></script>',
+    ].join('\n'));
+    await writeFile(join(root, 'dist/assets/app.js'), 'globalThis.ready = true;');
+
+    await expect(verifyWebProductionBuild(root)).resolves.toMatchObject({ ok: true, reason: 'ready' });
+  });
+
+  it('decodes actual HTML attribute values and handles quoted tag delimiters', async () => {
+    const root = await fixture();
+    await writeFile(join(root, 'dist/index.html'), [
+      '<!doctype html>',
+      '<script data-label="a > b" src="/assets/app&#46;js"></script>',
+    ].join('\n'));
+    await writeFile(join(root, 'dist/assets/app.js'), 'globalThis.ready = true;');
+    await expect(verifyWebProductionBuild(root)).resolves.toMatchObject({ ok: true, reason: 'ready' });
+
+    await rm(join(root, 'dist/assets/app.js'));
+    await expect(verifyWebProductionBuild(root)).resolves.toMatchObject({
+      ok: false, reason: 'missing-output', detail: expect.stringContaining('/assets/app.js'),
+    });
+  });
+
   it('marks dist stale only outside the filesystem timestamp tolerance', async () => {
     const stale = await fixture();
     await writeFile(join(stale, 'dist/index.html'), '<main>game</main>');
