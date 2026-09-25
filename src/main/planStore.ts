@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { GeneratePlansInput, PlanDraft, PlanOption, PlanVersion, StartPlanInput } from '../shared/planning.js';
+import { latestProjectPlan, type GeneratePlansInput, type PlanDraft, type PlanOption, type PlanVersion, type StartPlanInput, type ResumeProjectInput } from '../shared/planning.js';
 
 /** Host-owned, serialized atomic snapshots. A persisted run reservation is never replayed automatically. */
 export class PlanStore {
@@ -18,6 +18,9 @@ export class PlanStore {
     }
     await this.#mutate(() => {
       for (const draft of this.#drafts) {
+        for (const attempt of draft.run?.resumeAttempts ?? []) if (attempt.status === 'starting') {
+          attempt.status = 'interrupted'; attempt.error = '继续制作被应用退出中断；请检查项目后显式继续。';
+        }
         draft.attachmentCount ??= 0;
         draft.analysisAttempts ??= [];
         for (const attempt of draft.analysisAttempts) if (attempt.status === 'generating') attempt.status = 'interrupted';
@@ -29,6 +32,19 @@ export class PlanStore {
     });
   }
   async list(): Promise<PlanDraft[]> { await this.#queue; return structuredClone(this.#drafts); }
+  importRestored(source: PlanDraft, projectId: string): Promise<PlanDraft> {
+    return this.#mutate(() => {
+      if (!source.version || !source.run || source.run.versionId !== source.version.id
+        || !source.version.options.some(option => option.id === source.run!.optionId)) throw new Error('版本缺少完整已选方案');
+      const timestamp = new Date().toISOString();
+      const draft: PlanDraft = { ...structuredClone(source), id: randomUUID(), projectId, status: 'ready', error: null, updatedAt: timestamp,
+        run: { ...structuredClone(source.run), id: randomUUID(), projectId, status: 'dispatched', error: null, createdAt: timestamp, resumeAttempts: [] } };
+      this.#drafts.push(draft); return draft;
+    });
+  }
+  removeProject(projectId: string): Promise<void> {
+    return this.#mutate(() => { this.#drafts = this.#drafts.filter(d => d.projectId !== projectId && d.run?.projectId !== projectId); });
+  }
   async get(id: string): Promise<PlanDraft> {
     await this.#queue;
     return structuredClone(this.#find(id));
@@ -101,6 +117,32 @@ export class PlanStore {
   }
   markRun(id: string, status: 'dispatched' | 'failed', error: string | null = null): Promise<PlanDraft> {
     return this.#mutate(() => { const draft = this.#find(id); if (!draft.run) throw new Error('缺少制作运行'); draft.run.status = status; draft.run.error = error; return draft; });
+  }
+  reserveResume(input: ResumeProjectInput): Promise<{ draft: PlanDraft; fresh: boolean }> {
+    return this.#mutate(() => {
+      const draft = latestProjectPlan(this.#drafts, input.projectId);
+      if (!draft?.run || draft.run.id !== input.runId) throw new Error('已选方案已变化，请刷新后继续');
+      if (draft.run.status !== 'dispatched' || draft.version?.id !== draft.run.versionId
+        || !draft.version.options.some(option => option.id === draft.run!.optionId)) {
+        throw new Error('没有已启动的有效方案，请先选择制作方案');
+      }
+      const attempts = draft.run.resumeAttempts ??= [];
+      const existing = attempts.find(attempt => attempt.id === input.requestId);
+      if (existing) {
+        if (existing.model !== (input.model ?? null) || existing.effort !== (input.effort ?? null)) throw new Error('恢复请求参数已变化');
+        return { draft, fresh: false };
+      }
+      attempts.push({ id: input.requestId, createdAt: new Date().toISOString(), status: 'starting', error: null,
+        model: input.model ?? null, effort: input.effort ?? null });
+      return { draft, fresh: true };
+    });
+  }
+  finishResume(draftId: string, requestId: string, status: 'dispatched' | 'failed', error: string | null = null): Promise<void> {
+    return this.#mutate(() => {
+      const attempt = this.#find(draftId).run?.resumeAttempts?.find(attempt => attempt.id === requestId);
+      if (!attempt) throw new Error('找不到继续制作记录');
+      attempt.status = status; attempt.error = error;
+    });
   }
   #find(id: string): PlanDraft { const d = this.#drafts.find(d => d.id === id); if (!d) throw new Error('找不到制作方案'); return d; }
   #mutate<T>(operation: () => T): Promise<T> {

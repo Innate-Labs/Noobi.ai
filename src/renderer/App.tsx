@@ -1,5 +1,6 @@
-import type { PlanDraft } from '../shared/planning';
+import { latestProjectPlan, type PlanDraft } from '../shared/planning';
 import { PlanDialog } from './components/PlanDialog';
+import { ProductionProgressPanel } from './components/ProductionProgressPanel';
 import {
   FolderOpen,
   Menu,
@@ -100,6 +101,9 @@ export function App() {
     [projects, selectedId],
   );
   const selectedEvents = selected ? (events[selected.id] ?? []) : [];
+  const selectedPlan = selected ? latestProjectPlan(savedPlans, selected.id) : null;
+  const resumePlanTitle = selectedPlan?.run?.status === 'dispatched'
+    ? selectedPlan.version?.options.find(option => option.id === selectedPlan.run!.optionId)?.title : undefined;
   const latestSelectedEvent = selectedEvents[selectedEvents.length - 1] ?? null;
   const studioStage = selected
     ? selected.status === 'running' && latestSelectedEvent
@@ -270,6 +274,17 @@ export function App() {
     try {
       const draft = await window.noobi.generatePlans({ request: prompt, projectId: project.id, model, effort });
       setPlanDialog({ draft, files: [] });
+      await refreshPlans();
+    } catch (reason) { setError(toMessage(reason)); throw reason; }
+  }
+
+  async function resumeProject(model: string | null, effort: string | null) {
+    if (!selected || !ensureRunReady()) return;
+    try {
+      if (!selectedPlan?.run || !resumePlanTitle) throw new Error('没有可继续的已选方案，请先输入修改要求生成方案');
+      const project = await window.noobi.resumeProject({ projectId: selected.id, runId: selectedPlan.run.id,
+        requestId: crypto.randomUUID(), model, effort });
+      setProjects(current => upsertProject(current, project));
       await refreshPlans();
     } catch (reason) { setError(toMessage(reason)); throw reason; }
   }
@@ -535,6 +550,8 @@ export function App() {
                   {PROJECT_STATUS_LABELS[selected.status]}
                 </span>
               </header>
+              <ProductionProgressPanel key={`${selected.id}:${selectedPlan?.run?.id ?? ''}`} projectId={selected.id}
+                planRunId={selectedPlan?.run?.id} projectStatus={selected.status} />
               <EventStream project={selected} events={selectedEvents} />
               <Composer
                 key={selected.id}
@@ -547,6 +564,8 @@ export function App() {
                   !runtime.account
                 }
                 onRun={runProject}
+                onResume={resumeProject}
+                resumePlanTitle={resumePlanTitle}
                 onStop={stopProject}
               />
             </section>
@@ -562,6 +581,10 @@ export function App() {
                 onRevealProject={() => revealProject(selected.id)}
                 onProjectUpdated={(project) => {
                   setProjects((current) => upsertProject(current, project));
+                }}
+                onProjectRestored={(project) => {
+                  setProjects(current => upsertProject(current, project));
+                  void refreshPlans(); navigateToProject(project);
                 }}
               />
             </section>

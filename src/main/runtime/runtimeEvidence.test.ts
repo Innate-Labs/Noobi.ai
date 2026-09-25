@@ -44,6 +44,12 @@ describe('runtime evidence is an observation, never a self-reported verdict', ()
     expect(() => parseRuntimeAssertion('{"key":"state","equals":"won","script":"setScore(3)"}')).toThrow();
     expect(() => parseRuntimeAssertion('{"key":"constructor.constructor","equals":true}')).toThrow();
   });
+  it('rejects malformed 3D inventory instead of silently dropping coverage evidence', () => {
+    const scene3d={version:1,scene:'res://main.tscn',visited:8000,truncated:true,nodes:[]};
+    expect(parseRuntimeEvidence(wrap({...packet,scene3d} as typeof packet),'build-1').scene3d?.truncated).toBe(true);
+    expect(()=>parseRuntimeEvidence(wrap({...packet,scene3d:{...scene3d,nodes:Array(601).fill({})}} as typeof packet),'build-1')).toThrow('3D');
+    expect(()=>parseRuntimeEvidence(wrap({...packet,scene3d:{...scene3d,truncated:'false'}} as typeof packet),'build-1')).toThrow('3D');
+  });
   it('does not treat a pass field as evidence of victory', () => {
     const raw = wrap({ ...packet, state: { ...packet.state, pass: true } } as typeof packet);
     expect(runtimeAssertionPassed(parseRuntimeEvidence(raw, 'build-1'), { key: 'state', equals: 'won' })).toBe(false);

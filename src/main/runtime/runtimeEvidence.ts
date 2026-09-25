@@ -1,4 +1,5 @@
 export interface RuntimePacket {
+  scene3d?: { version: 1; scene: string; visited: number; truncated: boolean; nodes: Array<Record<string, unknown>> };
   version: 1; buildId: string; sequence: number; engineFrame: number; paused: boolean;
   state: Record<string, string | number | boolean>;
   nodes: Array<Record<string, unknown>>;
@@ -28,6 +29,10 @@ export function parseRuntimeEvidence(raw: unknown, buildId: string, previousSequ
   }
   if (Object.values(p.state).some((v) => !['number', 'boolean', 'string'].includes(typeof v)
     || (typeof v === 'number' && !Number.isFinite(v)))) throw new Error('运行状态值无效');
+  if (p.scene3d !== undefined && (!p.scene3d || p.scene3d.version !== 1 || typeof p.scene3d.scene !== 'string'
+    || typeof p.scene3d.truncated !== 'boolean' || !Number.isSafeInteger(p.scene3d.visited) || p.scene3d.visited < 0 || p.scene3d.visited > 8000
+    || !Array.isArray(p.scene3d.nodes) || p.scene3d.nodes.length > 600
+    || p.scene3d.nodes.some((n: unknown) => !n || typeof n !== 'object' || Array.isArray(n)))) throw new Error('3D 场景采样结构无效');
   for (const finding of p.findings) {
     if (!finding || typeof finding.code !== 'string' || typeof finding.message !== 'string'
       || typeof finding.severity !== 'string') throw new Error('场景诊断结构无效');

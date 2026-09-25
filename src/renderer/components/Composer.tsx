@@ -20,6 +20,8 @@ interface ComposerProps {
     effort: string | null,
   ) => Promise<void>;
   onStop: () => Promise<void>;
+  onResume?: (model: string | null, effort: string | null) => Promise<void>;
+  resumePlanTitle?: string;
 }
 
 export type ComposerActionMode = 'send' | 'stop' | 'resume';
@@ -49,6 +51,8 @@ export function Composer({
   disabled = false,
   onRun,
   onStop,
+  onResume,
+  resumePlanTitle,
 }: ComposerProps) {
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState(
@@ -61,9 +65,12 @@ export function Composer({
   const [effort, setEffort] = useState(settings.defaultEffort);
   const [queuedRun, setQueuedRun] = useState<QueuedRun | null>(null);
   const queuedRunRef = useRef(false);
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const running = project.status === 'running';
   const resumable = Boolean(project.threadId) || project.status === 'stopped';
-  const actionMode = composerActionMode(running, prompt, resumable);
+  const canResume = Boolean(onResume && resumePlanTitle) && ['stopped', 'failed', 'waiting'].includes(project.status);
+  const actionMode = composerActionMode(running, prompt, canResume);
 
   useEffect(() => {
     setPrompt('');
@@ -116,7 +123,7 @@ export function Composer({
   }, [disabled, onRun, project.id, queuedRun, running]);
 
   async function submit() {
-    if (disabled || models.length === 0) return;
+    if (disabled || models.length === 0 || submittingRef.current) return;
     if (running) {
       const nextPrompt = prompt.trim();
       if (!nextPrompt) return;
@@ -131,10 +138,18 @@ export function Composer({
       setPrompt('');
       return;
     }
-    const nextPrompt = prompt.trim()
-      || (project.status === 'draft' ? project.idea : '继续完成并验证当前游戏。');
-    await onRun(nextPrompt, activeModel?.model ?? null, effort || null);
-    setPrompt('');
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      if (!prompt.trim() && canResume) {
+        await onResume!(activeModel?.model ?? null, effort || null);
+      } else {
+        const nextPrompt = prompt.trim() || (project.status === 'draft' ? project.idea : '');
+        if (!nextPrompt) return;
+        await onRun(nextPrompt, activeModel?.model ?? null, effort || null);
+        setPrompt('');
+      }
+    } finally { submittingRef.current = false; setSubmitting(false); }
   }
 
   return (
@@ -152,15 +167,13 @@ export function Composer({
           <span title={project.threadId ?? undefined}>
             {running
               ? (queuedRun ? '下一条要求已排队' : '正在制作，可先输入下一条要求')
-              : (project.threadId
-                  ? `THREAD ${project.threadId.slice(0, 8).toUpperCase()}`
-                  : 'NEW THREAD')}
+              : canResume ? `继续方案：${resumePlanTitle}` : project.status === 'draft' ? '先选择制作方案' : '输入修改要求生成方案'}
           </span>
         </div>
         <textarea
           value={prompt}
           rows={2}
-          disabled={disabled}
+          disabled={disabled || submitting}
           aria-label="给 Agent 的制作指令"
           placeholder={
             resumable
@@ -177,7 +190,7 @@ export function Composer({
               !disabled
             ) {
               event.preventDefault();
-              void submit();
+              void submit().catch(() => undefined);
             }
           }}
         />
@@ -236,9 +249,9 @@ export function Composer({
                 className="composer-action is-resume"
                 type="button"
                 aria-label="继续制作"
-                title="继续制作"
-                disabled={disabled || models.length === 0}
-                onClick={() => void submit()}
+                title={`继续已选方案：${resumePlanTitle}`}
+                disabled={disabled || submitting || models.length === 0}
+                onClick={() => void submit().catch(() => undefined)}
               >
                 <Play size={13} fill="currentColor" />
               </button>
@@ -248,8 +261,8 @@ export function Composer({
                 type="button"
                 aria-label="发送制作要求"
                 title="发送制作要求（⌘/Ctrl + Enter）"
-                disabled={disabled || models.length === 0}
-                onClick={() => void submit()}
+                disabled={disabled || submitting || models.length === 0 || (!prompt.trim() && project.status !== 'draft')}
+                onClick={() => void submit().catch(() => undefined)}
               >
                 <ArrowUp size={17} strokeWidth={2.4} />
               </button>

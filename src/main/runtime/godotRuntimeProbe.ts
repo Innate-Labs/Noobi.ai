@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { SCENE_PROBE_3D } from './sceneProbe3d.js';
 
 /** Read-only telemetry. This never changes scores, input, physics or win state.
  * Values remain observations, not an authority allowed to self-report pass. */
@@ -28,6 +29,12 @@ var ticks := 0
 var sequence := 0
 var findings: Array = []
 var nodes: Array = []
+var scene_nodes: Array = []
+var watched_bodies: Array = []
+var contact_history: Dictionary = {}
+var contact_overflow_until := 0
+var visited := 0
+var scene_truncated := false
 var missing_fonts: Dictionary = {}
 const STATE_KEYS := ["state", "phase", "score", "lives", "collected", "target_score", "has_relic", "seal_broken", "turn_number", "player_health", "enemy_health", "mana", "last_event"]
 
@@ -44,6 +51,10 @@ func _process(_delta: float) -> void:
     sequence += 1
     findings = []
     nodes = []
+    scene_nodes = []
+    watched_bodies = []
+    visited = 0
+    scene_truncated = Time.get_ticks_msec() < contact_overflow_until
     _collect(scene, scene)
     var values: Dictionary = {}
     for property: Dictionary in scene.get_property_list():
@@ -52,16 +63,23 @@ func _process(_delta: float) -> void:
             var value: Variant = scene.get(key)
             if typeof(value) in [TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME]:
                 values[key] = value
-    var packet := {"version": 1, "buildId": BUILD_ID, "sequence": sequence, "engineFrame": Engine.get_process_frames(), "paused": get_tree().paused, "state": values, "nodes": nodes, "findings": findings}
+    var packet := {"version": 1, "buildId": BUILD_ID, "sequence": sequence, "engineFrame": Engine.get_process_frames(), "paused": get_tree().paused, "state": values, "nodes": nodes, "findings": findings, "scene3d": {"version": 1, "scene": scene.scene_file_path, "visited": visited, "truncated": scene_truncated, "nodes": scene_nodes}}
     var encoded: String = JSON.stringify(packet)
+    if encoded.length() > 240000:
+        packet["scene3d"]["nodes"] = []
+        packet["scene3d"]["truncated"] = true
+        encoded = JSON.stringify(packet)
     if OS.has_feature("web"):
         JavaScriptBridge.eval("window.__noobiRuntime=" + encoded + ";window.__noobiRuntimeReceivedAt=performance.now();", true)
     elif sequence <= 2:
         print("NOOBI_RUNTIME " + encoded)
 
 func _collect(node: Node, scene: Node) -> void:
-    if nodes.size() >= 350:
+    if visited >= 8000:
+        scene_truncated = true
         return
+    visited += 1
+    _scene_item(node, scene)
     var item := {"path": str(scene.get_path_to(node)), "class": node.get_class()}
     if node is CanvasItem:
         item["visible"] = node.is_visible_in_tree()
@@ -149,8 +167,12 @@ func _collect(node: Node, scene: Node) -> void:
                         absent += character
             if not absent.is_empty():
                 findings.append({"code": "missing-glyphs", "severity": "error", "path": item["path"], "characters": absent, "message": "Visible UI text has characters absent from the bound font."})
-    nodes.append(item)
+    if nodes.size() < 350:
+        nodes.append(item)
     for child: Node in node.get_children():
+        if visited >= 8000:
+            scene_truncated = true
+            break
         _collect(child, scene)
 
 func _texture_path(texture: Texture2D) -> String:
@@ -166,5 +188,6 @@ func _custom_draw(node: Node) -> bool:
         if str(method.get("name", "")) == "_draw":
             return true
     return false
+${SCENE_PROBE_3D}
 `;
 }

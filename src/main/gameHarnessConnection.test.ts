@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CodexAppServer, StartThreadOptions, StartTurnOptions } from './codexAppServer.js';
 import { JsonRpcRequestError } from './jsonRpcPeer.js';
-import { CONNECTION_RETRY_TIMEOUT_MS, GameHarness, GameHarnessConnectionError, GameHarnessStoppedError, GameHarnessTurnTimeoutError } from './gameHarness.js';
+import { ProductionBudgetError } from './production/productionPolicy.js';
+import { CONNECTION_RETRY_TIMEOUT_MS, GameHarness, GameHarnessConnectionError, GameHarnessStoppedError, GameHarnessTurnTimeoutError, type GameHarnessRunOptions } from './gameHarness.js';
 
 class Runtime extends EventEmitter {
   threads: StartThreadOptions[] = [];
@@ -42,7 +43,7 @@ class Runtime extends EventEmitter {
 }
 
 afterEach(() => vi.useRealTimers());
-async function start() {
+async function start(extra: Partial<GameHarnessRunOptions> = {}) {
   vi.useFakeTimers();
   const runtime = new Runtime();
   const harness = new GameHarness(runtime as unknown as CodexAppServer);
@@ -51,13 +52,23 @@ async function start() {
   harness.on('event', e => events.push(e));
   harness.on('state', e => states.push(e));
   const result = harness.run({ projectId: 'pilot', cwd: '/tmp/noobi-pilot', prompt: 'Build a game',
-    model: 'gpt-6-astra', effort: 'medium', imageGenerationRoute: 'configured-api' }).catch(error => error);
+    model: 'gpt-6-astra', effort: 'medium', imageGenerationRoute: 'configured-api', ...extra }).catch(error => error);
   await vi.advanceTimersByTimeAsync(0);
   return { runtime, harness, result, events, states };
 }
 const network = { message: 'Proxy connection failed: HTTP CONNECT failed with status 503' };
 
 describe('automatic model reconnection', () => {
+  it('respects the persisted reconnect allowance before starting any replacement request', async () => {
+    const reserveBudget = vi.fn(async (kind: string) => { if (kind === 'reconnects') throw new ProductionBudgetError('执行预算用尽：网络重连 6/6'); });
+    const { runtime, result } = await start({ reserveBudget });
+    runtime.complete('', 'failed', network);
+    expect(await result).toBeInstanceOf(ProductionBudgetError);
+    expect((await result).message).toContain('HTTP CONNECT');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(reserveBudget.mock.calls.map(call => call[0])).toEqual(['turns', 'reconnects']);
+    expect(runtime.turns).toHaveLength(1); expect(vi.getTimerCount()).toBe(0);
+  });
   it('ends a stuck native retry, waits, then continues the same thread without starting a repair', async () => {
     const { runtime, harness, result, events, states } = await start();
     runtime.notify('error', { willRetry: true, error: { message: 'Reconnecting... 2/5' } });
@@ -152,7 +163,7 @@ describe('automatic model reconnection', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('retries a prolonged outage with capped backoff until explicitly stopped', async () => {
+  it('stops a prolonged outage at the finite retry ceiling with no remaining timers', async () => {
     const { runtime, harness, result } = await start();
     for (const delay of [5_000, 10_000, 20_000, 40_000, 60_000, 60_000]) {
       const count = runtime.turns.length;
@@ -164,11 +175,21 @@ describe('automatic model reconnection', () => {
     }
     runtime.complete('', 'failed', network);
     await vi.advanceTimersByTimeAsync(0);
-    await harness.stop('pilot');
-    expect(await result).toBeInstanceOf(GameHarnessStoppedError);
+    expect(await result).toBeInstanceOf(ProductionBudgetError);
     await vi.advanceTimersByTimeAsync(60 * 60_000);
     expect(runtime.turns).toHaveLength(7);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not reset the total retry ceiling when each failed turn briefly emits model progress', async () => {
+    const { runtime, result } = await start();
+    for (let attempt = 0; attempt < 7; attempt++) {
+      runtime.notify('item/agentMessage/delta', { delta: 'Brief response before disconnect.' });
+      runtime.complete('', 'failed', network);
+      await vi.advanceTimersByTimeAsync(5_000);
+    }
+    expect(await result).toBeInstanceOf(ProductionBudgetError);
+    expect(runtime.turns).toHaveLength(7); expect(vi.getTimerCount()).toBe(0);
   });
 
   it.each([

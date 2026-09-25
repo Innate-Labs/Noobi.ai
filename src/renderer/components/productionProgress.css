@@ -1,0 +1,21 @@
+.production-progress { flex: 0 0 auto; margin: 8px 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font-size: 12px; color: var(--text-soft); }
+.production-progress > summary { cursor: pointer; font-weight: 650; color: var(--text); }
+.production-progress > summary small { float: right; font-weight: 400; color: var(--muted); }
+.production-progress-body { max-height: 240px; overflow: auto; padding-right: 4px; scrollbar-width: thin; }
+.production-progress p { margin: 8px 0; line-height: 1.5; overflow-wrap: anywhere; }
+.production-progress-plan { font-weight: 600; }
+.production-progress-error { color: var(--red); max-height: 110px; overflow: auto; }
+.production-task-list { list-style: none; margin: 12px 0; padding: 0; }
+.production-task-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.production-task-list strong { font-size: 11px; font-weight: 500; color: var(--muted); }
+.production-task-list small { grid-column: 1 / -1; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 90px; overflow: auto; line-height: 1.5; }
+.production-task-list [data-status="running"] strong, .production-task-list [data-status="completed"] strong { color: var(--green); }
+.production-task-list [data-status="failed"] strong, .production-task-list [data-status="needs-repair"] strong { color: var(--red); }
+.production-attempt-history summary { cursor: pointer; padding: 7px 0; }
+.production-attempt-history li { margin: 6px 0; overflow-wrap: anywhere; }
+.production-budget { margin: 10px 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.production-budget summary { cursor: pointer; font-weight: 600; }
+.production-budget ul { padding-left: 18px; line-height: 1.7; }
+.production-budget button { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+.production-budget button:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 700px) { .production-progress { margin-inline: 8px; } .production-progress-body { max-height: 190px; } }

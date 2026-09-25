@@ -136,6 +136,22 @@ export class GodotBuildStore {
       || record.buildId !== pointer.buildId || !Array.isArray(record.files)) throw new Error('构建记录不匹配');
     return { record, root: join(this.directory(projectId, pointer.buildId), 'source') };
   }
+  async get(projectId: string, buildId: string): Promise<GodotBuild> {
+    const record: GodotBuildRecord = JSON.parse(await readFile(join(this.directory(projectId, buildId), 'record.json'), 'utf8'));
+    if (record.version !== 1 || record.projectId !== projectId || record.buildId !== buildId || !Array.isArray(record.files) || typeof record.createdAt !== 'string' || !['built', 'failed', 'building'].includes(record.status)) throw new Error('构建记录不匹配');
+    return { record, root: join(this.directory(projectId, buildId), 'source') };
+  }
+  async list(projectId: string): Promise<GodotBuild[]> {
+    let entries;
+    try { entries = await readdir(this.projectDirectory(projectId), { withFileTypes: true }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
+    const builds: GodotBuild[] = [];
+    for (const entry of entries) if (entry.isDirectory() && validId(entry.name)) {
+      try { builds.push(await this.get(projectId, entry.name)); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    }
+    return builds.sort((a,b) => b.record.createdAt.localeCompare(a.record.createdAt));
+  }
 
   async assertCurrent(build: GodotBuild, signal?: AbortSignal): Promise<void> {
     const current = await this.fingerprint(build.record.projectRoot, signal);

@@ -10954,3 +10954,11 @@ a {
   .plan-actions { flex-wrap: wrap; }
   .plan-actions .plan-start { flex: 1; }
 }
+
+.asset-model-preview { min-height: 200px; aspect-ratio: 8 / 5; }
+.asset-model-preview img { width: 100%; height: 100%; object-fit: contain; }
+
+.experience-scene-quality { padding: 12px; margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.experience-scene-quality ul { padding-left: 20px; max-height: 240px; overflow: auto; }
+.experience-scene-quality summary { cursor: pointer; }
+.experience-scene-quality small { display: block; color: var(--muted); margin-top: 8px; }

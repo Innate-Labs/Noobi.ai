@@ -108,6 +108,19 @@ export class AssetPlanStore {
       return structuredClone(this.#required(projectId, planId));
     });
   }
+  importRestored(projectId: string, records: readonly AssetPlanRecord[]): Promise<void> {
+    return this.#exclusive(async () => {
+      await this.#ensureLoaded(); assertProjectId(projectId);
+      if (this.#plans.some(plan => plan.projectId === projectId)) throw new Error('恢复目标已有素材账本');
+      const restored = records.map(record => validateRecord({ ...structuredClone(record), projectId,
+        ...(['generating', 'queued', 'waiting-agent'].includes(record.status) ? { status: 'failed', error: {
+          code: 'restored-incomplete', message: '此版本中的素材任务未完成，请核对后重新生成。', retryable: true } } : {}) }));
+      if (restored.length > MAX_PROJECT_PLANS) throw new Error('版本素材账本超限');
+      const before = this.#plans;
+      this.#plans = [...before, ...restored];
+      try { await this.#persist(); } catch (error) { this.#plans = before; throw error; }
+    });
+  }
 
   removeProject(projectId: string): Promise<void> {
     return this.#exclusive(async () => {

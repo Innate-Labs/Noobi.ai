@@ -157,6 +157,13 @@ export class ImageGenerationAttestationStore {
       await this.#persist();
     });
   }
+  snapshot(projectId: string): Promise<ImageGenerationAttestation[]> {
+    return this.#exclusive(async () => {
+      await this.#ensureLoaded();
+      if (!PROJECT_ID.test(projectId)) throw new Error('Invalid attestation project ID');
+      return structuredClone(this.#attestations.filter(item => item.projectId === projectId));
+    });
+  }
 
   /**
    * One-time compatibility path for assets ingested before the private ledger

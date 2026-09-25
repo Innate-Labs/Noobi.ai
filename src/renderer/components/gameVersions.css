@@ -1,0 +1,14 @@
+.game-versions { margin: 8px 12px; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text-soft); font-size: 12px; }
+.game-versions > summary { padding: 10px; cursor: pointer; color: var(--text); font-weight: 600; }
+.game-versions summary small { margin-left: 8px; font-weight: 400; color: var(--muted); }
+.game-versions-content { padding: 0 12px 12px; max-height: 65vh; overflow: auto; }
+.game-versions p { line-height: 1.55; overflow-wrap: anywhere; }
+.game-versions ol { list-style: none; padding: 0; margin: 12px 0; }
+.game-versions li { padding: 12px 0; border-top: 1px solid var(--line); }
+.game-versions li small { display: block; margin-top: 5px; }
+.version-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.game-versions button { padding: 8px 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.game-versions button:disabled { opacity: .45; cursor: not-allowed; }
+.version-confirm { padding: 12px; border: 1px solid var(--green); border-radius: 8px; }
+.version-error, .game-versions [role="alert"] { color: var(--red); }
+.version-playback iframe { display: block; margin-top: 10px; width: 100%; height: 340px; border: 0; background: #111; }

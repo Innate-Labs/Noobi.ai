@@ -1,4 +1,5 @@
-import type { GeneratePlansInput, PlanDraft, StartPlanInput } from '../shared/planning.js';
+import type { GeneratePlansInput, PlanDraft, StartPlanInput, ResumeProjectInput } from '../shared/planning.js';
+import type { ProductionProgress } from '../shared/productionProgress.js';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   AgentEvent,
@@ -103,6 +104,15 @@ const api: NoobiApi = {
     ipcRenderer.invoke('noobi:project:delete', projectId) as Promise<ProjectRecord>,
   runProject: (input: RunProjectInput) =>
     ipcRenderer.invoke('noobi:project:run', input) as Promise<ProjectRecord>,
+  resumeProject: (input: ResumeProjectInput) =>
+    ipcRenderer.invoke('noobi:project:resume', input) as Promise<ProjectRecord>,
+  getProductionProgress: (projectId: string) => ipcRenderer.invoke('noobi:project:progress', projectId) as Promise<ProductionProgress | null>,
+  listGameVersions: projectId => ipcRenderer.invoke('noobi:versions:list', projectId),
+  previewGameVersion: (projectId, versionId) => ipcRenderer.invoke('noobi:versions:preview', projectId, versionId),
+  backupGameVersion: projectId => ipcRenderer.invoke('noobi:versions:backup', projectId),
+  restoreGameVersion: input => ipcRenderer.invoke('noobi:versions:restore', input),
+  extendProductionBudget: input => ipcRenderer.invoke('noobi:project:extend-budget', input) as Promise<ProductionProgress>,
+  onProductionProgressChanged: listener => subscribe('noobi:event:production-progress', listener),
   stopProject: (projectId: string) =>
     ipcRenderer.invoke('noobi:project:stop', projectId) as Promise<ProjectRecord>,
   revealProject: (projectId: string) =>

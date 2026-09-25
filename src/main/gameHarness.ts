@@ -1,3 +1,6 @@
+import type { ProductionRecovery, ProductionTaskUpdate, ProductionTaskId, SavedProductionTurn } from '../shared/productionProgress.js';
+import { DEFAULT_PRODUCTION_LIMITS, type ProductionBudgetKind } from '../shared/productionPolicy.js';
+import { ProductionBudgetError } from './production/productionPolicy.js';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { JsonRpcRequestError } from './jsonRpcPeer.js';
@@ -5,6 +8,7 @@ import { connectionRetryDelay, isPermanentModelFailure, modelConnectionFailure }
 import { ExternalDeliveryBlockedError } from './production/deliveryFailure.js';
 import { runCoreLoopMilestone } from './production/coreLoopMilestone.js';
 import { runVisualSampleMilestone, type VisualSampleValidation } from './production/visualSampleMilestone.js';
+import { SCENE_QUALITY_GUIDE, SCENE_QUALITY_PATH } from './quality/sceneQuality.js';
 import { VISUAL_SAMPLE_GUIDE, VISUAL_SAMPLE_PATH } from './quality/visualSample.js';
 import { qualitySpecPrompt, type GameQualitySpec } from './production/gameQualitySpec.js';
 import {
@@ -45,6 +49,13 @@ export interface GameHarnessRunOptions {
   projectId: string;
   cwd: string;
   prompt: string;
+  /** Host-owned checkpoint, subject to current workspace fingerprint verification. */
+  recovery?: ProductionRecovery | null;
+  onTask?: (update: ProductionTaskUpdate) => Promise<void>;
+  onRecoveryInvalidated?: (reason: string) => Promise<void>;
+  reserveBudget?: (kind: ProductionBudgetKind) => Promise<void>;
+  beforeRepair?: (stage: string, findings: readonly string[], sourceHash?: string) => Promise<void>;
+  onRepairCompleted?: (stage: string, findings: readonly string[], sourceHash?: string) => Promise<void>;
   /** Selected production cadence. Defaults to 60 only for compatibility callers. */
   targetFrameRate?: TargetFrameRate;
   model?: string | null;
@@ -139,6 +150,7 @@ export interface GameHarnessThreadEvent {
 }
 
 interface ActiveRun {
+  reserveBudget?: (kind: ProductionBudgetKind) => Promise<void>;
   projectId: string;
   phase: GameHarnessPhase;
   implementerThreadId: string | null;
@@ -323,6 +335,25 @@ export class GameHarness extends EventEmitter {
     }
 
     const active = createActiveRun(options.projectId);
+    active.reserveBudget = options.reserveBudget;
+    const prepareRepair = async (stage: string, findings: readonly string[]) => {
+      const blockers = await options.externalBlockers?.() ?? [];
+      this.#throwIfStopped(active);
+      if (blockers.length) throw new ExternalDeliveryBlockedError(blockers);
+      const sourceHash = options.beforeRepair ? await options.workspaceFingerprint?.() : undefined;
+      await options.beforeRepair?.(stage, findings, sourceHash);
+      this.#throwIfStopped(active);
+      return async () => { await options.onRepairCompleted?.(stage, findings, sourceHash); };
+    };
+    const task = async (update: ProductionTaskUpdate) => { await options.onTask?.(update); };
+    const save = async (id: ProductionTaskId, turn: SavedProductionTurn, reused = false) => {
+      if (!options.onTask) return;
+      const sourceHash = await options.workspaceFingerprint?.();
+      if (reused && sourceHash !== recovery?.sourceHash) throw new Error('工程在恢复检查期间发生变化，请重新继续以核对当前版本');
+      await task({ id, status: 'completed', turn, reused, detail: reused ? '工程版本匹配，复用已完成回合；仍需重新验收' : '回合已完成，整体品质以最终验收为准',
+        sourceHash });
+    };
+    let recovery = options.recovery ?? null;
     let plannerThreadId: string | null = null;
     let implementerThreadId: string | null = null;
     let reviewerThreadId: string | null = null;
@@ -346,51 +377,66 @@ export class GameHarness extends EventEmitter {
 
     try {
       this.#throwIfStopped(active);
-      plannerThreadId = await this.#runtime.startThread({
-        cwd: options.cwd,
-        model: options.model,
-        sandbox: 'read-only',
-        approvalPolicy: 'never',
-        developerInstructions: withQualitySpecification(PLANNER_INSTRUCTIONS, options.qualitySpecification),
-        ephemeral: true,
-      });
-      this.#emitThread(options.projectId, plannerThreadId, 'planner', true);
+      if (recovery && (!options.workspaceFingerprint || await options.workspaceFingerprint() !== recovery.sourceHash)) {
+        recovery = null;
+        await options.onRecoveryInvalidated?.('工程文件已变化，旧检查点失效；重新核对任务，保留现有内容');
+      }
       this.#throwIfStopped(active);
+      let planner: GameHarnessTurnSummary;
+      if (recovery) {
+        planner = recovery.planner;
+        await save('planner', planner, true);
+        this.#emitAgentEvent(active, { kind: 'lifecycle', title: '继续制作 · 复用执行计划',
+          message: '选定方案、制作规则和工程版本一致，复用已保存执行计划。', stage: 'brief', method: 'harness/planner/reused' });
+      } else {
+        await task({ id: 'planner', status: 'running' });
+        plannerThreadId = await this.#runtime.startThread({
+          cwd: options.cwd,
+          model: options.model,
+          sandbox: 'read-only',
+          approvalPolicy: 'never',
+          developerInstructions: withQualitySpecification(PLANNER_INSTRUCTIONS, options.qualitySpecification),
+          ephemeral: true,
+        });
+        this.#emitThread(options.projectId, plannerThreadId, 'planner', true);
+        this.#throwIfStopped(active);
 
-      this.#emitAgentEvent(active, {
-        kind: 'lifecycle',
-        title: 'Planner · analyzing workspace',
-        message: 'The ephemeral Planner is inspecting the game and preparing an implementation plan.',
-        stage: 'brief',
-        method: 'harness/planner/started',
-      });
-      const plannerTurn = await this.#executeTurn(active, {
-        threadId: plannerThreadId,
-        prompt: withPromptAddition(
-          buildPlannerPrompt(
-            options.prompt,
-            imageGenerationRequirement,
-            targetFrameRate,
-            imageGenerationRoute,
-            audioGenerationRequirement,
+        this.#emitAgentEvent(active, {
+          kind: 'lifecycle',
+          title: 'Planner · analyzing workspace',
+          message: 'The ephemeral Planner is inspecting the game and preparing an implementation plan.',
+          stage: 'brief',
+          method: 'harness/planner/started',
+        });
+        const plannerTurn = await this.#executeTurn(active, {
+          threadId: plannerThreadId,
+          prompt: withPromptAddition(
+            buildPlannerPrompt(
+              options.prompt,
+              imageGenerationRequirement,
+              targetFrameRate,
+              imageGenerationRoute,
+              audioGenerationRequirement,
+            ),
+            'planner',
+            options.promptAdditions?.planner,
           ),
-          'planner',
-          options.promptAdditions?.planner,
-        ),
-        cwd: options.cwd,
-        model: options.model,
-        effort: options.effort,
-        approvalPolicy: 'never',
-      });
-      this.#assertTurnCompleted(active, plannerTurn, 'Planner');
-      const planner = summarizeTurn(plannerThreadId, plannerTurn);
-      this.#emitAgentEvent(active, {
-        kind: 'plan',
-        title: 'Planner · plan ready',
-        message: planner.text || 'Planner completed without a written plan.',
-        stage: 'brief',
-        method: 'harness/planner/completed',
-      });
+          cwd: options.cwd,
+          model: options.model,
+          effort: options.effort,
+          approvalPolicy: 'never',
+        });
+        this.#assertTurnCompleted(active, plannerTurn, 'Planner');
+        planner = summarizeTurn(plannerThreadId, plannerTurn);
+        await save('planner', planner);
+        this.#emitAgentEvent(active, {
+          kind: 'plan',
+          title: 'Planner · plan ready',
+          message: planner.text || 'Planner completed without a written plan.',
+          stage: 'brief',
+          method: 'harness/planner/completed',
+        });
+      }
       this.#throwIfStopped(active);
 
       this.#setPhase(active, 'implementer');
@@ -418,6 +464,7 @@ export class GameHarness extends EventEmitter {
       this.#throwIfStopped(active);
 
       if (options.validateCoreLoop) {
+        await task({ id: 'core-loop', status: 'running' });
         await runCoreLoopMilestone({
           validate: async () => (await validateHostDelivery(active, {
             ...options, validateHostDelivery: options.validateCoreLoop,
@@ -429,6 +476,7 @@ export class GameHarness extends EventEmitter {
             message, stage: state === 'repair' ? 'code' : 'verify', method: `harness/core-loop/${state}`,
           }),
           implement: async (attempt, findings) => {
+            const repairCompleted = await prepareRepair('core-loop', findings);
             coreRepairTurns += 1;
             const coreTurn = await this.#executeTurn(active, {
               threadId: implementerThreadId!, cwd: options.cwd, model: options.model, effort: options.effort,
@@ -444,11 +492,15 @@ export class GameHarness extends EventEmitter {
                 + '\n</original_request>\n<host_findings>\n' + clipForPrompt(findings.join('\n')) + '\n</host_findings>',
             });
             this.#assertTurnCompleted(active, coreTurn, 'Core loop');
+            await repairCompleted();
           },
         });
+        await task({ id: 'core-loop', status: 'completed', detail: '当前工程核心玩法检查通过' });
       }
 
       if (options.validateVisualSample) {
+        const sample3d = options.qualitySpecification?.presentation === '3d';
+        await task({ id: 'visual-sample', status: 'running' });
         if (!options.workspaceFingerprint || !options.acceptVisualSample) throw new Error('视觉样板需要宿主版本与检查点服务。');
         await runVisualSampleMilestone({
           validate: async () => {
@@ -466,6 +518,7 @@ export class GameHarness extends EventEmitter {
             stage: state === 'repair' ? 'assets' : 'verify', method: `harness/visual-sample/${state}`,
           }),
           implement: async (attempt, findings) => {
+            const repairCompleted = await prepareRepair('visual-sample', findings);
             this.#setPhase(active, 'implementer');
             if (attempt > 1) visualRepairTurns += 1;
             const turn = await this.#executeTurn(active, {
@@ -478,10 +531,11 @@ export class GameHarness extends EventEmitter {
                 + 'Unify player, terrain, interactable, HUD, fonts, key movement/impact/collection feedback and their sound wiring. '
                 + 'Do not expand levels or regenerate an entire asset set. Do not lower the design sizes to match a bug. '
                 + 'Maintain the real .noobi/playtest.json journey. noobi_godot_check returns exact failures.\n'
-                + VISUAL_SAMPLE_GUIDE + '\nOriginal brief:\n' + clipForPrompt(options.prompt)
+                + (sample3d ? SCENE_QUALITY_GUIDE : VISUAL_SAMPLE_GUIDE) + '\nOriginal brief:\n' + clipForPrompt(options.prompt)
                 + '\nPlan:\n' + clipForPrompt(planner.text) + '\nHost findings:\n' + clipForPrompt(findings.join('\n')),
             });
             this.#assertTurnCompleted(active, turn, 'Visual sample');
+            await repairCompleted();
           },
           review: async evidence => {
             this.#setPhase(active, 'reviewer');
@@ -498,9 +552,10 @@ export class GameHarness extends EventEmitter {
             }
             const turn = await this.#executeTurn(active, { threadId: visualReviewerThreadId, cwd: options.cwd,
               model: options.model, effort: options.effort, approvalPolicy: 'never',
-              prompt: `Inspect ${VISUAL_SAMPLE_PATH} and the host report ${evidence.evidencePath}. `
+              prompt: `Inspect ${sample3d ? SCENE_QUALITY_PATH : VISUAL_SAMPLE_PATH} and the host report ${evidence.evidencePath}. `
                 + `Expected build ${evidence.buildId}, source ${evidence.sourceHash}. Open the report's actual gameplay screenshots and action frames. `
                 + 'The numeric binding check passed; assess the visual sample independently. Do not certify aesthetic quality from that check. '
+                + (sample3d ? 'Inspect sceneQuality findings/reviewRequired and every actual screenshot for mesh silhouettes, placeholder terrain/vegetation, materials, lighting, composition, collision alignment and interaction. Technical coverage never certifies aesthetics. ' : '')
                 + 'Inspect scene/code for feedback and sound integration, and state evidence limits.\nOriginal request:\n' + clipForPrompt(options.prompt),
             });
             this.#assertTurnCompleted(active, turn, 'Visual sample review');
@@ -511,47 +566,58 @@ export class GameHarness extends EventEmitter {
               : review.verdict === 'repair' ? [review.summary] : [] };
           },
         });
+        await task({ id: 'visual-sample', status: 'completed', detail: '当前工程画面样板检查通过' });
         this.#setPhase(active, 'implementer');
       }
 
-      this.#emitAgentEvent(active, {
-        kind: 'lifecycle',
-        title: 'Implementer · building game',
-        message: options.threadId
-          ? 'Resumed the durable Implementer thread and started the requested change.'
-          : 'Started the durable Implementer thread and began the requested change.',
-        stage: 'code',
-        method: 'harness/implementer/started',
-      });
-      const implementationTurn = await this.#executeTurn(active, {
-        threadId: implementerThreadId,
-        prompt: withPromptAddition(
-          buildImplementationPrompt(
-            options.prompt,
-            planner.text,
-            imageGenerationRequirement,
-            targetFrameRate,
-            imageGenerationRoute,
-            audioGenerationRequirement,
+      let implementation: GameHarnessTurnSummary;
+      if (recovery?.implementation && options.workspaceFingerprint && await options.workspaceFingerprint() === recovery.sourceHash) {
+        implementation = recovery.implementation;
+        await save('implementer', implementation, true);
+        this.#emitAgentEvent(active, { kind: 'lifecycle', title: '继续制作 · 进入重新评审',
+          message: '实现回合及工程版本已保存，跳过重复实现；重新执行独立评审和交付检查。', stage: 'verify', method: 'harness/implementer/reused' });
+      } else {
+        await task({ id: 'implementer', status: 'running' });
+        this.#emitAgentEvent(active, {
+          kind: 'lifecycle',
+          title: 'Implementer · building game',
+          message: options.threadId
+            ? 'Resumed the durable Implementer thread and started the requested change.'
+            : 'Started the durable Implementer thread and began the requested change.',
+          stage: 'code',
+          method: 'harness/implementer/started',
+        });
+        const implementationTurn = await this.#executeTurn(active, {
+          threadId: implementerThreadId,
+          prompt: withPromptAddition(
+            buildImplementationPrompt(
+              options.prompt,
+              planner.text,
+              imageGenerationRequirement,
+              targetFrameRate,
+              imageGenerationRoute,
+              audioGenerationRequirement,
+            ),
+            'implementer',
+            options.promptAdditions?.implementer,
           ),
-          'implementer',
-          options.promptAdditions?.implementer,
-        ),
-        cwd: options.cwd,
-        model: options.model,
-        effort: options.effort,
-        approvalPolicy: 'on-request',
-        ...(options.imageGenerationSkill ? { skills: [options.imageGenerationSkill] } : {}),
-      });
-      this.#assertTurnCompleted(active, implementationTurn, 'Implementer');
-      const implementation = summarizeTurn(implementerThreadId, implementationTurn);
-      this.#emitAgentEvent(active, {
-        kind: 'assistant',
-        title: 'Implementer · implementation ready',
-        message: implementation.text || 'Implementer completed the workspace turn.',
-        stage: 'code',
-        method: 'harness/implementer/completed',
-      });
+          cwd: options.cwd,
+          model: options.model,
+          effort: options.effort,
+          approvalPolicy: 'on-request',
+          ...(options.imageGenerationSkill ? { skills: [options.imageGenerationSkill] } : {}),
+        });
+        this.#assertTurnCompleted(active, implementationTurn, 'Implementer');
+        implementation = summarizeTurn(implementerThreadId, implementationTurn);
+        await save('implementer', implementation);
+        this.#emitAgentEvent(active, {
+          kind: 'assistant',
+          title: 'Implementer · implementation ready',
+          message: implementation.text || 'Implementer completed the workspace turn.',
+          stage: 'code',
+          method: 'harness/implementer/completed',
+        });
+      }
       this.#throwIfStopped(active);
 
       imageGenerationRequirement = await refreshImageGenerationRequirement(
@@ -564,6 +630,7 @@ export class GameHarness extends EventEmitter {
       );
       this.#throwIfStopped(active);
 
+      await task({ id: 'reviewer', status: 'running' });
       this.#setPhase(active, 'reviewer');
       this.#throwIfStopped(active);
       reviewerThreadId = await this.#runtime.startThread({
@@ -607,6 +674,7 @@ export class GameHarness extends EventEmitter {
       this.#assertTurnCompleted(active, reviewerTurn, 'Reviewer');
       let reviewer = summarizeTurn(reviewerThreadId, reviewerTurn);
       let review = parseReview(reviewer.text);
+      await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', detail: formatReviewMessage(review) });
       this.#emitAgentEvent(active, {
         kind: review.verdict === 'pass' ? 'assistant' : 'error',
         title: review.verdict === 'pass' ? 'Reviewer · passed' : 'Reviewer · repair requested',
@@ -627,7 +695,9 @@ export class GameHarness extends EventEmitter {
         if (blockers.length > 0) throw new ExternalDeliveryBlockedError(blockers);
         if (review.verdict === 'pass') {
           if (hostValidatedForCurrentWorkspace) break;
+          await task({ id: 'delivery', status: 'running' });
           const hostDelivery = await validateHostDelivery(active, options);
+          await task({ id: 'delivery', status: !hostDelivery || hostDelivery.ok ? 'completed' : 'needs-repair', detail: hostDelivery?.findings.join('；') ?? '当前管线无需额外交付检查' });
           this.#throwIfStopped(active);
           if (!hostDelivery || hostDelivery.ok) {
             if (hostDelivery) {
@@ -642,6 +712,7 @@ export class GameHarness extends EventEmitter {
             hostValidatedForCurrentWorkspace = Boolean(hostDelivery);
             if (!hostDelivery) break;
 
+            await task({ id: 'reviewer', status: 'running', detail: '对照最新宿主证据复核' });
             const evidenceReviewTurn = await this.#executeTurn(active, {
               threadId: reviewerThreadId,
               prompt: withPromptAddition(
@@ -664,6 +735,7 @@ export class GameHarness extends EventEmitter {
             this.#assertTurnCompleted(active, evidenceReviewTurn, 'Reviewer host-evidence verification');
             reviewer = summarizeTurn(reviewerThreadId, evidenceReviewTurn);
             review = parseReview(reviewer.text);
+            await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', detail: formatReviewMessage(review) });
             this.#emitAgentEvent(active, {
               kind: review.verdict === 'pass' ? 'assistant' : 'error',
               title: review.verdict === 'pass'
@@ -709,6 +781,7 @@ export class GameHarness extends EventEmitter {
           previousRepairInput = input;
         }
 
+        const repairCompleted = await prepareRepair('delivery', review.findings.length ? review.findings : [review.summary]);
         const repairAttempt = repairs.length + 1;
         imageGenerationRequirement = await refreshImageGenerationRequirement(
           options,
@@ -719,6 +792,9 @@ export class GameHarness extends EventEmitter {
           audioGenerationRequirement,
         );
         this.#throwIfStopped(active);
+        await task({ id: 'reviewer', status: 'pending', detail: '修复完成后重新评审' });
+        await task({ id: 'delivery', status: 'pending', detail: '修复完成后重新验证' });
+        await task({ id: 'repair', status: 'running', detail: formatReviewMessage(review) });
         this.#setPhase(active, 'repair');
         this.#emitAgentEvent(active, {
           kind: 'lifecycle',
@@ -751,8 +827,10 @@ export class GameHarness extends EventEmitter {
           ...(options.imageGenerationSkill ? { skills: [options.imageGenerationSkill] } : {}),
         });
         this.#assertTurnCompleted(active, repairTurn, 'Implementer repair');
+        await repairCompleted();
         const repair = summarizeTurn(implementerThreadId, repairTurn);
         repairs.push(repair);
+        await save('repair', repair);
         hostValidatedForCurrentWorkspace = false;
         this.#emitAgentEvent(active, {
           kind: 'assistant',
@@ -776,7 +854,9 @@ export class GameHarness extends EventEmitter {
         // the repaired workspace. Otherwise the Reviewer can only see the
         // previous failed host report and request the same repair forever,
         // while the host callback never gets another chance to refresh it.
+        await task({ id: 'delivery', status: 'running' });
         const postRepairHostDelivery = await validateHostDelivery(active, options);
+        await task({ id: 'delivery', status: !postRepairHostDelivery || postRepairHostDelivery.ok ? 'completed' : 'needs-repair', detail: postRepairHostDelivery?.findings.join('；') ?? '' });
         this.#throwIfStopped(active);
         if (postRepairHostDelivery && !postRepairHostDelivery.ok) {
           const hostReview = hostDeliveryRepairReview(postRepairHostDelivery);
@@ -806,6 +886,7 @@ export class GameHarness extends EventEmitter {
           });
         }
 
+        await task({ id: 'reviewer', status: 'running' });
         this.#setPhase(active, 'reviewer');
         const finalReviewTurn = await this.#executeTurn(active, {
           threadId: reviewerThreadId,
@@ -832,6 +913,7 @@ export class GameHarness extends EventEmitter {
         this.#assertTurnCompleted(active, finalReviewTurn, 'Reviewer verification');
         reviewer = summarizeTurn(reviewerThreadId, finalReviewTurn);
         review = parseReview(reviewer.text);
+        await task({ id: 'reviewer', status: review.verdict === 'pass' ? 'completed' : 'needs-repair', detail: formatReviewMessage(review) });
         findingAuthority = 'reviewer';
         this.#emitAgentEvent(active, {
           kind: review.verdict === 'pass' ? 'assistant' : 'error',
@@ -947,8 +1029,11 @@ export class GameHarness extends EventEmitter {
 
   async #executeTurn(active: ActiveRun, options: StartTurnOptions): Promise<TurnResult> {
     let attempts = 0;
+    let totalRetries = 0;
     let nextOptions = options;
     for (;;) {
+      this.#throwIfStopped(active);
+      await active.reserveBudget?.('turns');
       this.#throwIfStopped(active);
       try {
         return await this.#executeTurnAttempt(active, nextOptions, () => {
@@ -961,6 +1046,13 @@ export class GameHarness extends EventEmitter {
       } catch (error) {
         this.#throwIfStopped(active);
         if (!(error instanceof GameHarnessConnectionError) || !error.retryable) throw error;
+        if (totalRetries >= DEFAULT_PRODUCTION_LIMITS.reconnects) throw new ProductionBudgetError(`执行预算用尽：本回合网络重连已达上限。最近连接错误：${error.detail}`);
+        try { await active.reserveBudget?.('reconnects'); }
+        catch (budgetError) {
+          if (budgetError instanceof ProductionBudgetError) throw new ProductionBudgetError(`${budgetError.message} 最近连接错误：${error.detail}`);
+          throw budgetError;
+        }
+        totalRetries += 1;
         const delay = connectionRetryDelay(++attempts);
         active.reconnecting = true;
         this.#connectionEvent(active, 'waiting',

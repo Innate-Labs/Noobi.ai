@@ -1,3 +1,6 @@
+import { ModelAssetPreview } from './ModelAssetPreview';
+import { SceneQualityPanel } from './SceneQualityPanel';
+import { GameVersionsPanel } from './GameVersionsPanel';
 import {
   AlertTriangle,
   Box,
@@ -66,6 +69,7 @@ interface InspectorProps {
   onRegenerate: (plan: AssetPlanRecord) => Promise<void>;
   onRevealProject: () => Promise<void>;
   onProjectUpdated: (project: ProjectRecord) => void;
+  onProjectRestored: (project: ProjectRecord) => void;
 }
 
 type InspectorTab = 'preview' | 'assets' | 'files';
@@ -79,6 +83,7 @@ export function Inspector({
   onRegenerate,
   onRevealProject,
   onProjectUpdated,
+  onProjectRestored,
 }: InspectorProps) {
   const [tab, setTab] = useState<InspectorTab>('preview');
   const [payload, setPayload] = useState<ProjectInspectorPayload>({
@@ -337,6 +342,7 @@ export function Inspector({
           <span>PNG · JPEG · WEBP / 最多 50 张</span>
         </div>
       ) : null}
+      <GameVersionsPanel key={project.id} project={project} refreshSignal={refreshSignal} onRestored={onProjectRestored} />
       <div className="inspector-tabs" role="tablist" aria-label="项目检查器">
         <button
           type="button"
@@ -596,7 +602,7 @@ export function Inspector({
         <AssetStudio
           assets={payload.assets}
           assetPlans={payload.assetPlans}
-          previewUrl={payload.previewUrl}
+          previewUrl={payload.assetPreviewUrl ?? payload.previewUrl}
           importing={importing}
           importDisabled={project.status === 'running'}
           projectStatus={project.status}
@@ -861,6 +867,7 @@ export function ExperienceReport({
         </div>
 
         <p className="experience-summary">基础检查验证运行与输入反馈；美术、玩法深度与趣味需专项验收。</p>
+        {report.sceneQuality && <SceneQualityPanel report={report.sceneQuality} />}
         {report.summary ? <p className="experience-summary">{report.summary}</p> : null}
 
         <footer className="experience-report-meta">
@@ -1101,6 +1108,7 @@ function AssetSection({
           <AssetPlanCard
             key={plan.id}
             plan={plan}
+            previewUrl={previewUrl}
             disabled={projectRunning || retryingPlanId !== null}
             retrying={retryingPlanId === plan.id}
             onRegenerate={onRegenerate}
@@ -1155,10 +1163,7 @@ function AssetCard({
           {sourceUrl ? <audio controls preload="metadata" src={sourceUrl}>浏览器不支持音频预览。</audio> : null}
         </div>
       ) : (
-        <div className="asset-model-preview" aria-label={`${asset.name} GLB 模型`}>
-          <Box size={28} />
-          <span>GLB</span>
-        </div>
+        <ModelAssetPreview url={sourceUrl} name={asset.name} />
       )}
       <div className="asset-card-meta">
         <strong>{atlasSlice?.subject ?? asset.name}</strong>
@@ -1194,16 +1199,19 @@ const ASSET_PLAN_STATUS: Record<AssetPlanRecord['status'], { label: string; deta
 
 function AssetPlanCard({
   plan,
+  previewUrl,
   disabled,
   retrying,
   onRegenerate,
 }: {
   plan: AssetPlanRecord;
+  previewUrl: string;
   disabled: boolean;
   retrying: boolean;
   onRegenerate: (plan: AssetPlanRecord) => Promise<void>;
 }) {
   const status = ASSET_PLAN_STATUS[plan.status];
+  const sourceUrl = plan.relativePath ? assetPreviewUrl(previewUrl, plan.relativePath) : '';
   const canRegenerate = ['failed', 'waiting-agent', 'generated'].includes(plan.status);
   const icon = plan.kind === 'image'
     ? <ImageIcon size={24} />
@@ -1212,10 +1220,14 @@ function AssetPlanCard({
       : <Box size={24} />;
   return (
     <article className={`asset-plan-card is-${plan.status}`} aria-label={`${plan.name}，${status.label}`}>
-      <div className="asset-plan-visual" aria-hidden="true">
+      {sourceUrl ? (
+        plan.kind === 'image' ? <div className="asset-card-media"><img src={sourceUrl} alt={plan.name} loading="lazy" decoding="async" /></div>
+          : plan.kind === 'model3d' ? <ModelAssetPreview url={sourceUrl} name={plan.name} />
+            : <div className="asset-audio-preview"><audio controls preload="metadata" src={sourceUrl} /></div>
+      ) : <div className="asset-plan-visual" aria-hidden="true">
         <span>{icon}</span>
         <i /><i /><i /><i />
-      </div>
+      </div>}
       <div className="asset-plan-body">
         <header>
           <span className="asset-plan-status"><CircleDashed size={11} /> {status.label}</span>

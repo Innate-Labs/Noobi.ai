@@ -55,6 +55,8 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 };
 
 export interface PreviewStartOptions {
+  /** Serve only workspace public/assets media, independently of game builds. */
+  assetsOnly?: boolean;
   /** Relative build directory. Defaults to dist, then the safe source fallback. */
   directory?: string;
   /** Allow index.html + src/public/assets if the build is absent. Explicit directories require true. */
@@ -72,6 +74,7 @@ interface PreviewRegistration {
   sourceFallback: boolean;
   hideGodotSplash: boolean;
   sourceAssetOverlay: boolean;
+  assetsOnly: boolean;
   url: string;
 }
 
@@ -135,7 +138,8 @@ export class PreviewServer {
       existing.projectRoot === selected.projectRoot &&
       existing.contentRoot === selected.contentRoot &&
       existing.hideGodotSplash === selected.hideGodotSplash &&
-      existing.sourceAssetOverlay === selected.sourceAssetOverlay
+      existing.sourceAssetOverlay === selected.sourceAssetOverlay &&
+      existing.assetsOnly === selected.assetsOnly
     ) {
       return existing.url;
     }
@@ -175,6 +179,7 @@ export class PreviewServer {
         sourceFallback: selected.sourceFallback,
         hideGodotSplash: selected.hideGodotSplash,
         sourceAssetOverlay: selected.sourceAssetOverlay,
+        assetsOnly: selected.assetsOnly,
         url,
       });
       return url;
@@ -222,6 +227,10 @@ async function handleRequest(
     return;
   }
   const requestedContentType = contentType(relativePath);
+  if (selected.assetsOnly && !isInspectorMediaAsset(relativePath, requestedContentType)) {
+    sendError(response, 404, 'Not found');
+    return;
+  }
   let opened: OpenedPreviewFile | null = null;
 
   if (selected.hideGodotSplash && relativePath === 'favicon.ico') {
@@ -257,7 +266,7 @@ async function handleRequest(
     // Vite publishes `public/*` at the site root. Mirror that behavior before a
     // build exists so `/assets/foo.png` resolves to `public/assets/foo.png`.
     const diskRelativePath =
-      selected.sourceFallback && relativePath.startsWith('assets/')
+      (selected.sourceFallback || selected.assetsOnly) && relativePath.startsWith('assets/')
         ? `public/${relativePath}`
         : relativePath;
     try {
@@ -308,6 +317,7 @@ async function handleRequest(
     // different origins. Permit only media under the public asset namespace to
     // render in the Inspector; HTML, scripts, and other files remain isolated.
     response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (selected.assetsOnly) response.setHeader('Access-Control-Allow-Origin', '*');
   }
   response.setHeader('Content-Length', String(contentLength));
   if (range) response.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
@@ -339,6 +349,7 @@ interface SelectedContentRoot {
   sourceFallback: boolean;
   hideGodotSplash: boolean;
   sourceAssetOverlay: boolean;
+  assetsOnly: boolean;
 }
 
 interface OpenedPreviewFile {
@@ -381,6 +392,13 @@ async function selectContentRoot(
   const projectInfo = await stat(canonicalProjectRoot);
   if (!projectInfo.isDirectory()) throw new Error('Preview project root must be a directory');
 
+  if (options.assetsOnly) {
+    return {
+      projectRoot: canonicalProjectRoot, contentRoot: canonicalProjectRoot,
+      sourceFallback: false, hideGodotSplash: false, sourceAssetOverlay: false, assetsOnly: true,
+    };
+  }
+
   const directory = options.directory === undefined ? 'dist' : normalizedDirectory(options.directory);
   const buildRoot = resolve(canonicalProjectRoot, ...directory.split('/'));
   assertContained(canonicalProjectRoot, buildRoot);
@@ -394,6 +412,7 @@ async function selectContentRoot(
       projectRoot: canonicalProjectRoot,
       contentRoot,
       sourceFallback: false,
+      assetsOnly: false,
       hideGodotSplash: options.hideGodotSplash === true,
       sourceAssetOverlay: options.sourceAssetOverlay !== false,
     };
@@ -412,6 +431,7 @@ async function selectContentRoot(
     projectRoot: canonicalProjectRoot,
     contentRoot: canonicalProjectRoot,
     sourceFallback: true,
+    assetsOnly: false,
     hideGodotSplash: options.hideGodotSplash === true,
     sourceAssetOverlay: false,
   };

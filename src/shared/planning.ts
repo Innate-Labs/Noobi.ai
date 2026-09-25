@@ -36,6 +36,28 @@ export interface PlanRun {
   prompt: string;
   createdAt: string;
   error: string | null;
+  resumeAttempts?: PlanResumeAttempt[];
+}
+export interface PlanResumeAttempt {
+  id: string;
+  createdAt: string;
+  status: 'starting' | 'dispatched' | 'failed' | 'interrupted';
+  error: string | null;
+  model: string | null;
+  effort: string | null;
+}
+export interface ResumeProjectInput {
+  projectId: string;
+  runId: string;
+  requestId: string;
+  model?: string | null;
+  effort?: string | null;
+}
+
+/** Use selection time, not draft creation/analysis time. Never fall back past a newer failed selection. */
+export function latestProjectPlan(drafts: readonly PlanDraft[], projectId: string): PlanDraft | null {
+  return drafts.filter(draft => draft.run?.projectId === projectId)
+    .reduce<PlanDraft | null>((latest, draft) => !latest || draft.run!.createdAt >= latest.run!.createdAt ? draft : latest, null);
 }
 export interface PlanAnalysisAttempt {
   id: string;

@@ -82,9 +82,22 @@ describe('Composer', () => {
       imageGenerationAvailable: true,
       onRun: vi.fn(),
       onStop: vi.fn(),
+      onResume: vi.fn(),
+      resumePlanTitle: '已选探索方案',
     }));
 
     expect(markup).toContain('aria-label="继续制作"');
     expect(markup).not.toContain('aria-label="发送制作要求"');
+    expect(markup).toContain('继续方案：已选探索方案');
+  });
+
+  it('requires a selected plan even when an old project has an implementer thread', () => {
+    const markup = renderToStaticMarkup(createElement(Composer, {
+      project: { ...project, status: 'stopped' }, models, settings,
+      imageGenerationAvailable: true, onRun: vi.fn(), onStop: vi.fn(), onResume: vi.fn(),
+    }));
+    expect(markup).not.toContain('is-resume');
+    expect(markup).toContain('输入修改要求生成方案');
+    expect(markup).toMatch(/class="composer-action is-send"[^>]*disabled/u);
   });
 });

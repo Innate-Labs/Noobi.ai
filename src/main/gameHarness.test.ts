@@ -1,6 +1,11 @@
 import { EventEmitter } from 'node:events';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ProductionRunStore } from './production/productionRunStore.js';
+import { GodotBuildStore } from './production/godotBuildStore.js';
 import { gameQualitySpec } from './production/gameQualitySpec.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { StartThreadOptions, StartTurnOptions } from './codexAppServer.js';
 import type { CodexAppServer } from './codexAppServer.js';
@@ -101,6 +106,39 @@ describe('game harness required ImageGen contract', () => {
     expect(runtime.turns[2]?.prompt).toContain('actual gameplay screenshots');
     expect(runtime.threads[2]?.sandbox).toBe('read-only');
     expect(runtime.turns[3]?.prompt).toContain('Implement the requested game change');
+  });
+
+  it('uses 3D scene evidence and independent review before expanding content', async () => {
+    const pass = JSON.stringify({ verdict: 'pass', summary: 'Inspected 3D fixture screenshots', findings: [] });
+    const runtime = new CapturingRuntime(['Plan', 'Sample repaired', pass, 'Full implementation', pass, pass]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    let checked = 0; let accepted = false;
+    const spec = gameQualitySpec({ name: '3D forest', idea: 'Explore', engine: 'godot', targetFrameRate: 60 }, '3d');
+    await harness.run({ projectId: 'scene-3d', cwd: '/tmp/scene-3d', prompt: 'Explore a 3D forest', qualitySpecification: spec,
+      imageGenerationRoute: 'configured-api', workspaceFingerprint: async () => 'current',
+      validateVisualSample: async () => (++checked === 1 ? { ok: false, findings: ['SCENE_QUALITY: Missing terrain'] }
+        : { ok: true, findings: [], sourceHash: 'current', buildId: 'build', artifactHash: 'artifact', evidencePath: 'report.json' }),
+      acceptVisualSample: async () => { accepted = true; },
+      validateHostDelivery: async () => { expect(accepted).toBe(true); return { ok: true, findings: [] }; },
+    });
+    expect(runtime.turns[1]!.prompt).toContain('.noobi/scene-quality.json');
+    expect(runtime.turns[2]!.prompt).toContain('placeholder terrain/vegetation');
+    expect(runtime.threads[2]!.sandbox).toBe('read-only');
+    expect(runtime.turns[3]!.prompt).toContain('Implement the requested game change');
+    expect(runtime.turns.at(-1)!.prompt).toContain('fresh_host_evidence');
+  });
+
+  it('blocks 3D content expansion when the screenshot reviewer rejects technically covered placeholders', async () => {
+    const repair = JSON.stringify({ verdict: 'repair', summary: 'Only primitive terrain and capsule remain', findings: ['Placeholder terrain in move-a.png'] });
+    const runtime = new CapturingRuntime(['Plan', repair, 'No-op repair', repair]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    await expect(harness.run({ projectId: 'ugly-3d', cwd: '/tmp/ugly-3d', prompt: '3D forest',
+      qualitySpecification: gameQualitySpec({name:'3D forest',idea:'explore',engine:'godot',targetFrameRate:60}),
+      imageGenerationRoute:'configured-api',workspaceFingerprint:async()=> 'same-source',
+      validateVisualSample: async()=>({ok:true,findings:[],sourceHash:'same-source',buildId:'build',artifactHash:'artifact',evidencePath:'report.json'}),
+      acceptVisualSample: async()=>{throw new Error('Must not accept ugly sample')},
+    })).rejects.toThrow('没有进展');
+    expect(runtime.turns.some(t=>t.prompt.includes('Implement the requested game change'))).toBe(false);
   });
 
   it('cannot expand content after a persistently rejected visual sample', async () => {
@@ -782,5 +820,132 @@ describe('game harness required ImageGen contract', () => {
     expect(prompt).toContain('public/assets/images/hero.png');
     expect(prompt).toContain('a new image is not required');
     expect(prompt).not.toContain('MUST invoke $imagegen during this run');
+  });
+});
+
+// Real harness scheduling + durable records + real filesystem fingerprints;
+// only model responses are supplied by the deterministic runtime above.
+describe('durable production recovery', () => {
+  it.each([false, true])('recovers after a process exit; workspace changed = %s', async changed => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-task-recovery-'));
+    try {
+      const workspace = join(root, 'game');
+      const { mkdir } = await import('node:fs/promises'); await mkdir(workspace);
+      await writeFile(join(workspace, 'main.gd'), 'original source');
+      const fingerprints = new GodotBuildStore(join(root, 'builds'));
+      const fingerprint = () => fingerprints.fingerprint(workspace);
+      const file = join(root, 'progress.json'); const store = new ProductionRunStore(file); await store.init();
+      const input = { projectId: 'recovery', planRunId: 'selected', planVersionId: 'version', planTitle: '同一方案',
+        contractKey: 'same-policy', continuation: false, coreLoop: false, visualSample: false };
+      const first = await store.begin(input);
+      const runtime = new CapturingRuntime(['Original plan', 'Implementation finished']);
+      await expect(new GameHarness(runtime as unknown as CodexAppServer).run({
+        projectId: 'recovery', cwd: workspace, prompt: 'Original approved request', imageGenerationRoute: 'configured-api',
+        workspaceFingerprint: fingerprint,
+        onTask: async update => {
+          await store.update(first.session, update);
+          if (update.id === 'reviewer' && update.status === 'running') throw new Error('Simulated process termination');
+        },
+      })).rejects.toThrow('Simulated process termination');
+      expect(runtime.turns).toHaveLength(2);
+      if (changed) await writeFile(join(workspace, 'main.gd'), 'user changed source while stopped');
+      const reopened = new ProductionRunStore(file); await reopened.init();
+      expect((await reopened.read('recovery'))!.tasks.find(task => task.id === 'reviewer')!.status).toBe('interrupted');
+      const resumed = await reopened.begin({ ...input, continuation: true });
+      const pass = JSON.stringify({ verdict: 'pass', summary: 'Checked current evidence', findings: [] });
+      const secondRuntime = new CapturingRuntime(changed ? ['Updated plan', 'Updated implementation', pass, pass] : [pass, pass]);
+      const hostCheck = vi.fn(async () => ({ ok: true, findings: [] }));
+      const invalidated = vi.fn(async (reason: string) => { await reopened.invalidate(resumed.session, reason); });
+      await new GameHarness(secondRuntime as unknown as CodexAppServer).run({
+        projectId: 'recovery', cwd: workspace, prompt: 'Original approved request', threadId: 'retained-implementer',
+        imageGenerationRoute: 'configured-api', workspaceFingerprint: fingerprint, recovery: resumed.recovery,
+        onTask: async update => { await reopened.update(resumed.session, update); }, onRecoveryInvalidated: invalidated,
+        validateHostDelivery: hostCheck,
+      });
+      const final = (await reopened.finish(resumed.session, 'completed'))!;
+      expect(hostCheck).toHaveBeenCalledTimes(1);
+      expect(secondRuntime.turns).toHaveLength(changed ? 4 : 2);
+      expect(invalidated).toHaveBeenCalledTimes(changed ? 1 : 0);
+      expect(final.tasks.find(task => task.id === 'implementer')!.reused).toBe(!changed);
+      expect(final.tasks.find(task => task.id === 'reviewer')!.attempts).toBeGreaterThan(1);
+      expect(final.attempts[0]!.status).toBe('interrupted');
+      expect(final.attempts[1]!.status).toBe('completed');
+      if (!changed) expect(secondRuntime.turns.every(turn => turn.approvalPolicy === 'never')).toBe(true);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('does not use a checkpoint without a fingerprint checker', async () => {
+    const pass = JSON.stringify({ verdict: 'pass', summary: 'Reviewed', findings: [] });
+    const runtime = new CapturingRuntime(['Fresh plan', 'Fresh implementation', pass]);
+    const invalidated = vi.fn(async () => {});
+    await new GameHarness(runtime as unknown as CodexAppServer).run({ projectId: 'no-fingerprint', cwd: '/tmp/test',
+      prompt: 'Original request', imageGenerationRoute: 'configured-api', onRecoveryInvalidated: invalidated,
+      recovery: { planner: { threadId: 'old', turnId: 'old', status: 'completed', text: 'stale' }, sourceHash: 'old' } });
+    expect(invalidated).toHaveBeenCalledOnce(); expect(runtime.turns).toHaveLength(3);
+    expect(runtime.turns[1]!.prompt).toContain('Fresh plan');
+  });
+  it('stops before writing when the task checkpoint cannot be persisted', async () => {
+    const runtime = new CapturingRuntime(['Plan']);
+    await expect(new GameHarness(runtime as unknown as CodexAppServer).run({ projectId: 'disk-failure', cwd: '/tmp/test',
+      prompt: 'Original request', imageGenerationRoute: 'configured-api', workspaceFingerprint: async () => 'hash',
+      onTask: async update => { if (update.id === 'planner' && update.status === 'completed') throw new Error('Checkpoint disk full'); },
+    })).rejects.toThrow('Checkpoint disk full');
+    expect(runtime.turns).toHaveLength(1);
+  });
+});
+
+describe('durable production guard integration', () => {
+  it('refuses a writer after the last model reservation and preserves the limit across restart', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-budget-harness-'));
+    try {
+      const file = join(root, 'progress.json'); const store = new ProductionRunStore(file); await store.init();
+      const input = { projectId: 'budget', planRunId: 'run', planVersionId: 'version', planTitle: 'Fixture',
+        contractKey: 'policy', continuation: false, coreLoop: false, visualSample: false };
+      const { session } = await store.begin(input);
+      for (let index = 0; index < 39; index++) await store.reserve(session, 'turns');
+      const runtime = new CapturingRuntime(['Plan']);
+      await expect(new GameHarness(runtime as unknown as CodexAppServer).run({ projectId: 'budget', cwd: root,
+        prompt: 'Original request', imageGenerationRoute: 'configured-api', reserveBudget: kind => store.reserve(session, kind),
+      })).rejects.toThrow('预算用尽');
+      expect(runtime.turns).toHaveLength(1); expect(runtime.turns[0]!.approvalPolicy).toBe('never');
+      const reopened = new ProductionRunStore(file); await reopened.init();
+      const next = await reopened.begin({ ...input, continuation: true });
+      const nextRuntime = new CapturingRuntime([]);
+      await expect(new GameHarness(nextRuntime as unknown as CodexAppServer).run({ projectId: 'budget', cwd: root,
+        prompt: 'Original request', imageGenerationRoute: 'configured-api', reserveBudget: kind => reopened.reserve(next.session, kind),
+      })).rejects.toThrow('预算用尽');
+      expect(nextRuntime.turns).toHaveLength(0); expect((await reopened.read('budget'))!.budget!.used.turns).toBe(40);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('does not repeat a completed no-op repair after a host restart', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-no-progress-'));
+    try {
+      const file = join(root, 'progress.json'); let store = new ProductionRunStore(file); await store.init();
+      const input = { projectId: 'no-progress', planRunId: 'run', planVersionId: 'version', planTitle: 'Fixture',
+        contractKey: 'policy', continuation: false, coreLoop: false, visualSample: false };
+      const review = JSON.stringify({ verdict: 'repair', summary: 'Collision failed', findings: ['collision'] });
+      const first = await store.begin(input);
+      const run = async (runtime: CapturingRuntime, session: typeof first.session) => new GameHarness(runtime as unknown as CodexAppServer).run({
+        projectId: 'no-progress', cwd: root, prompt: 'Original request', imageGenerationRoute: 'configured-api',
+        workspaceFingerprint: async () => 'unchanged', reserveBudget: kind => store.reserve(session, kind),
+        beforeRepair: (stage, findings, hash) => store.beforeRepair(session, stage, findings, hash),
+        onRepairCompleted: (stage, findings, hash) => store.repairCompleted(session, stage, findings, hash),
+      });
+      const firstRuntime = new CapturingRuntime(['Plan', 'Implementation', review, 'No changes', review]);
+      await expect(run(firstRuntime, first.session)).rejects.toThrow('没有进展');
+      expect((await store.read('no-progress'))!.budget!.used.repairs).toBe(1);
+      store = new ProductionRunStore(file); await store.init();
+      const next = await store.begin({ ...input, continuation: true });
+      const nextRuntime = new CapturingRuntime(['Plan', 'Implementation', review]);
+      await expect(run(nextRuntime, next.session)).rejects.toThrow('无进展');
+      expect(nextRuntime.turns).toHaveLength(3);
+      expect((await store.read('no-progress'))!.budget!.used.repairs).toBe(1);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it('does not invoke a model if its budget reservation cannot be persisted', async () => {
+    const runtime = new CapturingRuntime([]);
+    await expect(new GameHarness(runtime as unknown as CodexAppServer).run({ projectId: 'budget-disk', cwd: '/tmp/test',
+      prompt: 'Original request', imageGenerationRoute: 'configured-api', reserveBudget: async () => { throw new Error('Budget disk full'); },
+    })).rejects.toThrow('Budget disk full');
+    expect(runtime.turns).toHaveLength(0);
   });
 });

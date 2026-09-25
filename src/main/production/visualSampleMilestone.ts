@@ -4,7 +4,7 @@ export interface VisualSampleValidation {
   sourceHash?: string; buildId?: string; artifactHash?: string; evidencePath?: string;
 }
 
-/** One initial sample pass and at most one repair. Failure prevents content
+/** One initial check and at most two bounded sample implementation passes. Failure prevents content
  * production; retrying a run always refreshes evidence instead of trusting a flag. */
 export async function runVisualSampleMilestone(options: {
   validate(): Promise<VisualSampleValidation>;
@@ -16,7 +16,7 @@ export async function runVisualSampleMilestone(options: {
   progress(state: 'checking' | 'repair' | 'passed', message: string): void;
 }): Promise<void> {
   options.assertActive();
-  options.progress('checking', '核对运行中的视觉样板：素材绑定、尺寸、字体与动作截图。');
+  options.progress('checking', '核对运行中的视觉样板：场景覆盖、素材装配与真实操作截图。');
   let lastFailure: string | undefined;
   for (let attempt = 0; attempt <= 2; attempt++) {
     options.assertActive();

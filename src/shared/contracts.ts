@@ -1,4 +1,5 @@
-import type { GeneratePlansInput, PlanDraft, StartPlanInput } from './planning.js';
+import type { GeneratePlansInput, PlanDraft, StartPlanInput, ResumeProjectInput } from './planning.js';
+import type { ProductionProgress } from './productionProgress.js';
 export type PipelineStage =
   | 'brief'
   | 'scaffold'
@@ -425,6 +426,7 @@ export interface GameplayExperienceCheck {
 
 /** A compact, persisted summary of the latest automated play session. */
 export interface GameplayExperienceReport {
+  sceneQuality?: import('./sceneQuality.js').SceneQualitySummary;
   version: 1;
   verdict: GameplayExperienceVerdict;
   /** Basic runtime checks passed, as a percentage. This is not an art/fun quality score. */
@@ -453,6 +455,7 @@ export interface BuildPreviewStatus {
 }
 
 export interface ProjectInspectorPayload {
+  assetPreviewUrl?: string;
   files: FileNode[];
   previewUrl: string;
   assets: GameAssetRecord[];
@@ -590,6 +593,14 @@ export interface NoobiApi {
   /** Permanently removes the catalog record and its verified workspace directory. */
   deleteProject(projectId: string): Promise<ProjectRecord>;
   runProject(input: RunProjectInput): Promise<ProjectRecord>;
+  resumeProject(input: ResumeProjectInput): Promise<ProjectRecord>;
+  getProductionProgress(projectId: string): Promise<ProductionProgress | null>;
+  listGameVersions(projectId: string): Promise<import('./gameVersions.js').GameVersion[]>;
+  previewGameVersion(projectId: string, versionId: string): Promise<string>;
+  backupGameVersion(projectId: string): Promise<import('./gameVersions.js').GameVersion>;
+  restoreGameVersion(input: import('./gameVersions.js').RestoreGameVersionInput): Promise<import('./gameVersions.js').RestoreGameVersionResult>;
+  extendProductionBudget(input: { projectId: string; planRunId: string; revision: number }): Promise<ProductionProgress>;
+  onProductionProgressChanged(listener: (progress: ProductionProgress) => void): () => void;
   stopProject(projectId: string): Promise<ProjectRecord>;
   /** Opens the project folder, prompting to reconnect it first if it was moved or renamed. */
   revealProject(projectId: string): Promise<ProjectRecord | null>;

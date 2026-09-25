@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { ProjectRecord } from '../../shared/contracts.js';
+import { SCENE_QUALITY_GUIDE } from '../quality/sceneQuality.js';
 import { VISUAL_SAMPLE_GUIDE } from '../quality/visualSample.js';
 
 export interface GameQualitySpec {
   version: 1;
+  engine?: 'web' | 'godot';
   id: string;
   genre: 'platformer' | 'hunting' | 'exploration' | 'card' | '3d' | 'generic';
   interactionMode: 'real-time' | 'turn-based';
@@ -13,13 +15,14 @@ export interface GameQualitySpec {
 }
 
 export function supportsVisualSample(spec: GameQualitySpec): boolean {
-  return spec.genre === 'platformer' && spec.presentation === '2d';
+  return spec.presentation === '3d' || spec.genre === 'platformer';
 }
 
 /** Host-derived minimums. This is a floor, not a substitute for the full user
  * brief; scope cannot be weakened by editing the generated playtest manifest. */
-export function gameQualitySpec(project: Pick<ProjectRecord, 'name' | 'idea' | 'engine' | 'targetFrameRate'>): GameQualitySpec {
+export function gameQualitySpec(project: Pick<ProjectRecord, 'name' | 'idea' | 'engine' | 'targetFrameRate'>, dimension?: '2d' | '3d'): GameQualitySpec {
   const text = `${project.name}\n${project.idea}`;
+  const presentation = dimension ?? (/\b3d\b|三维|第三人称|第一人称|\bfps\b/iu.test(text) ? '3d' : '2d');
   const genre = /卡牌|牌组|炉石|card.?game|deck.?builder/iu.test(text) ? 'card'
     : /横版|平台动作|platformer/iu.test(text) ? 'platformer'
       : /狩猎|套索|hunting|lasso/iu.test(text) ? 'hunting'
@@ -38,12 +41,12 @@ export function gameQualitySpec(project: Pick<ProjectRecord, 'name' | 'idea' | '
     '素材必须在真实游戏中可见、可读且正确绑定，中文字体必须随游戏交付。',
     '真实输入验证核心目标、失败反馈、暂停/恢复和重开；直接设置分数只能作单元测试。',
     ...specialized[genre],
-    ...(/\b3d\b|三维|第三人称/iu.test(text) && genre !== '3d' ? specialized['3d'] : []),
+    ...(presentation === '3d' && genre !== '3d' ? specialized['3d'] : []),
   ];
-  return { version: 1, id: createHash('sha256').update(JSON.stringify({ text, engine: project.engine,
-    fps: project.targetFrameRate, requirements })).digest('hex'), genre,
+  return { version: 1, engine: project.engine, id: createHash('sha256').update(JSON.stringify({ text, engine: project.engine,
+    fps: project.targetFrameRate, presentation, requirements })).digest('hex'), genre,
     interactionMode: genre === 'card' ? 'turn-based' : 'real-time', requirements,
-    presentation: /\b3d\b|三维|第三人称/iu.test(text) ? '3d' : '2d',
+    presentation,
     milestones: [
       { id: 'core-loop', acceptance: '以真实操作完成一个最小完整流程，含成功、失败与重开证据。' },
       { id: 'visual-sample', acceptance: '一个场景内验证角色、地形、交互物、HUD、关键动作与音效的一致性。' },
@@ -73,5 +76,5 @@ export function qualitySpecPrompt(spec: GameQualitySpec): string {
     + 'Update these values from actual gameplay only; a basic movement diagnostic cannot pass full-game delivery. '
     + 'These state observations supplement real inputs and visible feedback; never add a self-reported pass field or cheat interface. '
     + 'Never interpret the basic playtest percentage as an art or fun score.'
-    + (supportsVisualSample(spec) ? `\n${VISUAL_SAMPLE_GUIDE}` : '');
+    + (spec.engine !== 'web' && supportsVisualSample(spec) ? `\n${spec.presentation === '3d' ? SCENE_QUALITY_GUIDE : VISUAL_SAMPLE_GUIDE}` : '');
 }

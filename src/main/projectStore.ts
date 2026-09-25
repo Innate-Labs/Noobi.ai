@@ -166,7 +166,7 @@ export class ProjectStore {
     return this.get(projectId);
   }
 
-  async create(input: ProjectStoreCreateInput): Promise<ProjectRecord> {
+  async create(input: ProjectStoreCreateInput, populate?: (project: ProjectRecord) => Promise<void>): Promise<ProjectRecord> {
     return this.#mutate(async (state) => {
       const normalized = validateCreateProjectInput(input);
       const usesSelectedDirectory = Boolean(normalized.projectDirectory);
@@ -200,7 +200,8 @@ export class ProjectStore {
       };
 
       try {
-        await createWorkspaceTemplate(projectRoot, project);
+        if (populate) await populate(project);
+        else await createWorkspaceTemplate(projectRoot, project);
         state.projects.push(project);
         await this.#persist(state);
       } catch (error) {
