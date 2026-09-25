@@ -259,3 +259,5 @@ No project license has been published yet. Until the repository owners select an
 ### Image-guided 3D authoring
 
 See [the runnable reference example](examples/image-threejs/README.md) and [delivery report](docs/development-plan/reports/01-image-threejs.md). Run `npm run smoke:model3d` after installing the project dependencies and Godot with matching templates. Three.js runs only in an isolated authoring/export renderer; Godot remains the final game runtime. Image generation and AI coding still use their configured quotas. No external 3D API is called in the default mode.
+
+New Godot projects include the OFL-1.1 Fusion Pixel Chinese font and component licenses for offline game UI. Font bytes are pinned; no developer system font is required. See `resources/game-fonts/README.md`.

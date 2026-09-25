@@ -1,4 +1,5 @@
 import { MODEL_ASSET_GUIDE } from './runtime/modelAssetGuide.js';
+import { bundledGameFonts } from './gameFonts.js';
 import { PROGRESSION_KIT, PROGRESSION_GUIDE } from './runtime/progressionKit.js';
 import { CHECKPOINT_KIT, CHECKPOINT_GUIDE } from './runtime/checkpointKit.js';
 import { ADVENTURE_KIT_FILES } from './runtime/adventureKit.js';
@@ -72,7 +73,7 @@ export async function createWorkspaceTemplate(
   const root = resolveAbsoluteRoot(workspaceRoot);
   await mkdir(root, { recursive: true, mode: 0o755 });
 
-  const files = workspaceFiles(project);
+  const files = { ...workspaceFiles(project), ...(project.engine === 'godot' ? await bundledGameFonts() : {}) };
   for (const [relativePath, content] of Object.entries(files)) {
     const target = resolveTemplatePath(root, relativePath);
     await mkdir(dirname(target), { recursive: true, mode: 0o755 });
@@ -418,6 +419,7 @@ Set explicit budgets for texture dimensions, concurrent sounds, model count, tri
 
 ## 4. Implement safely
 
+- New Godot projects include an offline OFL-1.1 Chinese font in runtime/noobi/fonts/ with source hashes and licenses. Use that FontFile, or a properly licensed replacement matching the art direction. Never copy developer system fonts for distribution. Retain all font licenses in game exports.
 - Reuse programmatic shapes, gradients, typography, and ${project.engine === 'godot' ? 'Godot-native procedural SFX' : 'Web Audio'} when they fit the art direction or provide an explicit fallback, but never treat them as satisfying the host-generated image gate.
 - For generated or reused 2D/2.5D animation, load the real keyframe assets and advance frames during gameplay with explicit timing and state transitions. Merely moving one static image, rendering a full sheet without cropping, or leaving poses unused is not animation integration.
 - For generated or reused actual 3D animation, select and play the real GLB clip through the engine animation system. Rotating or translating the entire mesh does not prove clip playback.
@@ -580,7 +582,7 @@ function godotExportPresets(): string {
     'dedicated_server=false',
     'custom_features=""',
     'export_filter="all_resources"',
-    'include_filter="data/*.json"',
+    'include_filter="data/*.json,runtime/noobi/fonts/*.json,runtime/noobi/fonts/*.txt,runtime/noobi/fonts/LICENSES/*/*.txt"',
     'exclude_filter=""',
     'export_path="build/web/index.html"',
     'script_export_mode=2',
@@ -685,7 +687,7 @@ function godotMainScript(project: WorkspaceProject): string {
     '    for y in range(0, 721, 64):',
     '        draw_line(Vector2(0, y), Vector2(1280, y), Color("222a38"), 1.0)',
     '',
-    '    var font := ThemeDB.fallback_font',
+    '    var font := preload("res://runtime/noobi/fonts/fusion-pixel-12px-proportional-zh_hans.otf.woff2")',
     '    draw_string(font, Vector2(0.0, 190.0), "' + title + '", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 42, Color("f4f5f7"))',
     '    draw_string(font, Vector2(0.0, 235.0), "NOOBI.AI · NEUTRAL GODOT STARTER", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 17, Color("aeb5c5"))',
     '    draw_string(font, Vector2(0.0, 295.0), "Waiting for the Agent to build gameplay from the brief", HORIZONTAL_ALIGNMENT_CENTER, ARENA_SIZE.x, 20, Color("f4f5f7"))',

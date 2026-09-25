@@ -1,0 +1,14 @@
+{
+  "name": "Fusion Pixel Font",
+  "version": "2026.08.11",
+  "license": "OFL-1.1",
+  "source": "https://github.com/TakWolf/fusion-pixel-font/releases/download/2026.08.11/fusion-pixel-font-12px-proportional-otf.woff2-v2026.08.11.zip",
+  "archiveSha256": "8aa9e68b8a4aaaae84a77f7af2cc6601f432da0af98f7d9675ad77f631e63db4",
+  "files": {
+    "LICENSES/ark-pixel/OFL.txt": "3ab41567e68e3988ba1ef16dd2644eca95ca5648ea12e7d46e6287fc0bbe5aee",
+    "LICENSES/cubic-11/OFL.txt": "bdd640c94530f5845de621089875aefcaec17585dbd4dab191c97118539bf92f",
+    "LICENSES/galmuri/LICENSE.txt": "86a3ee9495f942f0243f18c103da9faca27adb88142613edb8bb852e56c892c1",
+    "OFL.txt": "bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63",
+    "fusion-pixel-12px-proportional-zh_hans.otf.woff2": "e7e57f471045328b6c9583cbd70fa45122c66c78038c3777abfd7a29d476cf44"
+  }
+}

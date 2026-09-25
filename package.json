@@ -92,6 +92,7 @@
       "dist/**/*",
       "resources/free-audio/**/*",
       "resources/free-models/**/*",
+      "resources/game-fonts/**/*",
       "package.json",
       "node_modules/three/**/*",
       "node_modules/three-stdlib/**/*",
