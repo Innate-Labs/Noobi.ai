@@ -148,6 +148,28 @@ describe('eventMapper', () => {
     expect(event?.message.length).toBeLessThan(2_000);
   });
 
+  it('shows the public registration error without exposing the rest of the tool response', () => {
+    const event = notificationToEvent({ method: 'item/completed', params: { item: {
+      type: 'dynamicToolCall', tool: 'noobi_asset_register', status: 'failed', success: false,
+      arguments: { secret: 'do-not-log' },
+      contentItems: [{ type: 'inputText', text: JSON.stringify({
+        error: 'Visual role metadata is supported only for image assets',
+        privateResponse: 'do-not-log',
+      }) }],
+    } } }, { projectId: 'project-1', role: 'implementer' }, 'assets');
+    expect(event?.kind).toBe('error');
+    expect(event?.message).toContain('失败原因：Visual role metadata is supported only for image assets');
+    expect(event?.message).not.toContain('do-not-log');
+  });
+
+  it.each(['not JSON do-not-log', JSON.stringify({ message: 'do-not-log' })])('does not dump an unrecognized failed response', (text) => {
+    const event = notificationToEvent({ method: 'item/completed', params: { item: {
+      type: 'dynamicToolCall', tool: 'noobi_asset_register', status: 'failed', success: false,
+      contentItems: [{ type: 'inputText', text }],
+    } } }, { projectId: 'project-1', role: 'implementer' }, 'assets');
+    expect(event?.message).toBe('状态：failed\n结果：失败');
+  });
+
   it('summarizes dynamic tool calls without logging media payloads', () => {
     const event = notificationToEvent(
       {

@@ -275,6 +275,57 @@ describe('media tool broker', () => {
     }));
   });
 
+  it.each(['character', 'enemy', 'item', 'environment'])('registers a real GLB with %s classification and its plan', async (role) => {
+    const root = await mkdtemp(join(tmpdir(), 'noobi-model-role-'));
+    roots.push(root);
+    const assetStore = new AssetStore();
+    const generationService = new MediaGenerationService({
+      providerStore: { withActiveProvider: async () => null } as never,
+      assetStore,
+    });
+    const project = { id: 'project-model-role', root };
+    const generated = await generationService.generate({
+      project, kind: 'model3d', name: 'repairer', prompt: 'Low poly repairer character',
+      options: { animation: true },
+    });
+    if (generated.outcome !== 'asset') throw new Error('Expected GLB');
+    const assetPlanStore = await makePlanStore();
+    await assetPlanStore.upsert({
+      id: 'model3d-repairer', projectId: project.id, name: 'repairer',
+      kind: 'model3d', prompt: 'Low poly repairer character',
+    });
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const broker = brokerWith({ responses, assetStore, assetPlanStore, resolveProject: async () => project });
+    broker.handle(toolRequest(62, 'noobi_asset_register', {
+      relativePath: generated.asset.relativePath, planId: 'model3d-repairer',
+      role, subjectId: 'player-repairer',
+    }));
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    expect(readToolResponse(responses[0]!.result)).toMatchObject({
+      success: true, payload: { asset: { kind: 'model3d', metadata: { role, subjectId: 'player-repairer' } } },
+    });
+    expect((await assetStore.list(project.id, root))[0]?.metadata).toMatchObject({ role, subjectId: 'player-repairer' });
+    expect(await assetPlanStore.get(project.id, 'model3d-repairer')).toMatchObject({ status: 'generated' });
+  });
+
+  it.each([
+    { relativePath: 'public/assets/audio/hit.wav', role: 'item' },
+    { relativePath: 'public/assets/models/hero.glb', role: 'card-art-atlas' },
+    { relativePath: 'public/assets/models/hero.glb', role: 'character', atlasColumns: 2 },
+    { relativePath: 'public/assets/models/hero.glb', role: 'character', subjects: 'hero,enemy' },
+    { relativePath: 'public/assets/models/hero.glb', role: 'character', subjectId: '../invalid' },
+    { relativePath: 'public/assets/models/hero.glb', kind: 'image', role: 'character' },
+  ])('rejects incompatible visual classification before registration: %j', async (args) => {
+    const responses: Array<{ id: string | number; result: unknown }> = [];
+    const registerExisting = vi.fn();
+    const broker = brokerWith({ responses, assetStore: { registerExisting } as unknown as AssetStore,
+      resolveProject: async () => ({ id: 'project-model-role', root: '/private/workspace' }) });
+    broker.handle(toolRequest(63, 'noobi_asset_register', args));
+    await vi.waitFor(() => expect(responses).toHaveLength(1));
+    expect(readToolResponse(responses[0]!.result).success).toBe(false);
+    expect(registerExisting).not.toHaveBeenCalled();
+  });
+
   it('returns an explicit Codex ImageGen fallback without placing binary data in JSON-RPC', async () => {
     const responses: Array<{ id: string | number; result: unknown }> = [];
     const assetPlanStore = await makePlanStore();

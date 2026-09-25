@@ -305,13 +305,39 @@ function describeItem(
         message: `状态：${readString(item.status) ?? 'unknown'}${typeof item.success === 'boolean'
           ? cleanToolName(readString(item.tool)) === 'noobi_godot_check'
             ? `\n${item.success ? '检查调用已完成；是否通过请查看体验报告。' : '检查调用失败。'}`
-            : `\n结果：${item.success ? '成功' : '失败'}` : ''}`,
+            : `\n结果：${item.success ? '成功' : '失败'}` : ''}${dynamicToolError(item)}`,
       };
     case 'plan':
       return { kind: 'plan', title: '计划', message: describe(item) };
     default:
       return { kind: 'lifecycle', title: type, message: describe(item) };
   }
+}
+
+// Only display the host's bounded public error field, never raw tool arguments,
+// successful media payloads, or arbitrary provider responses.
+function dynamicToolError(item: Record<string, unknown>): string {
+  if (item.success !== false && item.status !== 'failed') return '';
+  const tool = cleanToolName(readString(item.tool));
+  if (!tool.startsWith('noobi_') || !Array.isArray(item.contentItems)) return '';
+  for (const entry of item.contentItems.slice(0, 8)) {
+    const content = asRecord(entry);
+    if (content?.type !== 'inputText' || typeof content.text !== 'string' || content.text.length > 32_768) continue;
+    try {
+      const payload = asRecord(JSON.parse(content.text));
+      const error = readString(payload?.error);
+      if (!error) continue;
+      const safe = error
+        .replace(/data:[^\s]+/giu, '[media]')
+        .replace(/https?:\/\/[^\s]+/giu, '[url]')
+        .replace(/\b(?:sk-api-|sk-)[A-Za-z0-9_-]{12,}\b/gu, '[redacted]')
+        .replace(/[\u0000-\u001f\u007f]/gu, ' ');
+      return `\n失败原因：${clip(safe, 500)}`;
+    } catch {
+      // Non-JSON output can contain media or credentials; keep it private.
+    }
+  }
+  return '';
 }
 
 function roleLabel(role: ThreadRoute['role']): string {

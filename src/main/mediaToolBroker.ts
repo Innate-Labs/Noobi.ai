@@ -119,7 +119,7 @@ export const MEDIA_DYNAMIC_TOOLS: DynamicToolSpec[] = [
   {
     type: 'function',
     name: 'noobi_asset_register',
-    description: 'Validate and register an existing asset under public/assets in the current project. For gameplay images, classify the visual role and stable subjectId; card atlases must also declare atlasColumns, atlasRows, and comma-separated subjects.',
+    description: 'Validate and register an existing asset under public/assets in the current project. For gameplay images and 3D models, classify the visual role and stable subjectId; image card atlases must also declare atlasColumns, atlasRows, and comma-separated subjects. Atlas fields are only supported for images.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -906,7 +906,12 @@ function visualAssetMetadata(
   const subjectsText = optionalString(args.subjects, 'subjects', 1_000);
   const hasClassification = role || subjectId || atlasColumns || atlasRows || subjectsText;
   if (!hasClassification) return undefined;
-  if (kind !== 'image') throw new ToolInputError('Visual role metadata is supported only for image assets');
+  if (kind !== 'image' && kind !== 'model3d') {
+    throw new ToolInputError('Visual role metadata is supported only for image and model3d assets');
+  }
+  if (kind === 'model3d' && (role === 'card-art-atlas' || atlasColumns || atlasRows || subjectsText)) {
+    throw new ToolInputError('Atlas metadata is supported only for image assets');
+  }
   if (!role) throw new ToolInputError('role is required when visual classification metadata is supplied');
   if (subjectId && !/^[\p{L}\p{N}][\p{L}\p{N}_-]{0,79}$/u.test(subjectId)) {
     throw new ToolInputError('subjectId must use letters, numbers, underscores, or hyphens');
