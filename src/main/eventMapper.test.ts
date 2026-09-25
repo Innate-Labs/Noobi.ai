@@ -197,4 +197,21 @@ describe('eventMapper', () => {
     expect(event?.message).not.toContain('do-not-log');
     expect(event?.message).not.toContain('base64');
   });
+
+  it.each([
+    ['noobi_image_generate', { fallback: { type: 'codex-imagegen', prompt: 'do-not-log' } }, '图片尚未生成'],
+    ['noobi_model3d_generate', { fallback: { type: 'image-threejs' } }, '模型尚未生成'],
+    ['noobi_audio_generate', { fallback: { type: 'procedural-audio' } }, '音频尚未生成'],
+    ['noobi_model3d_generate', { asset: { path: 'do-not-log' } }, '视觉匹配和游戏内效果仍需检查'],
+    ['noobi_image_generate', { asset: { path: 'do-not-log' } }, '素材已保存'],
+    ['noobi_image_generate', { unexpected: 'do-not-log' }, '素材状态请查看素材库'],
+  ])('distinguishes %s generation results from successful tool dispatch', (tool, payload, expected) => {
+    const event = notificationToEvent({ method: 'item/completed', params: { item: {
+      type: 'dynamicToolCall', tool, status: 'completed', success: true,
+      contentItems: [{ type: 'inputText', text: JSON.stringify(payload) }],
+    } } }, { projectId: 'project-1', role: 'implementer' }, 'assets');
+    expect(event?.message).toContain(expected);
+    expect(event?.message).not.toContain('结果：成功');
+    expect(event?.message).not.toContain('do-not-log');
+  });
 });

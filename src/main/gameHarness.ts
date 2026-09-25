@@ -1581,6 +1581,8 @@ PlaytestInput is exactly one of {"type":"key","code":"KeyboardEvent.code","holdM
 {"type":"drag","fromXRatio":0..1,"fromYRatio":0..1,"toXRatio":0..1,"toYRatio":0..1,"button":0|1|2,"durationMs":16..3000},
 or {"type":"wait","ms":0..10000}. Use look for first/third-person camera motion and drag for card, inventory,
 map, aiming, or touch-like gestures; do not approximate either with a single click.
+Each actions entry must contain 1..12 inputs; each journey step may contain 0..12 inputs.
+Split longer input sequences across ordered journey steps before calling the host playtest tool.
 Use project-relative paths and stable IDs. Do not include JavaScript expressions, shell commands, URLs, absolute
 paths, secrets, selectors that escape the game document, or instructions to access files outside the workspace.
 Each common action must map to real production input; a move-only game may make primary a contextual interact input,

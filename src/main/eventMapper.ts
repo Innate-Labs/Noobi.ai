@@ -305,13 +305,41 @@ function describeItem(
         message: `状态：${readString(item.status) ?? 'unknown'}${typeof item.success === 'boolean'
           ? cleanToolName(readString(item.tool)) === 'noobi_godot_check'
             ? `\n${item.success ? '检查调用已完成；是否通过请查看体验报告。' : '检查调用失败。'}`
-            : `\n结果：${item.success ? '成功' : '失败'}` : ''}${dynamicToolError(item)}`,
+            : `\n${item.success ? dynamicToolSuccess(item) : '结果：失败'}` : ''}${dynamicToolError(item)}`,
       };
     case 'plan':
       return { kind: 'plan', title: '计划', message: describe(item) };
     default:
       return { kind: 'lifecycle', title: type, message: describe(item) };
   }
+}
+
+function dynamicToolSuccess(item: Record<string, unknown>): string {
+  const tool = cleanToolName(readString(item.tool));
+  if (!['noobi_image_generate', 'noobi_model3d_generate', 'noobi_audio_generate'].includes(tool)) return '结果：成功';
+  if (Array.isArray(item.contentItems)) {
+    for (const entry of item.contentItems.slice(0, 8)) {
+      const content = asRecord(entry);
+      if (content?.type !== 'inputText' || typeof content.text !== 'string' || content.text.length > 32_768) continue;
+      try {
+        const payload = asRecord(JSON.parse(content.text));
+        const fallback = asRecord(payload?.fallback);
+        if (fallback) {
+          const type = readString(fallback.type);
+          if (type === 'codex-imagegen') return '已返回 ImageGen 出图指引；图片尚未生成。';
+          if (type === 'image-threejs') return '需先准备参考图和 Three.js 建模源码；模型尚未生成。';
+          if (type === 'procedural-audio') return '已返回音频替代方案；音频尚未生成。';
+          return '已返回后续处理指引；素材尚未生成。';
+        }
+        if (asRecord(payload?.asset)) return tool === 'noobi_model3d_generate'
+          ? '模型已导出；视觉匹配和游戏内效果仍需检查。'
+          : '素材已保存到项目素材库。';
+      } catch {
+        // Never display unrecognized payloads or provider response text.
+      }
+    }
+  }
+  return '调用已完成；素材状态请查看素材库。';
 }
 
 // Only display the host's bounded public error field, never raw tool arguments,
