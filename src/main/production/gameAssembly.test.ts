@@ -23,3 +23,18 @@ it('binds actual scene and style bytes but explicitly does not certify art',asyn
 it('rejects changed ArtBible even with a matching palette',async()=>{const root=await project();await writeFile(join(root,'.noobi/art-bible.json'),art+'\n');await expect(checkGameAssembly(root)).rejects.toThrow('ArtBible changed')});
 it('rejects off-palette UI and missing scene instead of silently assembling',async()=>{const root=await project();const a=fixture();a.style.colors.border='#ffffff';await writeFile(join(root,'data/game-assembly.json'),JSON.stringify(a));await expect(checkGameAssembly(root)).rejects.toThrow('palette');await writeFile(join(root,'data/game-assembly.json'),JSON.stringify(fixture()));await rm(join(root,'ruins.tscn'));await expect(checkGameAssembly(root)).rejects.toThrow()});
 it('leaves older projects without this opt-in profile alone',async()=>{const root=await mkdtemp(join(tmpdir(),'noobi-no-assembly-'));roots.push(root);expect(await checkGameAssembly(root)).toBeNull()});
+
+function withAudio(){return {...fixture(),audio:{regions:{camp:'assets/a.ogg',ruins:'assets/b.mp3',summit:null},effects:{hit:'assets/hit.wav'},fadeSeconds:0.5}}}
+it('requires explicit regional music, bounded fades and named events',()=>{
+ const a=withAudio();expect(parseGameAssembly(a,d).audio?.regions.summit).toBeNull();
+ expect(()=>parseGameAssembly({...a,audio:{...a.audio,regions:{camp:null}}},d)).toThrow('each region');
+ expect(()=>parseGameAssembly({...a,audio:{...a.audio,fadeSeconds:Infinity}},d)).toThrow('fade');
+ expect(()=>parseGameAssembly({...a,audio:{...a.audio,regions:{...a.audio.regions,camp:'../song.ogg'}}},d)).toThrow('music');
+ expect(()=>parseGameAssembly({...a,audio:{...a.audio,effects:{arbitrary:'a.ogg'}}},d)).toThrow('event');
+});
+it('freezes audio bytes and rejects missing declared files',async()=>{
+ const root=await project();const a=withAudio();await writeFile(join(root,'data/game-assembly.json'),JSON.stringify(a));
+ await expect(checkGameAssembly(root)).rejects.toThrow();
+ await mkdir(join(root,'assets'));for(const f of ['a.ogg','b.mp3','hit.wav'])await writeFile(join(root,'assets',f),'fixture-audio-bytes');
+ const result=await checkGameAssembly(root);expect(Object.keys(result?.files as object)).toContain('assets/hit.wav');
+});

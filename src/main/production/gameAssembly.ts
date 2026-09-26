@@ -3,10 +3,11 @@ import { readProjectBytes } from '../referenceModel3d.js';
 import { parseArtBible } from '../modelAssetSpec.js';
 import { parseProgression } from './progressionGraph.js';
 import type { ProgressionDefinition } from '../../shared/progression.js';
-export const ASSEMBLY_VALIDATOR_VERSION = 'assembly-v1';
+export const ASSEMBLY_VALIDATOR_VERSION = 'assembly-v2';
 export interface GameAssembly {
   version: 1; gameId: string; contentVersion: number; title: string; subtitle: string; controls: string;
   playerScene: string;
+  audio?: { regions:Record<string,string|null>; effects:Partial<Record<'quest'|'travel'|'hit'|'hurt'|'victory'|'failure',string>>; fadeSeconds:number };
   regions: Record<string, { scene: string; spawn: string; quests: Record<string,{node:string;kind:'interact'|'defeat'}>; exits: Record<string,string> }>;
   labels: {regions:Record<string,string>;quests:Record<string,string>;items:Record<string,string>;abilities:Record<string,string>};
   style: { artBibleId:string; artBibleHash:string; references:string[]; colors:Record<string,string> };
@@ -47,6 +48,13 @@ export function parseGameAssembly(value:unknown,definition:ProgressionDefinition
   demand(Array.isArray(s.references)&&s.references.length<=8&&new Set(s.references).size===s.references.length&&s.references.every((p:any)=>path(p)&&/\.(png|jpg|jpeg|webp)$/i.test(p)),'Invalid reference image paths');
   demand(exact(s.colors,roles)&&Object.values(s.colors).every(x=>typeof x==='string'&&/^#[a-f0-9]{6}$/i.test(x)),'Missing UI palette roles');
   demand(contrast(s.colors.text,s.colors.surface)>=4.5&&contrast(s.colors.accentText,s.colors.accent)>=4.5,'UI text contrast below project minimum 4.5');
+  if (v.audio !== undefined) {
+    const a=v.audio;
+    demand(object(a)&&exact(a.regions,definition.regions),'Audio must declare music or null for each region');
+    demand(Object.values(a.regions).every(p=>p===null||(path(p)&&/\.(ogg|mp3)$/i.test(p as string))),'Region music must be Ogg/MP3 or null');
+    demand(object(a.effects)&&Object.keys(a.effects).every(k=>['quest','travel','hit','hurt','victory','failure'].includes(k))&&Object.values(a.effects).every(p=>path(p)&&/\.(ogg|mp3|wav)$/i.test(p as string)),'Invalid audio event binding');
+    demand(typeof a.fadeSeconds==='number'&&Number.isFinite(a.fadeSeconds)&&a.fadeSeconds>=0&&a.fadeSeconds<=5,'Audio fade must be 0–5 seconds');
+  }
   return structuredClone(v) as GameAssembly;
 }
 export async function checkGameAssembly(root:string):Promise<Record<string,unknown>|null>{
@@ -66,6 +74,14 @@ export async function checkGameAssembly(root:string):Promise<Record<string,unkno
     const bytes=await readProjectBytes(root,file,1024*1024);demand(bytes.toString('utf8').startsWith('[gd_scene'),'Invalid packed scene '+file);files[file]=digest(bytes);
   }
   for(const file of assembly.style.references)files[file]=digest(await readProjectBytes(root,file,16*1024*1024));
+  if (assembly.audio) {
+    const paths = [...Object.values(assembly.audio.regions),...Object.values(assembly.audio.effects)].filter((p):p is string=>typeof p==='string');
+    for (const file of new Set(paths)) {
+      const bytes=await readProjectBytes(root,file,32*1024*1024);
+      demand(bytes.length>4,'Empty audio file '+file);
+      files[file]=digest(bytes);
+    }
+  }
   return {ok:true,version:ASSEMBLY_VALIDATOR_VERSION,gameId:assembly.gameId,files,regions:definition.regions.length,
     limitation:'Bindings/files and palette provenance only; runtime nodes, objectives, geometry, art and reference likeness need independent playtesting'};
 }

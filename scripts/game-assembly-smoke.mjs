@@ -7,12 +7,13 @@ import {promisify} from 'node:util';
 import assert from 'node:assert/strict';
 import {ADVENTURE_KIT_FILES} from '../dist/main/runtime/adventureKit.js';
 import {GAME_ASSEMBLY_KIT} from '../dist/main/runtime/gameAssemblyKit.js';
+import {GAME_AUDIO_KIT} from '../dist/main/runtime/gameAudioKit.js';
 import {GAME_UI_KIT} from '../dist/main/runtime/gameUiKit.js';
 import {CHECKPOINT_KIT} from '../dist/main/runtime/checkpointKit.js';
 import {PROGRESSION_KIT} from '../dist/main/runtime/progressionKit.js';
 import {checkGameAssembly} from '../dist/main/production/gameAssembly.js';
 const out=resolve('.noobi-private/stage-08/assembly',new Date().toISOString().replaceAll(':','-'));await mkdir(out,{recursive:true});
-const files={...ADVENTURE_KIT_FILES,'runtime/noobi/game_assembly_v1.gd':GAME_ASSEMBLY_KIT,'runtime/noobi/ui_v1.gd':GAME_UI_KIT,'runtime/noobi/checkpoint_v1.gd':CHECKPOINT_KIT,'runtime/noobi/progression_v1.gd':PROGRESSION_KIT};
+const files={...ADVENTURE_KIT_FILES,'runtime/noobi/game_assembly_v1.gd':GAME_ASSEMBLY_KIT,'runtime/noobi/audio_v1.gd':GAME_AUDIO_KIT,'runtime/noobi/ui_v1.gd':GAME_UI_KIT,'runtime/noobi/checkpoint_v1.gd':CHECKPOINT_KIT,'runtime/noobi/progression_v1.gd':PROGRESSION_KIT};
 for(const [name,content] of Object.entries(files)){await mkdir(join(out,name,'..'),{recursive:true});await writeFile(join(out,name),content)}
 await cp('resources/game-fonts',join(out,'runtime/noobi/fonts'),{recursive:true});
 await mkdir(join(out,'data'));await mkdir(join(out,'scenes'));await mkdir(join(out,'scripts'));await mkdir(join(out,'.noobi'));

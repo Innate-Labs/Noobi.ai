@@ -127,7 +127,10 @@ func _process(_delta: float) -> void:
         250: pause_position = manager._music[manager._active].get_playback_position()
         290: _check(absf(manager._music[manager._active].get_playback_position()-pause_position)<0.05,"pause holds music playhead")
         300:
+            var active_before: int = manager._active
             get_tree().paused = false
+            manager.set_music(music,0.5)
+            _check(manager._active==active_before and absf(manager._music[active_before].get_playback_position()-pause_position)<0.05,"same-track request during resume preserves paused voice and position")
             _mark("resume")
         360:
             manager.set_music(second,1.0)

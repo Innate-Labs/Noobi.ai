@@ -62,7 +62,8 @@ func set_music(source: AudioStream, fade_seconds: float = 0.5, restart: bool = f
     if _music.size() != 2 or source == null or not is_finite(fade_seconds): return false
     var stream := _stream(source, true)
     if stream == null: return false
-    if not restart and _same(source, _source) and _active >= 0 and _music[_active].playing:
+    # Godot Web reports playing=false while stream_paused; preserve that live voice.
+    if not restart and _same(source, _source) and _active >= 0 and (_music[_active].playing or _music[_active].stream_paused):
         _pending = null
         return true
     if not restart and _duration > 0.0:

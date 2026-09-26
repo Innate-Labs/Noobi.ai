@@ -50,12 +50,19 @@ func capture(name: String) -> void:
     await RenderingServer.frame_post_draw
     get_viewport().get_texture().get_image().save_png("res://"+name+".png")
 func approach(z: float) -> void:
-    var action := "forward" if actor.position.z>z else "back"
-    Input.action_press("noobi_"+action)
     for i in 180:
+        var difference := actor.position.z-z
+        Input.action_release("noobi_forward")
+        Input.action_release("noobi_back")
+        if absf(difference)<0.06:
+            if absf(actor.velocity.z)<0.25: break
+            await frames(1)
+            continue
+        # InputMap's default 0.5 deadzone must be crossed, then taper physical input.
+        Input.action_press("noobi_forward" if difference>0 else "noobi_back",clampf(0.5+absf(difference)*0.4,0.51,1.0))
         await frames(1)
-        if absf(actor.position.z-z)<0.12: break
-    Input.action_release("noobi_"+action)
+    Input.action_release("noobi_forward")
+    Input.action_release("noobi_back")
     await frames(4)
     check(absf(actor.position.z-z)<0.3,"physical approach "+str(z))
 func run() -> void:
@@ -67,7 +74,7 @@ func run() -> void:
     await frames(20)
     check(ui.screen=="playing" and actor.is_on_floor(),"new game is playing on real ground")
     check(ui.palette.text==Color("fff8e7") and ui.accent==Color("ffd172"),"bound palette applied to formal UI")
-    await approach(-1.25)
+    await approach(-1.7)
     await key("interact")
     check(progression.snapshot().region=="camp" and progression.snapshot().completed.is_empty() and last_event=="invalid","physical exit refuses missing prerequisite")
     await approach(0.4)
@@ -78,7 +85,7 @@ func run() -> void:
     var binding: Dictionary = manifest.regions.ruins
     var spawn: String = binding.spawn
     binding.spawn = "MissingSpawn"
-    await approach(-1.3)
+    await approach(-1.7)
     var previous := world
     await key("interact")
     check(world==previous and progression.snapshot().region=="camp" and progression.snapshot().inventory.key==1,"invalid target scene preserves current world and unspent key")
@@ -114,7 +121,7 @@ func run() -> void:
     _signature = "incompatible-fixture"
     check(not _command("continue").ok and FileAccess.get_file_as_bytes(_save_path)==saved_bytes,"incompatible content refuses load without overwrite")
     _signature = signature
-    await approach(-1.3)
+    await approach(-1.7)
     await key("interact")
     check(progression.snapshot().region=="summit","third region reached through physical exit")
     await capture("summit-playing")

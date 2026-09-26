@@ -15,6 +15,8 @@ signal died
 var health := 3
 var state: StringName = &"idle"
 var enabled := true
+# Optional assembly gate; independent from an author disabling AI.
+var objective_locked := false
 var _timer := 0.0
 var _invulnerability := 0.0
 var _strike_direction := Vector3.FORWARD
@@ -31,7 +33,7 @@ func _physics_process(delta: float) -> void:
     velocity.x = 0.0
     velocity.z = 0.0
     if not is_on_floor(): velocity.y = maxf(-40.0, velocity.y - 22.0 * delta)
-    if not enabled or health <= 0 or not is_instance_valid(target) or target.get("health") == 0:
+    if objective_locked or not enabled or health <= 0 or not is_instance_valid(target) or target.get("health") == 0:
         move_and_slide()
         return
     var offset := target.global_position - global_position
@@ -71,8 +73,16 @@ func _set_state(value: StringName, duration := 0.0) -> void:
     _timer = duration
     state_changed.emit(state)
 
+func set_objective_locked(value: bool) -> void:
+    if objective_locked == value: return
+    objective_locked = value
+    velocity.x = 0.0
+    velocity.z = 0.0
+    _set_state(&"idle")
+    _timer = 0.0
+
 func take_damage(amount: int = 1) -> bool:
-    if health <= 0 or amount <= 0 or _invulnerability > 0.0: return false
+    if objective_locked or health <= 0 or amount <= 0 or _invulnerability > 0.0: return false
     health = maxi(0, health - amount)
     _invulnerability = 0.2
     damaged.emit(health)

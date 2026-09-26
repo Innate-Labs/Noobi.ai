@@ -58,6 +58,8 @@ New workspaces also include `MODEL_ASSETS_V2.md`: a shared art bible and explici
 
 For selected exploration games, the optional `GAME_ASSEMBLY_V1.md` profile connects authored player/region scenes, physical quest and exit nodes, shared progression, native UI and region checkpoints. UI palette roles bind to the actual ArtBible bytes; the frozen builder rejects incomplete mappings or changed style sources. A three-region interaction engineering fixture passes native input and Chromium save/reload checks. This is wiring/provenance validation, not autonomous finished-game, combat-route or reference-art certification.
 
+The optional assembly profile now gates defeat objectives until prerequisites and reward capacity are satisfied, and binds region music and real combat/quest/ending events to approved audio. Pausing and resuming the same track preserves its voice/playhead, including the bundled Web runtime. Browser input and mixed-output checks cover one authored combat route; this does not certify enemy death art, audiovisual latency or complete generated games.
+
 The offline [CC0 model library](resources/free-models/LICENSES.md) includes 14 Kenney environment props with previews, measurements and source hashes. Production can list/import matching props through dedicated tools, retaining their third-party provenance. They include no gameplay collision and do not replace requested unique characters.
 
 ### Reusable 3D mechanics
