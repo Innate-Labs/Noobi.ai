@@ -1,3 +1,4 @@
+import { checkGameAssembly, ASSEMBLY_VALIDATOR_VERSION } from './gameAssembly.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -24,7 +25,7 @@ export async function buildGodotCandidate(input: {
     engine: status.tool.version, templates: status.exportTemplates.expectedVersion,
     quality: input.qualitySpec ?? null,
     probe: probeSource('recipe'), presentation: PRESENTATION_KIT,
-    progression: PROGRESSION_VALIDATOR_VERSION,
+    progression: PROGRESSION_VALIDATOR_VERSION, assembly: ASSEMBLY_VALIDATOR_VERSION,
   })).digest('hex');
   const reusable = await store.reusable(input.projectId, input.projectRoot, reuseKey, signal);
   if (reusable) { input.onReused?.(reusable); return reusable; }
@@ -43,6 +44,13 @@ export async function buildGodotCandidate(input: {
         limitation: 'Logical prerequisites only; objective completion and physical reachability need input playtesting',
       }, null, 2));
       if (!result.ok) throw new Error(`PROGRESSION: ${result.findings.join('; ')}`);
+    }
+    try {
+      const assembly = await checkGameAssembly(build.root);
+      if (assembly) await writeFile(join(build.root, '..', 'assembly-check.json'), JSON.stringify({sourceHash:build.record.sourceHash,...assembly},null,2));
+    } catch (error) {
+      await writeFile(join(build.root, '..', 'assembly-check.json'), JSON.stringify({ok:false,sourceHash:build.record.sourceHash,error:String(error)},null,2));
+      throw error;
     }
     const derived = await installGodotRuntimeProbe(build.root, build.record.buildId);
     await mkdir(join(build.root, 'runtime/noobi'), { recursive: true });

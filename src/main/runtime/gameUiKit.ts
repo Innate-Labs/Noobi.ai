@@ -9,6 +9,7 @@ const FONT = preload("res://runtime/noobi/fonts/fusion-pixel-12px-proportional-z
 var game_title := "新的冒险"
 var subtitle := "每一次出发，都有新的发现。"
 var accent := Color("bfa4ee")
+var palette: Dictionary = {}
 var background_art: Texture2D
 var snapshot_provider: Callable
 var command_handler: Callable
@@ -109,24 +110,32 @@ func show_screen(next: String) -> void:
     if screen != "playing": _build_overlay()
     screen_changed.emit(screen)
 
+func _color(role: String, fallback: Color) -> Color:
+    var value: Variant = palette.get(role, fallback)
+    return value if value is Color else fallback
+
 func _theme() -> Theme:
     var theme := Theme.new()
     theme.default_font = FONT
     theme.default_font_size = 24
-    theme.set_color("font_color", "Label", Color("f7f2df"))
+    theme.set_color("font_color", "Label", _color("text", Color("f7f2df")))
     for state in ["normal", "hover", "pressed", "disabled", "focus"]:
-        var box := _box(Color("34384b"), Color("56576c"), 12)
-        if state == "hover": box.bg_color = Color("4c435d"); box.border_color = accent
-        if state == "pressed": box.bg_color = Color("242838"); box.border_color = accent
-        if state == "focus": box.bg_color = Color(0,0,0,0); box.border_color = Color("f3d891"); box.set_border_width_all(3)
-        if state == "disabled": box.bg_color = Color("252939"); box.border_color = Color("323748")
+        var box := _box(_color("surface", Color("34384b")), _color("border", Color("56576c")), 12)
+        if state == "hover": box.bg_color = _color("surface", Color("4c435d")); box.border_color = accent
+        if state == "pressed": box.bg_color = _color("surface", Color("242838")); box.border_color = accent
+        if state == "focus": box.bg_color = Color(0,0,0,0); box.border_color = _color("accent", Color("f3d891")); box.set_border_width_all(3)
+        if state == "disabled": box.bg_color = _color("surface", Color("252939")); box.border_color = _color("border", Color("323748"))
         theme.set_stylebox(state, "Button", box)
-    theme.set_color("font_color", "Button", Color("f7f2df"))
-    theme.set_color("font_disabled_color", "Button", Color("858895"))
+    theme.set_color("font_color", "Button", _color("text", Color("f7f2df")))
+    theme.set_color("font_disabled_color", "Button", _color("text", Color("858895")))
+    if not palette.is_empty():
+        theme.set_color("font_hover_color", "Button", _color("text", Color("f7f2df")))
+        theme.set_color("font_pressed_color", "Button", _color("text", Color("f7f2df")))
+        theme.set_color("font_focus_color", "Button", _color("text", Color("f7f2df")))
     theme.set_constant("separation", "VBoxContainer", 14)
     theme.set_constant("separation", "HBoxContainer", 12)
-    theme.set_stylebox("background", "ProgressBar", _box(Color("242839"), Color("56576c"), 8))
-    theme.set_stylebox("fill", "ProgressBar", _box(Color("a5dab4"), Color("a5dab4"), 8))
+    theme.set_stylebox("background", "ProgressBar", _box(_color("background", Color("242839")), _color("border", Color("56576c")), 8))
+    theme.set_stylebox("fill", "ProgressBar", _box(_color("success", Color("a5dab4")), _color("success", Color("a5dab4")), 8))
     return theme
 
 func _box(fill: Color, border: Color, radius: int) -> StyleBoxFlat:
@@ -155,10 +164,14 @@ func _button(text: String, action: Callable, primary: bool = false) -> Button:
     button.custom_minimum_size.y = 48
     button.focus_mode = Control.FOCUS_ALL
     if primary:
-        button.add_theme_color_override("font_color", Color("29243a"))
-        button.add_theme_stylebox_override("normal", _box(accent, Color("eadcff"), 12))
-        button.add_theme_stylebox_override("hover", _box(accent.lightened(0.12), Color("fff5dc"), 12))
-        button.add_theme_color_override("font_hover_color", Color("29243a"))
+        button.add_theme_color_override("font_color", _color("accentText", Color("29243a")))
+        button.add_theme_stylebox_override("normal", _box(accent, _color("border", Color("eadcff")), 12))
+        button.add_theme_stylebox_override("hover", _box(accent.lightened(0.12), _color("border", Color("fff5dc")), 12))
+        button.add_theme_color_override("font_hover_color", _color("accentText", Color("29243a")))
+        if not palette.is_empty():
+            button.add_theme_color_override("font_focus_color", _color("accentText", Color("29243a")))
+            button.add_theme_color_override("font_pressed_color", _color("accentText", Color("29243a")))
+            button.add_theme_stylebox_override("pressed", _box(accent, _color("border", Color("eadcff")), 12))
     button.pressed.connect(action)
     return button
 
@@ -188,7 +201,7 @@ func _build_hud() -> Control:
     row.add_child(spacer)
     var goal_panel := PanelContainer.new()
     goal_panel.custom_minimum_size.x = 290
-    goal_panel.add_theme_stylebox_override("panel", _box(Color("242839e8"), Color("57536e"), 14))
+    goal_panel.add_theme_stylebox_override("panel", _box(_color("surface", Color("242839e8")), _color("border", Color("57536e")), 14))
     var goal_box := VBoxContainer.new()
     goal_box.add_child(_label("当前目标", 20))
     _goal = _label("")
@@ -230,12 +243,12 @@ func _build_overlay() -> void:
         _overlay.add_child(art)
     var dim := ColorRect.new()
     dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    dim.color = Color("171b2ee6") if screen == "title" else Color("151928ce")
+    dim.color = _color("background", Color("171b2ee6")) if screen == "title" else _color("background", Color("151928ce"))
     dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
     _overlay.add_child(dim)
     var panel := PanelContainer.new()
     panel.name = "MenuPanel"
-    panel.add_theme_stylebox_override("panel", _box(Color("252b3a"), Color("777087"), 20))
+    panel.add_theme_stylebox_override("panel", _box(_color("surface", Color("252b3a")), _color("border", Color("777087")), 20))
     var scroll := ScrollContainer.new()
     scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
     scroll.follow_focus = true
@@ -297,7 +310,7 @@ func _build_overlay() -> void:
         content.add_child(_button("不保存，返回标题", _command.bind("title")))
         content.add_child(_button("取消", show_screen.bind(previous_screen)))
     _message = _label("", 20)
-    _message.modulate = Color("f3d891")
+    _message.modulate = _color("accent", Color("f3d891"))
     content.add_child(_message)
     _resize_overlay()
     _fit_overlay_height.call_deferred()
@@ -334,7 +347,7 @@ func _list_rows(parent: VBoxContainer, key: String, empty: String) -> void:
     for row in rows:
         if not row is Dictionary: continue
         var panel := PanelContainer.new()
-        panel.add_theme_stylebox_override("panel", _box(Color("303849"), Color("475267"), 12))
+        panel.add_theme_stylebox_override("panel", _box(_color("surface", Color("303849")), _color("border", Color("475267")), 12))
         var lines := VBoxContainer.new()
         var title := str(row.get("name", row.get("title", "")))
         if row.has("count"): title += "  x%d" % int(row.count)
@@ -421,7 +434,7 @@ func _apply_settings() -> void:
 
 export const GAME_UI_GUIDE = `# Noobi game UI v1
 
-Instantiate ui_v1.gd before play and set game_title, subtitle, accent (approved ArtBible color), optional background_art (a real game image), snapshot_provider and command_handler before add_child. Default typography is the bundled licensed Chinese font; substitute a licensed family if pixel typography does not fit the art direction.
+Instantiate ui_v1.gd before play and set game_title, subtitle, accent (approved ArtBible color), optional background_art (a real game image), snapshot_provider and command_handler before add_child. Optionally supply palette entries (Color values) background/surface/text/accent/accentText/border/success before add_child; full scene assembly derives these roles from the bound ArtBible. These color roles do not certify reference likeness or recolor scene assets. Default typography is the bundled licensed Chinese font; substitute a licensed family if pixel typography does not fit the art direction.
 
 Snapshot callback returns current health/max_health, goal, interaction, region, has_save, controls, ending; items/abilities/quests/regions are arrays of {name, description?, count?, status?}. Values come from real authoritative game state, never fake UI inventory or fixed quest completions. The map is a list of known regions and their state, not an invented spatial map. Call refresh after transactions and show_failure(reason)/show_victory on real outcomes. Include outcome="victory" or "failure" (and optional failure_reason) when restoring a terminal save; new/continue/retry then opens the authoritative ending/failure screen rather than reviving completed gameplay. Omit outcome or use "playing" for active runs.
 

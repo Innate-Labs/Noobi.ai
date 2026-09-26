@@ -1,3 +1,4 @@
+import { GAME_ASSEMBLY_KIT, GAME_ASSEMBLY_GUIDE } from './runtime/gameAssemblyKit.js';
 import { GAME_UI_KIT, GAME_UI_GUIDE } from './runtime/gameUiKit.js';
 import { GAME_AUDIO_KIT, GAME_AUDIO_GUIDE } from './runtime/gameAudioKit.js';
 import { MODEL_ASSET_GUIDE } from './runtime/modelAssetGuide.js';
@@ -202,6 +203,8 @@ function workspaceFiles(project: WorkspaceProject): Record<string, string> {
       'scenes/main.tscn': godotMainScene(),
       'scripts/main.gd': godotMainScript(project),
       ...ADVENTURE_KIT_FILES,
+      'runtime/noobi/game_assembly_v1.gd': GAME_ASSEMBLY_KIT,
+      'runtime/noobi/GAME_ASSEMBLY_V1.md': GAME_ASSEMBLY_GUIDE,
       'runtime/noobi/MODEL_ASSETS_V2.md': MODEL_ASSET_GUIDE,
       'runtime/noobi/progression_v1.gd': PROGRESSION_KIT,
       'runtime/noobi/ui_v1.gd': GAME_UI_KIT,
@@ -425,6 +428,7 @@ Set explicit budgets for texture dimensions, concurrent sounds, model count, tri
 
 ## 4. Implement safely
 
+- For approved interaction/defeat exploration games, read runtime/noobi/GAME_ASSEMBLY_V1.md. Its optional root composes authored player/region scenes, physical objective/exit bindings, progression, palette-driven UI and region checkpoint saves from data/game-assembly.json. It is not a prebuilt game or proof of reference likeness; missing scenes, nodes and style provenance must fail visibly.
 - New Godot projects include runtime/noobi/ADVENTURE_V1.md with optional controller, animation and named skeleton socket/sole-probe components. Inspect imported clips and bone names, bind authoritative state, keep collisions outside visuals, and verify equipment scale, grounded feet and attack timing in the actual scene. Missing actions or bind failures must stay visible; do not substitute unrelated gestures or claim engineering fixtures are autonomous games.
 - New Godot projects include runtime/noobi/GAME_UI_V1.md and ui_v1.gd for a complete native title/HUD/inventory/quests/regions/pause/settings/failure/ending flow. Wire every action to authoritative game state and persistent saves; missing adapters must not look successful. Theme it to the approved art direction and verify actual mouse/keyboard interaction.
 - Use runtime/noobi/GAME_AUDIO_V1.md and audio_v1.gd for approved free music loops, crossfades and bounded effects on the existing UI audio buses. Bind real game events; verify mixed output, mute, pause and restart rather than treating file import as audible integration.

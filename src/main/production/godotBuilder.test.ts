@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -59,4 +59,22 @@ it('rejects an impossible progression graph before engine work and retains its e
   const store=new GodotBuildStore(join(root,'private'));
   await expect(buildGodotCandidate({projectId:'test',projectRoot,environment,store})).rejects.toThrow('No reachable ending');
   expect(execute).not.toHaveBeenCalled();expect(await store.latest('test')).toBeNull();
+});
+
+
+it('stops a declared but incomplete assembly before engine work and preserves its failure', async () => {
+  const root=await mkdtemp(join(tmpdir(),'noobi-assembly-build-'));roots.push(root);
+  const projectRoot=join(root,'game');await mkdir(join(projectRoot,'data'),{recursive:true});
+  await writeFile(join(projectRoot,'project.godot'),'[application]\nconfig/name="Assembly"\n');
+  await writeFile(join(projectRoot,'data/progression.json'),await readFile(new URL('../../../examples/progression/three-regions.json',import.meta.url)));
+  await writeFile(join(projectRoot,'data/game-assembly.json'),JSON.stringify({version:1}));
+  const execute=vi.fn();const environment={getStatus:async()=>({canExportProjects:true,tool:{version:'4.7.1'},exportTemplates:{expectedVersion:'4.7.1'}}),execute} as unknown as GodotEnvironmentService;
+  const store=new GodotBuildStore(join(root,'private'));
+  await expect(buildGodotCandidate({projectId:'test',projectRoot,environment,store})).rejects.toThrow('ASSEMBLY');
+  expect(execute).not.toHaveBeenCalled();expect(await store.latest('test')).toBeNull();
+  const paths=await readdir(join(root,'private'),{recursive:true});
+  const report=paths.find(p=>p.endsWith('assembly-check.json'));
+  expect(report).toBeDefined();
+  const failed=JSON.parse(await readFile(join(root,'private',report!),'utf8'));
+  expect(failed.ok).toBe(false);expect(failed.sourceHash).toMatch(/^[a-f0-9]{64}$/);expect(failed.error).toContain('identity');
 });
