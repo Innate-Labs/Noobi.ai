@@ -51,6 +51,12 @@ func _ready() -> void:
             if target == null or not visual.is_ancestor_of(target):
                 _fail("Track must target a child of visual, never the controller/collider: " + str(path))
                 return
+            if target is Skeleton3D and (path.get_subname_count() != 1 or target.find_bone(String(path.get_subname(0))) < 0):
+                _fail("Missing imported bone in track: " + str(path))
+                return
+            if animation.track_get_type(index) == Animation.TYPE_BLEND_SHAPE and (not target is MeshInstance3D or path.get_subname_count() != 1 or target.find_blend_shape_by_name(StringName(path.get_subname(0))) < 0):
+                _fail("Missing imported blend shape in track: " + str(path))
+                return
             if animation.track_get_type(index) not in [Animation.TYPE_POSITION_3D, Animation.TYPE_ROTATION_3D, Animation.TYPE_SCALE_3D, Animation.TYPE_BLEND_SHAPE]:
                 _fail("Only visual transform/bone/blend-shape tracks are supported: " + str(path))
                 return
@@ -69,8 +75,15 @@ func _ready() -> void:
             _fail("Melee must be the same actor's NoobiMelee component.")
             return
         process_physics_priority = maxi(process_physics_priority, melee.process_physics_priority + 1)
-        melee.hit.connect(_hit)
-        melee.missed.connect(_swing)
+        if melee.has_signal("attack_started"):
+            if float(melee.get("windup_time")) >= player.get_animation(clips["attack"]).length:
+                _fail("Melee impact time must precede the attack clip end.")
+                return
+            melee.attack_started.connect(_swing)
+            melee.attack_cancelled.connect(_cancel_attack)
+        else:
+            melee.hit.connect(_hit)
+            melee.missed.connect(_swing)
     _last_health = actor.health
 
 func _fail(reason: String) -> void:
@@ -79,6 +92,10 @@ func _fail(reason: String) -> void:
     set_physics_process(false)
     binding_failed.emit(reason)
     push_warning("NOOBI_ANIMATION_BINDING: " + reason)
+
+func _cancel_attack() -> void:
+    _attack = false
+    _restart_attack = false
 
 func _hit(_target: Node3D) -> void:
     _swing()

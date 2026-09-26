@@ -425,6 +425,7 @@ Set explicit budgets for texture dimensions, concurrent sounds, model count, tri
 
 ## 4. Implement safely
 
+- New Godot projects include runtime/noobi/ADVENTURE_V1.md with optional controller, animation and named skeleton socket/sole-probe components. Inspect imported clips and bone names, bind authoritative state, keep collisions outside visuals, and verify equipment scale, grounded feet and attack timing in the actual scene. Missing actions or bind failures must stay visible; do not substitute unrelated gestures or claim engineering fixtures are autonomous games.
 - New Godot projects include runtime/noobi/GAME_UI_V1.md and ui_v1.gd for a complete native title/HUD/inventory/quests/regions/pause/settings/failure/ending flow. Wire every action to authoritative game state and persistent saves; missing adapters must not look successful. Theme it to the approved art direction and verify actual mouse/keyboard interaction.
 - Use runtime/noobi/GAME_AUDIO_V1.md and audio_v1.gd for approved free music loops, crossfades and bounded effects on the existing UI audio buses. Bind real game events; verify mixed output, mute, pause and restart rather than treating file import as audible integration.
 - New Godot projects include an offline OFL-1.1 Chinese font in runtime/noobi/fonts/ with source hashes and licenses. Use that FontFile, or a properly licensed replacement matching the art direction. Never copy developer system fonts for distribution. Retain all font licenses in game exports.

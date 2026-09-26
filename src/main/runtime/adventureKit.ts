@@ -1,3 +1,4 @@
+import { ADVENTURE_RIG } from './adventureRig.js';
 import { ADVENTURE_ANIMATION } from './adventureAnimation.js';
 import { ADVENTURE_ENEMY } from './adventureEnemy.js';
 import { ADVENTURE_VISIBILITY } from './adventureVisibility.js';
@@ -315,6 +316,8 @@ func _set_target(value: Area3D) -> void:
 
 export const ADVENTURE_COMBAT = `extends Node3D
 class_name NoobiMelee
+signal attack_started
+signal attack_cancelled
 signal hit(target: Node3D)
 signal missed
 @export var actor: CharacterBody3D
@@ -322,19 +325,45 @@ signal missed
 @export var cone_degrees := 65.0
 @export var damage := 1
 @export var cooldown := 0.55
+@export var windup_time := 0.0
 @export var target_group := "noobi_damageable"
 @export var obstruction_mask := 1
 var enabled := true
 var _remaining := 0.0
+var _windup_remaining := -1.0
+var _attack_health := 0
 
 func _physics_process(delta: float) -> void:
     _remaining = maxf(0.0, _remaining - delta)
+    if _windup_remaining >= 0.0:
+        if not enabled or not is_instance_valid(actor) or actor.get("controls_enabled") == false or actor.get("health") != _attack_health:
+            cancel_attack()
+        else:
+            _windup_remaining -= delta
+            if _windup_remaining <= 0.0:
+                _windup_remaining = -1.0
+                _strike()
     if enabled and is_instance_valid(actor) and Input.is_action_just_pressed("noobi_attack"):
         attack()
 
 func attack() -> bool:
     if not enabled or not is_instance_valid(actor) or actor.get("controls_enabled") == false or _remaining > 0.0: return false
-    _remaining = cooldown
+    if get_tree().paused or actor.get("health") == 0 or _windup_remaining >= 0.0: return false
+    var delay := clampf(windup_time, 0.0, 5.0)
+    _remaining = maxf(cooldown, delay + 0.01)
+    _attack_health = actor.get("health")
+    if delay > 0.0: _windup_remaining = delay
+    attack_started.emit()
+    if delay > 0.0:
+        return _windup_remaining >= 0.0 # Accepted windup; listeners may cancel it.
+    return _strike()
+
+func cancel_attack() -> void:
+    if _windup_remaining < 0.0: return
+    _windup_remaining = -1.0
+    attack_cancelled.emit()
+
+func _strike() -> bool:
     var chosen: Node3D = null
     var nearest := reach
     var facing: Vector3 = actor.facing
@@ -364,12 +393,13 @@ Opt-in components for Godot 4 third-person games, not an existing game or approv
 The workspace starts neutral. Only use the mechanics selected in the user's plan.
 
 - adventure_controller_v1.gd: CharacterBody3D, origin at feet, CollisionShape3D capsule centered above feet. Physics ticks drive movement, floor snap, bounded step climbing, coyote/buffered jump, unlocked dash, health and motion signals. Keep imported model/AnimationTree under a separate visual child and assign it to visual. Assign the actual Camera3D for camera-relative controls. Bind motion_changed to real animation clips; named states alone are not animation evidence.
-- adventure_animation_v1.gd: optional Node owning one AnimationPlayer under actor.visual. Assign actor, player, optional same-actor melee, and explicit clips dictionary (idle/run/jump/fall/hurt/dead; dash when unlocked; attack when melee bound) BEFORE adding to tree. Each state needs a distinct nonempty authored clip; no fallback poses or fabricated animation. Only transform/bone/blend-shape tracks targeting descendants of visual are accepted; controller, collider, visual wrapper and method/audio tracks are rejected. Imported clip libraries are copied before loop policy changes. Reads authoritative controller state after physics, advances clips manually, blends transitions, does not restart stable states, holds death end pose, clears attack on hurt/death/dash/control lock, and resets after revival. Tree pause freezes it and its player; do not share that player with AnimationTree or another driver. Melee hit/miss starts visual feedback after accepted attack; this does NOT retime damage to an authored hit frame. Root movement belongs to controller: use in-place locomotion clips, authored feet/pivot and collision clearance; this adapter supplies neither IK nor retargeting. Connect binding_failed and surface failure; inspect actual rendered poses, foot contact, weapon sockets and hit timing per game. Engineering state tests are not character art approval.
+- adventure_rig_v1.gd: optional named Skeleton3D binding for bipeds. Assign actor, its visual skeleton, up to 12 socket_specs and exactly two sole_specs before adding to tree. Each dictionary entry is {bone: exact imported bone name, offset: Transform3D in skeleton-local units}. Inspect imported names; never guess bone indices. Uses BoneAttachment3D with override_pose=false, so equipment follows poses without changing the skeleton. get_socket(id) returns the visual attachment parent; imported armatures may carry scale (e.g. 100), so size/rotate the attached equipment explicitly and measure its world size. Keep all colliders under physics bodies, outside actor.visual. Author sole offsets from actual foot geometry in neutral pose, not from a generic ankle assumption. sample_ground() uses two bounded rays, excludes the actor, reports per-foot surface/vertical gap/walkability/penetration/contact and actor grounded state; call after physics/animation updates. Airborne does not count as contact even if near the floor; missing or steep surfaces do not count. These are read-only probes, not foot IK, mesh penetration proof, slope correction or natural gait certification. Observe sole/toe/heel geometry, slopes, edges, real equipment and actual damage feedback in the generated game.
+- adventure_animation_v1.gd: optional Node owning one AnimationPlayer under actor.visual. Assign actor, player, optional same-actor melee, and explicit clips dictionary (idle/run/jump/fall/hurt/dead; dash when unlocked; attack when melee bound) BEFORE adding to tree. Each state needs a distinct nonempty authored clip; no fallback poses or fabricated animation. Only transform/bone/blend-shape tracks targeting descendants of visual are accepted; controller, collider, visual wrapper and method/audio tracks are rejected. Imported clip libraries are copied before loop policy changes. Reads authoritative controller state after physics, advances clips manually, blends transitions, does not restart stable states, holds death end pose, clears attack on hurt/death/dash/control lock, and resets after revival. Tree pause freezes it and its player; do not share that player with AnimationTree or another driver. Melee attack_started begins the clip; older melee components without it retain hit/miss feedback. Set melee.windup_time to the measured impact time within the clip; verify animation versus damage timing at runtime. Cancelling a pending strike clears the visual attack. Root movement belongs to controller: use in-place locomotion clips, authored feet/pivot and collision clearance; this adapter supplies neither IK nor retargeting. Connect binding_failed and surface failure; inspect actual rendered poses, foot contact, weapon sockets and hit timing per game. Engineering state tests are not character art approval.
 - adventure_camera_v1.gd: Node3D at shoulder height, preferably a child of the non-rotating physics body. Assign target BEFORE adding to the tree; its camera and sphere SpringArm are created in _ready. Collision mask must contain actual level solids and exclude the player. Left click requests pointer capture; right-button drag remains usable when the browser denies capture. Set capture_on_left_click=false for a drag-only control scheme and show the actual scheme in the HUD. Never describe failed capture as success. On focus_lost the game must pause and show a resume control. resume_controls releases stale inputs and waits for a new user click.
 - adventure_visibility_v1.gd: created by the camera rig as visibility. Mark ONLY foreground StaticBody3D nodes that may visually fade with noobi_camera_occluder; their child MeshInstance3D materials are duplicated per instance and restored when unobstructed or the camera exits. Collision is unchanged. It samples feet/body/head and footprint edges for the player plus up to seven nearby visible noobi_camera_focus nodes. Enemy components register automatically; register attack-zone Node3D markers separately with noobi_focus_height=0 and noobi_focus_radius matching the actual danger radius. Keep markers visible/registered only while their feedback is active. Configure rig.visibility.focus_distance/collision_mask to match the scene. Standard/ORM materials are supported, but custom ShaderMaterial, next_pass and overlays report NOOBI_CAMERA_OCCLUDER_UNSUPPORTED and remain unchanged; provide a scene-specific shader adapter or change the camera/layout and verify screenshots. Unmarked walls remain opaque. This bounded sampling is not proof of all-angle visibility; test the closest wall, enemy feet, windup edges, layered foreground, restoration and collision in the actual game.
 - interactable_v1.gd: Area3D with authored stable interaction_id, shape and visible object. Set max_distance, one_shot and can_activate predicate. Put the origin at the interactable's reachable use point, outside its solid collision. Recheck distance/occlusion/condition at activation. One-shot consumption commits before the reward signal to prevent duplicate rewards.
 - interactor_v1.gd: Node, assign actor. Wire prompt_changed and interaction_failed into visible UI. Disable during menus/death. Predicates and saved consumed IDs belong to the game's state model.
-- melee_v1.gd: optional Node3D. Assign actor, register actual enemy bodies in noobi_damageable. It distinguishes a miss from a nearby target inside the facing cone and checks wall occlusion, cooldown and the target's take_damage result. Generated enemy AI supplies telegraph/response/recovery; this is not a complete enemy.
+- melee_v1.gd: optional Node3D. Assign actor, register actual enemy bodies in noobi_damageable. windup_time defaults to zero for existing immediate-hit behavior. Set it to the authored impact time for animated attacks; attack_started begins the visual clip, then damage is resolved only after the windup with fresh range/facing/wall checks. Nonzero-windup attack() returns acceptance, while hit/missed reports the eventual outcome. Pause freezes windup; damage, death or control disable cancels it. Call cancel_attack before teleport/reset or unequipping. Cooldown includes at least the windup duration. It distinguishes a miss from a nearby target inside the facing cone and checks wall occlusion, cooldown and the target's take_damage result. Generated enemy AI supplies telegraph/response/recovery; this is not a complete enemy.
 
 - enemy_v1.gd: optional CharacterBody3D enemy with chase, visible windup, single strike, recovery, hurt and dead states. Supply a real collider/visual and connect state_changed to animation/telegraph feedback. Assign a NavigationAgent3D and baked navigation for obstacle routing; without it the enemy only follows an unobstructed line of sight and stops at walls. This is a basic melee behavior, not a universal enemy AI.
 
@@ -378,6 +408,7 @@ InputMap actions: noobi_left/right/forward/back, noobi_jump, noobi_ability, noob
 Keep saves and gameplay rules in separate components, validate before applying state, and respawn at authored safe checkpoints. Geometry validation needs real movement on slopes/steps, wall/corner/edge tests, jump/dash, focused and unfocused pointer states, and at least two cameras/screenshots. These scripts do not certify final art, animation, game duration or autonomous generation.
 `;
 export const ADVENTURE_KIT_FILES: Record<string, string> = {
+  'runtime/noobi/adventure_rig_v1.gd': ADVENTURE_RIG,
   'runtime/noobi/adventure_animation_v1.gd': ADVENTURE_ANIMATION,
   'runtime/noobi/adventure_controller_v1.gd': ADVENTURE_CONTROLLER,
   'runtime/noobi/adventure_camera_v1.gd': ADVENTURE_CAMERA,

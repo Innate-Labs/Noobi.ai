@@ -357,7 +357,11 @@ func _command(action: String) -> bool:
         if is_instance_valid(_message): _message.text = str(result.get("message", "操作失败，请重试。")) if result is Dictionary else "游戏返回了无效结果。"
         return false
     refresh()
-    if action in ["new_game", "continue", "retry"]: show_screen("playing")
+    if action in ["new_game", "continue", "retry"]:
+        var outcome := str(snapshot.get("outcome", "playing"))
+        if outcome == "victory": show_victory()
+        elif outcome == "failure": show_failure(str(snapshot.get("failure_reason", "从检查点重新出发。")))
+        else: show_screen("playing")
     elif action == "title": show_screen("title")
     elif is_instance_valid(_message): _message.text = str(result.get("message", "进度已保存。"))
     return true
@@ -419,7 +423,7 @@ export const GAME_UI_GUIDE = `# Noobi game UI v1
 
 Instantiate ui_v1.gd before play and set game_title, subtitle, accent (approved ArtBible color), optional background_art (a real game image), snapshot_provider and command_handler before add_child. Default typography is the bundled licensed Chinese font; substitute a licensed family if pixel typography does not fit the art direction.
 
-Snapshot callback returns current health/max_health, goal, interaction, region, has_save, controls, ending; items/abilities/quests/regions are arrays of {name, description?, count?, status?}. Values come from real authoritative game state, never fake UI inventory or fixed quest completions. The map is a list of known regions and their state, not an invented spatial map. Call refresh after transactions and show_failure(reason)/show_victory on real outcomes.
+Snapshot callback returns current health/max_health, goal, interaction, region, has_save, controls, ending; items/abilities/quests/regions are arrays of {name, description?, count?, status?}. Values come from real authoritative game state, never fake UI inventory or fixed quest completions. The map is a list of known regions and their state, not an invented spatial map. Call refresh after transactions and show_failure(reason)/show_victory on real outcomes. Include outcome="victory" or "failure" (and optional failure_reason) when restoring a terminal save; new/continue/retry then opens the authoritative ending/failure screen rather than reviving completed gameplay. Omit outcome or use "playing" for active runs.
 
 command_handler(action) synchronously returns {ok:bool,message?:String}. Handle new_game, continue, retry, save and title. Use CHECKPOINT_V1 and PROGRESSION_V1 for validated durable state. Save must return true only after successful persistence, new_game must archive/explicitly clear old progress, retry must restore authored safe state. On title, stop audio/clear transient gameplay as needed but keep the most recent save. Errors keep the menu open. Missing handlers fail visibly. Long asynchronous operations need a game-owned loading adapter and must not prematurely return success.
 
