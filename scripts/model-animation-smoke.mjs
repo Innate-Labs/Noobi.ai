@@ -28,7 +28,8 @@ const cases=[
  {name:'quaternion-sign-only',setup:plain,track:"new THREE.QuaternionKeyframeTrack('Body.quaternion',[0,.5,1],[0,0,0,1,0,0,0,-1,0,0,0,1])",motion:false,skin:false},
  {name:'weighted-bone',setup:skinned,track:vector('Tip.position',[0,.5,1],[0,1,0,.3,1,0,0,1,0]),motion:true,skin:true},
  {name:'unused-bone',setup:skinned,track:vector('Unused.position',[0,.5,1],[0,0,0,.3,0,0,0,0,0]),motion:false,skin:false},
- {name:'rigid-skin-translation',setup:skinned,track:vector('Body.position',[0,.5,1],[0,1,0,0,1.2,0,0,1,0]),motion:true,skin:false},
+ {name:'rigid-skin-translation',setup:skinned,track:vector('Body.position',[0,.5,1],[0,1,0,0,1.2,0,0,1,0]),blocked:true},
+ {name:'parent-skin-translation',setup:skinned,track:vector('ActorRoot.position',[0,.5,1],[0,0,0,0,.2,0,0,0,0]),motion:true,skin:false},
 ];
 const spec={version:2,referenceImage:'reference.png',parts:[{name:'Body',shape:'box',material:'mint'}],criticalFeatures:['engineering'],inferredSurfaces:[],artBiblePath:'.noobi/art-bible.json',game:{dimensions:[1,2,1],tolerance:.1,pivot:{node:'ActorRoot',position:[0,0,0]},sockets:[],collision:{kind:'box',purpose:'fixture'}},animation:{mode:'transform',required:['action']}};
 const art={version:1,id:'fixture',style:'engineering',palette:['#88bbaa'],units:'meters',up:'+Y',forward:'-Z',budgets:{triangles:1000,nodes:20,materials:2,textureSize:512}};
@@ -36,6 +37,7 @@ app.whenReady().then(async()=>{const results=[];try{
  await mkdir(out,{recursive:true});const reference=await readFile('examples/image-threejs/wind-beacon.png');
  for(const item of cases){
   const source=buildSource(item.setup,item.track);await writeFile(join(out,item.name+'.mjs'),source);
+  if(item.blocked){await assert.rejects(()=>renderReferenceModel({source,reference,mimeType:'image/png',animation:false}),/GODOT_SKIN_TRACK/);results.push({name:item.name,blocked:true});console.log('ANIMATION_PORTABILITY_REJECTED',item.name);continue}
   const result=await renderReferenceModel({source,reference,mimeType:'image/png',animation:false});
   const clip=result.inspection.clips[0];results.push({name:item.name,clip});
   await writeFile(join(out,item.name+'.glb'),result.glb);await writeFile(join(out,item.name+'.png'),result.views.perspective);

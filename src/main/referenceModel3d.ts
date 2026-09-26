@@ -51,7 +51,7 @@ export class ReferenceModel3dService {
       && asset.relativePath === referencePath && asset.sha256 === hash(reference));
     if (!image) throw new Error('Register the reference image before building its 3D model');
     const ledgerDir = join(this.storage, hash(input.project.id));
-    const inputHash = hash(JSON.stringify({ renderer: 3, name: input.name, reference: hash(reference), source: hash(source),
+    const inputHash = hash(JSON.stringify({ renderer: 4, name: input.name, reference: hash(reference), source: hash(source),
       spec: hash(specBytes), art: artBytes ? hash(artBytes) : null, animation: input.options?.animation === true }));
     // Reuse only host-bound evidence with every referenced byte still intact.
     try {

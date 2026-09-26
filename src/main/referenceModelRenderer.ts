@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { assertPortableSkinTracks } from './modelAnimationPortability.js';
 import type { ModelRenderer } from './referenceModel3d.js';
 
 /** Author code runs without Node, preload, credentials or external network. A fresh window reopens the GLB for evidence. */
@@ -135,6 +136,7 @@ try {
     window.__modelState = {ready:true, glb:btoa(binary)};
   } else {
     const gltf = await new GLTFLoader().loadAsync('/model.glb');
+    (${assertPortableSkinTracks.toString()})(gltf.parser.json);
     // GLTFLoader can tolerate failed texture fetches. Evidence must not silently lose them.
     const loadedMaterials = await gltf.parser.getDependencies('material');
     for (const [i, definition] of (gltf.parser.json.materials || []).entries()) {
