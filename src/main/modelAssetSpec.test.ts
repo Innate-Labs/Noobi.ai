@@ -25,4 +25,15 @@ describe('model assembly contract', () => {
     expect(() => validate({ ...measured, clips: [{ ...measured.clips[0]!, motionObserved: false }] })).toThrow('static');
     expect(() => validateModelInspection(parseModelAssetSpec({ ...spec, animation: { mode: 'skeletal', required: ['walk'] } }, 'reference.png'), parseArtBible(art), { triangles: 100, skins: 0, inspection: measured })).toThrow('skin');
   });
+  it('requires weighted deformation for each required skeletal clip, not merely a skin or rigid motion', () => {
+    const skeletal = parseModelAssetSpec({ ...spec, animation: { mode: 'skeletal', required: ['walk', 'attack'] } }, 'reference.png');
+    const clip = { ...measured.clips[0]!, skinMotionObserved: true };
+    const inspection = { ...measured, clips: [clip, { ...clip, name: 'attack' }] };
+    const validate = (clips: ModelInspection['clips']) => validateModelInspection(skeletal, parseArtBible(art), { triangles: 100, skins: 1, inspection: { ...inspection, clips } });
+    expect(() => validate(inspection.clips)).not.toThrow();
+    expect(() => validate([clip, { ...clip, name: 'attack', skinMotionObserved: false }])).toThrow('deformation: attack');
+    expect(() => validate([clip, { ...clip, name: 'attack', skinMotionObserved: undefined }])).toThrow('deformation: attack');
+    expect(() => validate([clip, { ...clip, name: 'attack', motionObserved: false }])).toThrow('static');
+  });
+
 });

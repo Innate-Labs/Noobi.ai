@@ -26,7 +26,7 @@
 | [04](04-video-reference.md) | 短视频玩法理解与方案生成 | 待用户验收 | `56f5017` | [交付报告](reports/04-delivery.md) | 未验收 |
 | [05](05-production-runtime.md) | 持久化制作、恢复与可玩版本 | 待用户验收 | `87c5650` | [交付报告](reports/05-delivery.md) | 未验收 |
 | [06](06-3d-playable-slice.md) | 第三人称 3D 基础与可玩样板 | 开发中（通用遮挡组件自验；A/B 已停止未交付） | `3a2e4b6` + 本轮可读性组件 | [开发记录](reports/06-delivery.md) | 整阶段未验收 |
-| [07](07-3d-assets.md) | 统一风格与游戏可用 3D 资产 | 开发中（资产规格、免费音频播放组件自验） | `f0f8d8d` | [开发记录](reports/07-delivery.md) | 整阶段未验收 |
+| [07](07-3d-assets.md) | 统一风格与游戏可用 3D 资产 | 开发中（资产/动画/免费音频组件自验） | `f0f8d8d` | [开发记录](reports/07-delivery.md) | 整阶段未验收 |
 | [08](08-complete-game.md) | 多区域、任务成长与完整游戏 | 开发中（任务/背包/区域逻辑组件） | `e854e1c` | [开发记录](reports/08-delivery.md) | 整阶段未验收 |
 | [09](09-quality-and-reference-match.md) | 参考对照、长流程与体验质量 | 开发中（工程长测完成，暂停画面独立拦截） | `965fbc8` + `20fea79` + 本轮暂停检查 | [开发记录](reports/09-delivery.md) | 整阶段未验收 |
 | [10](10-delivery-and-release.md) | 一键游玩、导出与浏览器试玩 | 开发中（Web/macOS 正式导出入口） | `f53dd0f` + 本轮原生入口 | [开发记录](reports/10-delivery.md) | 未验收 |
@@ -61,3 +61,5 @@
 2026-09-26：免费音频运行组件完成原生工程自验，26 项检查及最终混音输出通过；复用已有 UI 分轨设置。见 [R44 音频报告](reports/07-audio-runtime.md)。浏览器出声、成品接入与试听仍待验收。
 
 2026-09-26：浏览器实际输入查出并修复音频 Sample 路由无声；Stream 组件通过 13 步 Chromium 输出/分轨/UI 联动及 26 项原生回归。成品音画同步、其他浏览器与试听待验收，见 [音频报告](reports/07-audio-runtime.md)。
+
+2026-09-26：动画有效性检查补强，8 组独立 GLB 正反例、Godot 蒙皮测量及全仓 694 测试通过；仍有整体平移蒙皮的跨引擎传递缺口，成品动作未验收。见 [动画报告](reports/07-animation-validation.md)。

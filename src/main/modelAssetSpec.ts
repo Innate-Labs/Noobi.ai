@@ -18,7 +18,8 @@ export interface ModelAssetSpec {
 export interface ModelInspection {
   bounds: { min: number[]; max: number[] }; nodeCount: number; materialCount: number; maxTextureSize: number;
   nodes: Array<{ name: string; position: number[] }>;
-  clips: Array<{ name: string; duration: number; targets: number; motionObserved: boolean }>;
+  clips: Array<{ name: string; duration: number; targets: number; motionObserved: boolean; skinMotionObserved?: boolean; bindingMotionObserved?: boolean;
+    sampledVertices?: number; sampleTimes?: number[]; maxVertexDisplacement?: number; maxSkinDisplacement?: number; threshold?: number }>;
 }
 const object = (v: unknown): v is Record<string, any> => Boolean(v && typeof v === 'object' && !Array.isArray(v));
 const label = (v: unknown, max = 1000): v is string => typeof v === 'string' && Boolean(v.trim()) && v.length <= max;
@@ -74,5 +75,6 @@ export function validateModelInspection(spec: ModelAssetSpec, art: ArtBible, res
   for (const name of animation.required) {
     const clips = data.clips.filter(clip => clip.name === name);
     demand(clips.length === 1 && clips[0]!.duration > 0 && clips[0]!.targets > 0 && clips[0]!.motionObserved, `Required clip is missing, ambiguous, unbound or static: ${name}`);
+    if (animation.mode === 'skeletal') demand(clips[0]!.skinMotionObserved === true, `Required skeletal clip has no measured skin deformation: ${name}`);
   }
 }

@@ -93,7 +93,7 @@ export const renderReferenceModel: ModelRenderer = async input => {
     await wait(window.loadURL(`${origin}/?review=1`));
     await ready();
     const stats = await wait(window.webContents.executeJavaScript('window.__modelState.stats'));
-    if (input.animation && (stats.skins < 1 || stats.animations.length < 1)) throw new Error('Animated model needs a skin and real clips');
+    if (input.animation && (stats.skins < 1 || !stats.inspection.clips.some((clip: { skinMotionObserved: boolean }) => clip.skinMotionObserved))) throw new Error('Animated model needs a skin and actual weighted vertex deformation');
     const views = {} as Record<'front' | 'side' | 'back' | 'perspective', Buffer>;
     for (const angle of ['front', 'side', 'back', 'perspective'] as const) {
       await wait(window.webContents.executeJavaScript(`window.__captureModel(${JSON.stringify(angle)})`));
@@ -200,16 +200,60 @@ function inspect(root, animations) {
       }
     }
   });
+  // Observe geometry independently of author track declarations. Empty animated
+  // nodes, unused bones and equivalent quaternion signs must not certify motion.
+  const meshes=[];
+  root.traverseVisible(node=>{
+    if(node.isMesh && (Array.isArray(node.material)?node.material:[node.material]).some(m=>m?.visible!==false && m?.opacity>0)) meshes.push(node);
+  });
+  const points=[], perMesh=Math.max(4,Math.floor(8192/Math.max(1,meshes.length)));
+  for(const mesh of meshes){
+    const index=mesh.geometry.index, positions=mesh.geometry.getAttribute('position');
+    const count=index?.count ?? positions.count, amount=Math.min(perMesh,count);
+    for(let i=0;i<amount;i++){
+      const slot=amount===1?0:Math.floor(i*(count-1)/(amount-1));
+      points.push({mesh,index:index?index.getX(slot):slot});
+    }
+  }
+  const posed=()=>{
+    root.updateMatrixWorld(true);for(const mesh of meshes)if(mesh.isSkinnedMesh)mesh.skeleton.update();
+    return points.map(({mesh,index})=>{
+      const position=mesh.getVertexPosition(index,new THREE.Vector3()).applyMatrix4(mesh.matrixWorld);
+      const skin=mesh.isSkinnedMesh?mesh.applyBoneTransform(index,new THREE.Vector3().fromBufferAttribute(mesh.geometry.getAttribute('position'),index)):new THREE.Vector3();
+      const values=[...position.toArray(),...skin.toArray()];
+      if(values.some(x=>!Number.isFinite(x)))throw Error('Non-finite animated vertex');
+      return values;
+    });
+  };
+  const threshold=Math.max(1e-5,box.getSize(new THREE.Vector3()).length()*1e-5);
   const clips=[];
   for(const clip of animations) {
     const bindings=clip.tracks.map(track=>({binding:THREE.PropertyBinding.create(root,track.name),size:track.getValueSize()}));
     const read=()=>bindings.flatMap(({binding,size})=>{const value=new Array(size).fill(NaN);binding.getValue(value,0);if(value.some(x=>!Number.isFinite(x)))throw Error('Unbound/non-numeric animation track in '+clip.name);return value;});
     bindings.forEach(({binding})=>binding.bind());
-    const mixer=new THREE.AnimationMixer(root),action=mixer.clipAction(clip);action.play();mixer.setTime(0);
-    const initial=read();let motionObserved=false;
-    for(const ratio of [.25,.5,.75]){mixer.setTime(clip.duration*ratio);const current=read();if(current.some((x,i)=>Math.abs(x-initial[i])>1e-6))motionObserved=true;}
+    const mixer=new THREE.AnimationMixer(root),action=mixer.clipAction(clip);
+    action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();mixer.setTime(0);
+    const initial=read(),initialPose=posed();let bindingMotionObserved=false,maxVertexDisplacement=0,maxSkinDisplacement=0;
+    const keys=new Set();
+    for(const track of clip.tracks)for(let i=0;i<Math.min(64,track.times.length);i++){
+      const index=Math.floor(i*(track.times.length-1)/Math.max(1,Math.min(64,track.times.length)-1)),time=track.times[index];
+      if(Number.isFinite(time)&&time>=0&&time<=clip.duration)keys.add(time);
+    }
+    const ordered=[...keys].sort((a,b)=>a-b),times=new Set(Array.from({length:9},(_,i)=>clip.duration*i/8));
+    for(let i=0;i<Math.min(8,ordered.length);i++)times.add(ordered[Math.floor(i*(ordered.length-1)/Math.max(1,Math.min(8,ordered.length)-1))]);
+    const sampleTimes=[...times].sort((a,b)=>a-b);
+    for(const time of sampleTimes){
+      mixer.setTime(time);const current=read(),pose=posed();
+      if(current.some((x,i)=>Math.abs(x-initial[i])>1e-6))bindingMotionObserved=true;
+      for(let i=0;i<pose.length;i++){
+        maxVertexDisplacement=Math.max(maxVertexDisplacement,Math.hypot(...pose[i].slice(0,3).map((x,j)=>x-initialPose[i][j])));
+        maxSkinDisplacement=Math.max(maxSkinDisplacement,Math.hypot(...pose[i].slice(3).map((x,j)=>x-initialPose[i][j+3])));
+      }
+    }
     mixer.stopAllAction();mixer.uncacheRoot(root);bindings.forEach(({binding})=>binding.unbind());
-    clips.push({name:clip.name,duration:clip.duration,targets:bindings.length,motionObserved});
+    clips.push({name:clip.name,duration:clip.duration,targets:bindings.length,bindingMotionObserved,
+      motionObserved:maxVertexDisplacement>threshold,skinMotionObserved:maxSkinDisplacement>threshold,
+      sampledVertices:points.length,sampleTimes,maxVertexDisplacement,maxSkinDisplacement,threshold});
   }
   root.updateMatrixWorld(true);
   return {bounds:{min:box.min.toArray(),max:box.max.toArray()},nodeCount:nodes.length,materialCount:materials.size,maxTextureSize,nodes,clips};
