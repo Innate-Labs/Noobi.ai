@@ -36,6 +36,9 @@ func _ready() -> void:
 
 func _player(bus: String) -> AudioStreamPlayer:
     var player := AudioStreamPlayer.new()
+    # Web Sample playback can disconnect dynamic buses in the bundled exporter.
+    # Use the engine mixer consistently for looping, pause and per-bus gain.
+    player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
     player.bus = bus
     player.max_polyphony = 1
     player.volume_linear = 0.0
@@ -154,7 +157,7 @@ Call set_music(load(path), 0.5) on entering a region. Repeated requests for the 
 
 play_effect(stream, menu=false, gain_db=-6) supports Ogg/MP3/WAV as one-shot audio, stripping loop settings from the private copy. It uses eight bounded voices, replacing the next round-robin voice if full. Call from real game events, not per rendering frame. During SceneTree pause, music and gameplay effects freeze and resume at the playhead; new gameplay effects are rejected. menu=true permits UI feedback while paused. Set pause_music_with_tree=false only when the selected design calls for music continuing in menus. Fade timers follow the same pause policy.
 
-NoobiMusic and NoobiSFX buses are created only if absent; existing volume, mute and routing are preserved. ui_v1.gd owns Master/music/effects settings and their persistence; this manager never resets them. Ensure bus settings initialize before playback. Browser audio still requires a real user gesture; do not claim sound based solely on playing=true. Full-range music gain plus many effects can clip: author mix levels and validate the actual final output.
+Players explicitly use engine Stream playback on all platforms to avoid the bundled Web Sample bus-routing failure. Single-threaded Web mixing may have higher latency than Sample playback; measure timing in the actual game. NoobiMusic and NoobiSFX buses are created only if absent; existing volume, mute and routing are preserved. ui_v1.gd owns Master/music/effects settings and their persistence; this manager never resets them. Ensure bus settings initialize before playback. Browser audio still requires a real user gesture; do not claim sound based solely on playing=true. Full-range music gain plus many effects can clip: author mix levels and validate the actual final output.
 
 Acceptance: capture engine mixed PCM for both music tracks, the real loop boundary, crossfade, pause/resume, independent bus mute/volume, bounded repeated effects and stop/restart. Keep frame/event logs beside the recording. PCM and bus checks demonstrate signal output, not speaker hardware, perceived loudness, musical seam quality or audiovisual timing in a generated game; human listening and game-specific input playback remain separate.
 `;
