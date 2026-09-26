@@ -4,7 +4,7 @@ import type { ProductionFailureCategory } from '../../shared/productionPolicy.js
  * a failed token request does not establish either expired credentials or replay safety. */
 export function modelExecutionFailure(message: string): { category: ProductionFailureCategory; action: string } | null {
   const remoteCompact = /error running remote compact task/iu.test(message);
-  const tokenRequest = /(?:error sending request|request failed)[\s\S]{0,400}(?:https:\/\/auth\.openai\.com\/|oauth\/token)|token refresh failed|failed to refresh (?:access |auth |refresh )?token|(?:oauth|refresh.?token)[\s\S]{0,120}(?:invalid_grant|expired|revoked)/iu.test(message);
+  const tokenRequest = /(?:error sending request|request failed)[\s\S]{0,400}(?:https:\/\/auth\.openai\.com\/|oauth\/token)|token refresh failed|failed to refresh (?:access |auth |refresh )?token|refresh_token_(?:expired|reused|invalidated)|(?:oauth|refresh.?token)[\s\S]{0,120}(?:invalid_grant|expired|revoked)/iu.test(message);
   if (!remoteCompact && !tokenRequest) return null;
   if (/invalid_grant|refresh_token_(?:expired|reused|invalidated)|(?:token|credentials)[\s\S]{0,40}(?:expired|revoked)|unauthori[sz]ed|forbidden|(?:HTTP|status(?: code)?)\s*[:=]?\s*(?:401|403)\b/iu.test(message)) {
     return { category: 'account', action: '模型服务明确拒绝了认证，请检查登录状态或授权；保留工程，不通过修改游戏代码处理。继续仍受原预算限制。' };

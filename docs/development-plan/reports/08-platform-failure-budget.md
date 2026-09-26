@@ -80,4 +80,6 @@ B 样板最终错误 `Error running remote compact task: error sending request f
 
 B 保留 13 回合 / 6 修复 / 0 重连的失败状态，未恢复。仍不能从原始请求失败区分网络、代理、远程服务或凭据根因；本次交付只修正分类、建议和错误修复调度。
 
+补充覆盖独立 `refresh_token_reused` / `refresh_token_invalidated` 服务错误码，避免没有远程压缩前缀时漏分；最终全仓 85 文件 / 693 测试通过，日志 `execution-failure-token-verify.log`。没有使用真实账户制造此类故障。
+
 本轮待用户验收。下一阶段建议实现可玩版本管理与完整恢复入口：清楚展示当前工程、最后通过验收的构建及失败版本，并在恢复时保持方案和素材引用一致。

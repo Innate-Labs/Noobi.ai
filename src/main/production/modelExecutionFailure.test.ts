@@ -11,6 +11,8 @@ describe('model execution diagnostics without retry authorization', () => {
     ['Error running remote compact task: HTTP 401 unauthorized', 'account'],
     ['Token refresh failed: invalid_grant', 'account'],
     ['refresh_token_expired', 'account'],
+    ['refresh_token_reused', 'account'],
+    ['refresh_token_invalidated', 'account'],
     ['Error running remote compact task: HTTP 429', 'provider'],
     ['Error running remote compact task: unexpected response', 'unknown'],
     ['Token refresh failed', 'unknown'],
