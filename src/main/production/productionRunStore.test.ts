@@ -14,6 +14,24 @@ async function setup() {
   const file = join(root, 'runs.json'); const store = new ProductionRunStore(file); await store.init(); return { file, store };
 }
 describe('durable production progress', () => {
+  it('persists transport failure during visual production without changing consumed budget on reopen', async () => {
+    const { store, file } = await setup();
+    const { session } = await store.begin({ ...input, visualSample: true });
+    await store.reserve(session, 'turns');
+    await store.reserve(session, 'repairs');
+    await store.update(session, { id: 'planner', status: 'completed', turn, sourceHash: 'hash' });
+    await store.update(session, { id: 'visual-sample', status: 'running' });
+    const message = 'Core loop turn ended with status failed: Error running remote compact task: error sending request for url (https://auth.openai.com/oauth/token)';
+    await store.finish(session, 'failed', message);
+    const reopened = new ProductionRunStore(file); await reopened.init();
+    const result = (await reopened.read('project'))!;
+    expect(result.status).toBe('failed');
+    expect(result.failure).toMatchObject({ category: 'network', message });
+    expect(result.attempts[0]!.failure).toEqual(result.failure);
+    expect(result.budget?.used).toEqual({ turns: 1, repairs: 1, reconnects: 0 });
+    expect(result.budget?.grants).toEqual([]);
+    expect(result.attempts).toHaveLength(1);
+  });
   it('persists completed work, marks in-flight work interrupted on restart and does not replay anything', async () => {
     const { store, file } = await setup(); const { session } = await store.begin(input);
     await store.update(session, { id: 'planner', status: 'completed', turn, sourceHash: 'hash' });

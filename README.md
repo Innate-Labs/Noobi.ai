@@ -270,6 +270,8 @@ Reference comparison now pairs frozen reference inputs with host-verified game c
 
 Resource exhaustion now pauses new code-repair attempts and preserves the remaining budget. Diagnose host memory/disk and game allocations before resuming; the error alone does not identify the cause.
 
+Remote model compaction and authentication-request failures are diagnosed separately from game-quality findings. A request-send failure is not proof of expired credentials. These diagnostics stop new game-code repair attempts without granting automatic replay, refunding consumed attempts or changing the saved execution allowance.
+
 The engineering macOS export check now packages a frozen UI fixture, verifies its native signature and title, and records actual OS keyboard play plus save recovery in a fresh process. This is separate from the production export button, clean-device qualification, and autonomous-game acceptance.
 
 Godot version history now offers **Export macOS game package** on a Mac. It exports immutable sources as a separately hashed native candidate, includes local signing and notices, and preserves original projects. Native gameplay and clean-device checks remain separate from the Web verdict.

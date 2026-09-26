@@ -46,3 +46,10 @@ it('does not spend a code-repair attempt on resource exhaustion', async () => {
  await expect(runCoreLoopMilestone(s)).rejects.toThrow('运行资源故障');
  expect(s.implement).not.toHaveBeenCalled();
 });
+
+it('does not implement game changes for a remote compact request failure', async () => {
+ const s = setup(vi.fn(async () => ({ ok: false, findings: ['Error running remote compact task: error sending request for url (https://auth.openai.com/oauth/token)'] })));
+ await expect(runCoreLoopMilestone(s)).rejects.toThrow('模型执行故障');
+ expect(s.implement).not.toHaveBeenCalled();
+ expect(s.validate).toHaveBeenCalledOnce();
+});

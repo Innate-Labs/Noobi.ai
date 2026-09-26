@@ -253,6 +253,19 @@ describe('game harness required ImageGen contract', () => {
     })).rejects.toThrow('外部服务阻塞');
     expect(runtime.turns).toHaveLength(3);
   });
+  it('stops remote execution findings before reserving a new repair or writing game code', async () => {
+    const cause = 'Error running remote compact task: error sending request for url (https://auth.openai.com/oauth/token)';
+    const runtime = new CapturingRuntime(['Plan', 'Implementation',
+      JSON.stringify({ verdict: 'repair', summary: 'Remote review failed', findings: [cause] })]);
+    const harness = new GameHarness(runtime as unknown as CodexAppServer);
+    const beforeRepair = vi.fn();
+    await expect(harness.run({ projectId: 'remote-failure', cwd: '/tmp/remote-failure', prompt: 'Build a game',
+      imageGenerationRoute: 'configured-api', beforeRepair,
+    })).rejects.toThrow(cause);
+    expect(runtime.turns).toHaveLength(3);
+    expect(beforeRepair).not.toHaveBeenCalled();
+  });
+
   it('injects the required ImageGen contract into planning, implementation, review, repair, and re-review', async () => {
     const runtime = new CapturingRuntime([
       'Plan the game.',

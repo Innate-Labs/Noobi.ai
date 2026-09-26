@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { ProductionFailure, ProductionFailureCategory } from '../../shared/productionPolicy.js';
 import { classifyDeliveryFailure, isResourceFailure } from './deliveryFailure.js';
 import { modelConnectionFailure } from '../modelConnection.js';
+import { modelExecutionFailure } from './modelExecutionFailure.js';
 
 export class ProductionBudgetError extends Error { constructor(message: string) { super(message); this.name = 'ProductionBudgetError'; } }
 export class ProductionNoProgressError extends Error { constructor(message: string) { super(message); this.name = 'ProductionNoProgressError'; } }
@@ -9,10 +10,12 @@ export class ProductionNoProgressError extends Error { constructor(message: stri
 /** Diagnostic classification is conservative; it never authorizes a retry. */
 export function productionFailure(message: string, stage?: string): ProductionFailure {
   let category: ProductionFailureCategory = 'unknown';
+  const execution = modelExecutionFailure(message);
   if (/执行预算用尽/u.test(message)) category = 'budget';
   else if (/没有进展|重复失败且无进展/u.test(message)) category = 'no-progress';
   else if (/应用退出中断|was stopped|用户停止/u.test(message)) category = 'interrupted';
   else if (isResourceFailure(message)) category = 'resource';
+  else if (execution) category = execution.category;
   else if (classifyDeliveryFailure(message) === 'external-blocked' || /unauthorized|forbidden|authentication|usage.?limit|billing|model.{0,60}not supported/iu.test(message)) category = 'account';
   else if (modelConnectionFailure(message)) category = 'network';
   else if (/HTTP\s*429|rate.?limit|too many requests|外部服务阻塞|素材服务|provider|供应商/iu.test(message)) category = 'provider';
@@ -32,7 +35,7 @@ export function productionFailure(message: string, stage?: string): ProductionFa
     interrupted: '已保留完成记录，点击继续制作可重新核对。',
     unknown: '查看原始错误并处理后继续，不自动重试未归类故障。',
   };
-  return { category, message: message.slice(0, 8000), action: action[category], at: new Date().toISOString() };
+  return { category, message: message.slice(0, 8000), action: execution && category === execution.category ? execution.action : action[category], at: new Date().toISOString() };
 }
 
 export function repairInputKey(sourceHash: string, findings: readonly string[]): string {

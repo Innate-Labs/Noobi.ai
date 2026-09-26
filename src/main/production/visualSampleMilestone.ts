@@ -1,4 +1,5 @@
 import { assertRepairResources } from './deliveryFailure.js';
+import { assertRepairExecution } from './modelExecutionFailure.js';
 export interface VisualSampleValidation {
   ok: boolean; findings: string[];
   /** Immutable source/artifact identity for the reviewed sample. */
@@ -40,6 +41,7 @@ export async function runVisualSampleMilestone(options: {
       return;
     }
     assertRepairResources(result.findings);
+    assertRepairExecution(result.findings);
     const failure = JSON.stringify([await options.fingerprint(), [...result.findings].sort()]);
     options.assertActive();
     if (failure === lastFailure) throw new Error(`视觉样板修复没有进展：${result.findings.join('；')}`);

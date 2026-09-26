@@ -55,3 +55,10 @@ it('preserves repair budget when the host cannot allocate runtime memory', async
  await expect(runVisualSampleMilestone(s)).rejects.toThrow('运行资源故障');
  expect(s.implement).not.toHaveBeenCalled(); expect(s.review).not.toHaveBeenCalled(); expect(s.accept).not.toHaveBeenCalled();
 });
+
+it('does not interpret failed remote review as an aesthetic repair request', async () => {
+ const s = setup();
+ s.review.mockResolvedValue({ ok: false, findings: ['Error running remote compact task: HTTP 401 unauthorized'] });
+ await expect(runVisualSampleMilestone(s)).rejects.toThrow('模型执行故障');
+ expect(s.implement).not.toHaveBeenCalled(); expect(s.accept).not.toHaveBeenCalled();
+});

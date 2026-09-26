@@ -1,4 +1,5 @@
 import { assertRepairResources } from './deliveryFailure.js';
+import { assertRepairExecution } from './modelExecutionFailure.js';
 export interface CoreLoopValidation { ok: boolean; findings: string[] }
 
 /** A real scheduling barrier: full production cannot start until the host has
@@ -17,6 +18,7 @@ export async function runCoreLoopMilestone(options: {
   options.assertActive();
   for (let attempt = 1; !result.ok && attempt <= 2; attempt++) {
     assertRepairResources(result.findings);
+    assertRepairExecution(result.findings);
     const before = await options.fingerprint?.();
     const failures = JSON.stringify([...result.findings].sort());
     options.assertActive();
