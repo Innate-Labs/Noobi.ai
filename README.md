@@ -68,7 +68,7 @@ Multi-region games can use `PROGRESSION_V1.md` for atomic quest rewards, invento
 
 ### Free game audio by default
 
-Noobi bundles 2 music tracks and 16 sound effects under CC0. Music and SFX requests select and import these local files without audio API calls; they retain author, source and license metadata. This is a small existing library, not custom composition. Voice recordings are not included. To use a configured audio service, explicitly choose it in Settings → Media API and save. See [audio sources and licenses](resources/free-audio/LICENSES.md).
+Noobi bundles 2 music tracks and 16 sound effects under CC0. Music and SFX requests select and import these local files without audio API calls; they retain author, source and license metadata. This is a small existing library, not custom composition. Voice recordings are not included. To use a configured audio service, explicitly choose it in Settings → Media API and save. See [audio sources and licenses](resources/free-audio/LICENSES.md). New Godot projects also include a reusable audio manager for music loops, two-voice crossfades, bounded effects, and pause/restart cleanup on the existing game UI buses. Native engineering mixer checks pass; browser audio, generated-game integration and listening acceptance remain separate. See [runtime evidence](docs/development-plan/reports/07-audio-runtime.md).
 
 ## Why Noobi.ai
 

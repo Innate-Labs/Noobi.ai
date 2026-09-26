@@ -26,7 +26,7 @@
 | [04](04-video-reference.md) | 短视频玩法理解与方案生成 | 待用户验收 | `56f5017` | [交付报告](reports/04-delivery.md) | 未验收 |
 | [05](05-production-runtime.md) | 持久化制作、恢复与可玩版本 | 待用户验收 | `87c5650` | [交付报告](reports/05-delivery.md) | 未验收 |
 | [06](06-3d-playable-slice.md) | 第三人称 3D 基础与可玩样板 | 开发中（通用遮挡组件自验；A/B 已停止未交付） | `3a2e4b6` + 本轮可读性组件 | [开发记录](reports/06-delivery.md) | 整阶段未验收 |
-| [07](07-3d-assets.md) | 统一风格与游戏可用 3D 资产 | 开发中（资产规格与独立测量） | `f0f8d8d` | [开发记录](reports/07-delivery.md) | 整阶段未验收 |
+| [07](07-3d-assets.md) | 统一风格与游戏可用 3D 资产 | 开发中（资产规格、免费音频播放组件自验） | `f0f8d8d` | [开发记录](reports/07-delivery.md) | 整阶段未验收 |
 | [08](08-complete-game.md) | 多区域、任务成长与完整游戏 | 开发中（任务/背包/区域逻辑组件） | `e854e1c` | [开发记录](reports/08-delivery.md) | 整阶段未验收 |
 | [09](09-quality-and-reference-match.md) | 参考对照、长流程与体验质量 | 开发中（工程长测完成，暂停画面独立拦截） | `965fbc8` + `20fea79` + 本轮暂停检查 | [开发记录](reports/09-delivery.md) | 整阶段未验收 |
 | [10](10-delivery-and-release.md) | 一键游玩、导出与浏览器试玩 | 开发中（Web/macOS 正式导出入口） | `f53dd0f` + 本轮原生入口 | [开发记录](reports/10-delivery.md) | 未验收 |
@@ -57,3 +57,5 @@
 2026-09-25：默认 3D 路由改为图片参考 → AI 编写 Three.js → GLB → Godot，专项开发者自验完成，待用户验收。见 [专项报告](reports/01-image-threejs.md)。本项不改变上表各阶段的验收状态，历史游戏资产未批量重做。
 
 2026-09-25：首批三种图片参考模型已接入《浮岛修复师》，通过机关专项与浏览器前两区路线检查。见 [首批模型报告](reports/01-island-model-upgrade.md)。其余模型和完整游戏验收继续待办。
+
+2026-09-26：免费音频运行组件完成原生工程自验，26 项检查及最终混音输出通过；复用已有 UI 分轨设置。见 [R44 音频报告](reports/07-audio-runtime.md)。浏览器出声、成品接入与试听仍待验收。

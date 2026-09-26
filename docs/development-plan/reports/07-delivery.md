@@ -48,3 +48,8 @@ D01/D02/D03/D05 的平台实现和工程自验已勾选；D04 及完整生成场
 - `electron scripts/free-models-smoke.mjs --refresh-catalog`：14/14 真实独立重载/四视图检查及 Godot 导入通过，退出 0；正式文件未转换。记录 `library/2026-09-25T20-08-37.204Z/results.json`。已查看橡树、木桥和斜坡的实际预览。
 - `npx vitest run src/main/freeModelLibrary.test.ts src/main/mediaToolBroker.test.ts`：32 项通过。真实离线导入工具保持来源与账本；不误调用生成证明；未知 ID、损坏文件、路径型目录项和复用音频计划 ID 均拒绝。
 - GLB 合计约 154 KB，含预览/目录/许可约 824 KB。未运行完整 macOS 安装包分发，尚不能据此声称阶段 10 已完成。
+
+
+## 免费音频播放组件补充
+
+已将循环、交叉渐变、暂停/重开清理与有限音效声部接入新工程模板；26 项原生工程检查及实际 PCM 输出验证通过。见 [R44 专项报告](07-audio-runtime.md)。复用现有免费许可库；不代表资产动作质量或成品音画验收完成。
